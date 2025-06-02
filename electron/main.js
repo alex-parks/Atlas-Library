@@ -1,21 +1,29 @@
 const { app, BrowserWindow } = require('electron');
-const path = require('path');
 
-function createWindow () {
+function createWindow() {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 1400,
+    height: 900,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true
-    }
+    },
+    titleBarStyle: 'default',
+    show: false
   });
 
-  // Load Vite dev server in development
-  win.loadURL('http://localhost:5176');  // Update to match your current port
+  // Load the React app
+  win.loadURL('http://localhost:3000');
 
-  // Uncomment this for production builds later:
-  // win.loadFile(path.join(__dirname, '../frontend/dist/index.html'));
+  // Show when ready to prevent white flash
+  win.once('ready-to-show', () => {
+    win.show();
+  });
+
+  // Open DevTools in development
+  if (process.env.NODE_ENV !== 'production') {
+    win.webContents.openDevTools();
+  }
 }
 
 app.whenReady().then(createWindow);

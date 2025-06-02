@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"npm:dev:renderer\" \"npm:dev:electron\"",
-    "dev:renderer": "cd frontend && npm run dev",
-    "dev:electron": "wait-on http://localhost:5176 && electron ."
+    "dev": "concurrently --kill-others-on-fail \"npm run backend\" \"npm run frontend\" \"npm run electron\"",
+    "backend": "cd backend && python -m uvicorn main:app --reload --port 8000",
+    "frontend": "cd frontend && npm run dev -- --port 3000 --host",
+    "electron": "wait-on http://localhost:3000 && electron .",
+    "install:all": "npm install && cd frontend && npm install"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
