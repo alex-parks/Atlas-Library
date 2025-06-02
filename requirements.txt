@@ -1,0 +1,5 @@
+fastapi~=0.115.12
+uvicorn
+
+pydantic~=2.11.5
+PyYAML~=6.0.2
