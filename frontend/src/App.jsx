@@ -1,9 +1,10 @@
 // frontend/src/App.jsx
 import React, { useState } from 'react';
-import { Library, Briefcase, Bot, ChevronRight } from 'lucide-react';
+import { Library, Briefcase, Bot, Package, ChevronRight } from 'lucide-react';
 import AssetLibrary from './components/AssetLibrary';
 import ProducerTools from './components/ProducerTools';
 import AITools from './components/AITools';
+import DeliveryTool from './components/DeliveryTool';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('asset-library');
@@ -15,6 +16,12 @@ const App = () => {
       name: 'Asset Library',
       icon: Library,
       component: AssetLibrary
+    },
+    {
+      id: 'delivery-tool',
+      name: 'Delivery Tool',
+      icon: Package,
+      component: DeliveryTool
     },
     {
       id: 'producer-tools',

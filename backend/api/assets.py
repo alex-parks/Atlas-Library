@@ -3,24 +3,15 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from typing import List, Optional
 from pydantic import BaseModel
-import sqlite3
 import json
 from pathlib import Path
 
 router = APIRouter(prefix="/api/v1", tags=["assets"])
 
-# Database path
-DB_PATH = "backend/database/assets.db"
 
 
-def get_db_connection():
-    """Get SQLite database connection"""
-    if not Path(DB_PATH).exists():
-        raise HTTPException(status_code=500, detail="Database not found. Run setup_database.py first.")
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # This enables dict-like access
-    return conn
+
 
 
 # Pydantic models
