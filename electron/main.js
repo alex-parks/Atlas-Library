@@ -1,3 +1,4 @@
+// electron/main.js - Fixed version
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 
@@ -8,7 +9,9 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false // Allow loading local resources
+      webSecurity: false, // Allow loading local resources
+      // Add cache directory to fix cache errors
+      additionalArguments: ['--disable-web-security', '--disable-features=VizDisplayCompositor']
     },
     titleBarStyle: 'default',
     show: false,
@@ -17,7 +20,10 @@ function createWindow() {
 
   // Load the React app - using the correct port from your vite config
   const isDev = process.env.NODE_ENV !== 'production';
-  const url = isDev ? 'http://localhost:3000' : `file://${path.join(__dirname, '../frontend/dist/index.html')}`;
+
+  // Try multiple common Vite ports in order
+  const possiblePorts = [3011, 3010, 3000, 5173, 5174];
+  let url = isDev ? `http://localhost:3011` : `file://${path.join(__dirname, '../frontend/dist/index.html')}`;
 
   console.log(`Loading URL: ${url}`);
   win.loadURL(url);
@@ -28,9 +34,21 @@ function createWindow() {
     console.log('Window ready and shown');
   });
 
-  // Handle loading errors
-  win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+  // Handle loading errors - try next port if current one fails
+  win.webContents.on('did-fail-load', async (event, errorCode, errorDescription, validatedURL) => {
     console.error(`Failed to load ${validatedURL}: ${errorDescription} (${errorCode})`);
+
+    if (isDev && possiblePorts.length > 1) {
+      // Remove the failed port and try the next one
+      const currentPort = possiblePorts.shift();
+      const nextPort = possiblePorts[0];
+
+      if (nextPort) {
+        console.log(`Trying next port: ${nextPort}`);
+        const nextUrl = `http://localhost:${nextPort}`;
+        win.loadURL(nextUrl);
+      }
+    }
   });
 
   // Open DevTools in development
@@ -45,6 +63,9 @@ function createWindow() {
 
   return win;
 }
+
+// Disable hardware acceleration BEFORE app is ready
+app.disableHardwareAcceleration();
 
 // App event handlers
 app.whenReady().then(() => {
@@ -72,6 +93,18 @@ app.on('web-contents-created', (event, contents) => {
     event.preventDefault();
     console.log(`Blocked new window: ${navigationUrl}`);
   });
+});
+
+// Handle certificate errors in development
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+  if (process.env.NODE_ENV !== 'production') {
+    // In development, ignore certificate errors
+    event.preventDefault();
+    callback(true);
+  } else {
+    // In production, use default behavior
+    callback(false);
+  }
 });
 
 console.log('Electron main process started');

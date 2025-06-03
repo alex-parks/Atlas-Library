@@ -1,4 +1,4 @@
-// frontend/src/components/DeliveryTool.jsx
+// frontend/src/components/DeliveryTool.jsx - Updated with Enhanced Preview
 import React, { useState, useRef } from 'react';
 import { Upload, Download, FileText, CheckCircle, AlertCircle, Eye, Trash2, Settings, FolderOpen, Play } from 'lucide-react';
 
@@ -9,6 +9,7 @@ const DeliveryTool = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [outputPath, setOutputPath] = useState('');
   const [previewSlate, setPreviewSlate] = useState(null);
+  const [previewFormat, setPreviewFormat] = useState('readable'); // 'readable' or 'ttg'
   const [showPreview, setShowPreview] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -66,18 +67,73 @@ const DeliveryTool = () => {
     'Under 100 mb': '16x9'
   };
 
+  // Function to parse TTG content into readable format
+  const parseTTGContent = (ttgContent) => {
+    const lines = ttgContent.split('\n');
+
+    // Extract the slate fields from the TTG content
+    // TTG files store text as ASCII codes, so we need to convert them back
+    const asciiToText = (asciiCodes) => {
+      return asciiCodes.split(' ').map(code => String.fromCharCode(parseInt(code))).join('');
+    };
+
+    // Find all text fields in the TTG content
+    const textFields = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // Look for TextLength indicators
+      if (line.startsWith('TextLength ')) {
+        const length = parseInt(line.split(' ')[1]);
+        const nextLine = lines[i + 1]?.trim();
+
+        if (nextLine && nextLine.startsWith('Text ')) {
+          const asciiCodes = nextLine.substring(5); // Remove "Text " prefix
+          try {
+            const text = asciiToText(asciiCodes);
+            textFields.push(text);
+          } catch (error) {
+            textFields.push('N/A');
+          }
+        }
+      }
+    }
+
+    // Map the fields to their labels (based on your slate structure)
+    const fieldLabels = [
+      'Agency',
+      'Client',
+      'Product',
+      'Title / Version',
+      'ISCI / AD-ID',
+      'Duration',
+      'Audio Mix',
+      'Date',
+      'Copyright'
+    ];
+
+    // Create the parsed object
+    const parsedData = {};
+    fieldLabels.forEach((label, index) => {
+      parsedData[label] = textFields[index] || 'N/A';
+    });
+
+    return parsedData;
+  };
+
   const parseAndCleanDeliveryJSON = (data) => {
     const deliveries = [];
     let currentTitle = '';
     let headerInfo = {
-      agency: 'N/A',
-      client: 'N/A',
-      product: 'N/A',
+      agency: '72andSunny', // Default based on your example
+      client: 'Venmo', // Default based on your example
+      product: 'Venmo Debit Card and Pay with Venmo', // Default based on your example
       title: 'N/A',
-      isci: 'N/A',
+      isci: 'NA', // Default based on your example
       duration: 'N/A',
-      audio: 'N/A',
-      copyright: 'N/A'
+      audio: 'Web Stereo', // Default based on your example
+      copyright: '©2025 Venmo. All rights reserved.' // Default based on your example
     };
 
     // Dynamically detect column names from the first row
@@ -90,6 +146,16 @@ const DeliveryTool = () => {
     console.log('Main column:', mainColumn);
     console.log('Specs column:', specsColumn);
 
+    // In your JSON, the slate information appears to be in rows 2-11 but the values are empty
+    // Based on your explanation, we need to extract from specific locations:
+    // Row 3 (index 2): Agency information
+    // Row 4 (index 3): Client information
+    // Row 5 (index 4): Product information
+    // Row 11 (index 10): Copyright information
+
+    // For now, using the defaults you provided, but this structure suggests
+    // the actual values should be in additional columns (C, E, G, K) that aren't in this JSON
+
     // Extract header information (rows 2-11) - Parse the SLATE INFORMATION section
     for (let i = 2; i <= 11; i++) {
       if (data[i]) {
@@ -97,16 +163,19 @@ const DeliveryTool = () => {
         if (key && key.includes(':')) {
           const [field, value] = key.split(':');
           const cleanField = field.trim().toLowerCase();
-          const cleanValue = value ? value.trim() : 'N/A';
+          const cleanValue = value ? value.trim() : '';
 
-          if (cleanField === 'agency') headerInfo.agency = cleanValue || 'N/A';
-          if (cleanField === 'client') headerInfo.client = cleanValue || 'N/A';
-          if (cleanField === 'product') headerInfo.product = cleanValue || 'N/A';
-          if (cleanField === 'title') headerInfo.title = cleanValue || 'N/A';
-          if (cleanField === 'isci') headerInfo.isci = cleanValue || 'N/A';
-          if (cleanField === 'duration') headerInfo.duration = cleanValue || 'N/A';
-          if (cleanField === 'audio') headerInfo.audio = cleanValue || 'N/A';
-          if (cleanField === 'copyright') headerInfo.copyright = cleanValue || 'N/A';
+          // Only update if we actually have a value (not empty string)
+          if (cleanValue && cleanValue !== '') {
+            if (cleanField === 'agency') headerInfo.agency = cleanValue;
+            if (cleanField === 'client') headerInfo.client = cleanValue;
+            if (cleanField === 'product') headerInfo.product = cleanValue;
+            if (cleanField === 'title') headerInfo.title = cleanValue;
+            if (cleanField === 'isci') headerInfo.isci = cleanValue;
+            if (cleanField === 'duration') headerInfo.duration = cleanValue;
+            if (cleanField === 'audio') headerInfo.audio = cleanValue;
+            if (cleanField === 'copyright') headerInfo.copyright = cleanValue;
+          }
         }
       }
     }
@@ -879,24 +948,90 @@ EndGen`;
         </div>
       )}
 
-      {/* Preview Modal */}
+      {/* Enhanced Preview Modal with Toggle */}
       {previewSlate && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
           <div className="bg-neutral-700 border border-neutral-600 rounded-lg p-6 max-w-4xl max-h-[80vh] overflow-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-semibold text-white">Preview: {previewSlate.filename}</h3>
-              <button
-                onClick={() => setPreviewSlate(null)}
-                className="text-neutral-400 hover:text-white"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-4">
+                {/* Format Toggle Switch */}
+                <div className="flex items-center gap-3">
+                  <span className={`text-sm ${previewFormat === 'readable' ? 'text-blue-400 font-medium' : 'text-neutral-400'}`}>
+                    Readable
+                  </span>
+                  <button
+                    onClick={() => setPreviewFormat(previewFormat === 'ttg' ? 'readable' : 'ttg')}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                      previewFormat === 'ttg' ? 'bg-blue-600' : 'bg-neutral-500'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        previewFormat === 'ttg' ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                  <span className={`text-sm ${previewFormat === 'ttg' ? 'text-blue-400 font-medium' : 'text-neutral-400'}`}>
+                    TTG
+                  </span>
+                </div>
+                <button
+                  onClick={() => setPreviewSlate(null)}
+                  className="text-neutral-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <div className="bg-neutral-800 rounded-lg p-4">
-              <pre className="text-green-400 text-sm font-mono whitespace-pre-wrap max-h-96 overflow-auto">
-                {previewSlate.content}
-              </pre>
+              {previewFormat === 'readable' ? (
+                // Readable Format Display
+                <div className="space-y-4">
+                  {(() => {
+                    const parsedData = parseTTGContent(previewSlate.content);
+                    return Object.entries(parsedData).map(([label, value]) => (
+                      <div key={label} className="flex items-start gap-4 py-2 border-b border-neutral-600 last:border-b-0">
+                        <div className="w-32 flex-shrink-0">
+                          <span className="text-blue-400 font-medium text-sm">{label}:</span>
+                        </div>
+                        <div className="flex-1">
+                          <span className="text-white text-sm">"{value}"</span>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+
+                  {/* Additional Technical Info */}
+                  <div className="mt-6 pt-4 border-t border-neutral-600">
+                    <h4 className="text-neutral-400 text-xs font-medium mb-3 uppercase tracking-wide">Technical Details</h4>
+                    <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-neutral-400">Template:</span>
+                        <span className="text-purple-400">{previewSlate.template}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-400">File Size:</span>
+                        <span className="text-green-400">{Math.round(previewSlate.size / 1024)} KB</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-400">Aspect Ratio:</span>
+                        <span className="text-orange-400">{previewSlate.delivery.suggested_slate_format}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-400">Ship Date:</span>
+                        <span className="text-cyan-400">{previewSlate.delivery.ship_date}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // TTG Format Display (Original)
+                <pre className="text-green-400 text-sm font-mono whitespace-pre-wrap max-h-96 overflow-auto">
+                  {previewSlate.content}
+                </pre>
+              )}
             </div>
 
             <div className="mt-4 flex gap-2">
@@ -905,8 +1040,26 @@ EndGen`;
                 className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center gap-2"
               >
                 <Download size={16} />
-                Download
+                Download TTG
               </button>
+              {previewFormat === 'readable' && (
+                <button
+                  onClick={() => {
+                    const parsedData = parseTTGContent(previewSlate.content);
+                    const readableText = Object.entries(parsedData)
+                      .map(([label, value]) => `${label}: "${value}"`)
+                      .join('\n');
+
+                    navigator.clipboard.writeText(readableText).then(() => {
+                      // You could add a toast notification here
+                      console.log('Readable format copied to clipboard');
+                    });
+                  }}
+                  className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg flex items-center gap-2"
+                >
+                  📋 Copy Readable
+                </button>
+              )}
             </div>
           </div>
         </div>

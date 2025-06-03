@@ -5,9 +5,11 @@
   "scripts": {
     "dev": "concurrently --kill-others-on-fail \"npm run backend\" \"npm run frontend\" \"npm run electron\"",
     "backend": "cd backend && python -m uvicorn main:app --reload --port 8000",
-    "frontend": "cd frontend && npm run dev -- --port 3000 --host",
-    "electron": "wait-on http://localhost:3000 && electron .",
-    "install:all": "npm install && cd frontend && npm install"
+    "frontend": "cd frontend && npm run dev -- --port 3011 --host",
+    "electron": "wait-on http://localhost:3011 && electron .",
+    "install:all": "npm install && cd frontend && npm install",
+    "clean-cache": "rm -rf node_modules/.cache && cd frontend && rm -rf node_modules/.cache",
+    "debug": "concurrently --kill-others-on-fail \"npm run backend\" \"npm run frontend\" \"wait-on http://localhost:3011 && electron . --enable-logging\""
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
