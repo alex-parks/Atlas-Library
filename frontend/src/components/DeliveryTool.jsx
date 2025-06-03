@@ -70,25 +70,43 @@ const DeliveryTool = () => {
     const deliveries = [];
     let currentTitle = '';
     let headerInfo = {
-      client: 'Venmo',
-      agency: '',
-      product: '',
-      title: 'Venmo Everything Campaign',
-      isci: '',
-      audio: '',
-      copyright: ''
+      agency: 'N/A',
+      client: 'N/A',
+      product: 'N/A',
+      title: 'N/A',
+      isci: 'N/A',
+      duration: 'N/A',
+      audio: 'N/A',
+      copyright: 'N/A'
     };
 
-    // Extract header information (rows 2-11)
+    // Dynamically detect column names from the first row
+    const firstRow = data[0] || {};
+    const columnNames = Object.keys(firstRow);
+    const mainColumn = columnNames[0] || ''; // First column (usually the project name)
+    const specsColumn = columnNames[1] || ''; // Second column (usually specs)
+
+    console.log('Detected columns:', columnNames);
+    console.log('Main column:', mainColumn);
+    console.log('Specs column:', specsColumn);
+
+    // Extract header information (rows 2-11) - Parse the SLATE INFORMATION section
     for (let i = 2; i <= 11; i++) {
       if (data[i]) {
-        const key = data[i]["Venmo 'Venmo Everything'"];
+        const key = data[i][mainColumn];
         if (key && key.includes(':')) {
           const [field, value] = key.split(':');
           const cleanField = field.trim().toLowerCase();
-          if (cleanField === 'client') headerInfo.client = value.trim();
-          if (cleanField === 'agency') headerInfo.agency = value.trim();
-          if (cleanField === 'product') headerInfo.product = value.trim();
+          const cleanValue = value ? value.trim() : 'N/A';
+
+          if (cleanField === 'agency') headerInfo.agency = cleanValue || 'N/A';
+          if (cleanField === 'client') headerInfo.client = cleanValue || 'N/A';
+          if (cleanField === 'product') headerInfo.product = cleanValue || 'N/A';
+          if (cleanField === 'title') headerInfo.title = cleanValue || 'N/A';
+          if (cleanField === 'isci') headerInfo.isci = cleanValue || 'N/A';
+          if (cleanField === 'duration') headerInfo.duration = cleanValue || 'N/A';
+          if (cleanField === 'audio') headerInfo.audio = cleanValue || 'N/A';
+          if (cleanField === 'copyright') headerInfo.copyright = cleanValue || 'N/A';
         }
       }
     }
@@ -96,8 +114,9 @@ const DeliveryTool = () => {
     // Parse delivery items (starting from row 14)
     for (let i = 14; i < data.length; i++) {
       const row = data[i];
-      const col1 = row["Venmo 'Venmo Everything'"] || '';
-      const col2 = row[""] || '';
+      const col1 = row[mainColumn] || '';
+      const col2 = row[specsColumn] || '';
+      const aspectRatioCol = row["Aspect Ratio"] || '';
 
       // Skip empty rows
       if (!col1 && !col2) continue;
@@ -126,27 +145,60 @@ const DeliveryTool = () => {
           shipDate = `2025-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
         }
 
-        // Determine suggested format based on specs
+        // Extract duration from current title (e.g., ":15" from "SIP IT TEASER :15")
+        let duration = 'N/A';
+        const durationMatch = currentTitle.match(/:(\d+)/);
+        if (durationMatch) {
+          duration = `:${durationMatch[1]}`;
+        }
+
+        // Determine suggested format from specs (parsing ASPECT RATIO from specs text)
         let suggestedFormat = '16x9'; // default
         let platform = 'Other';
 
-        for (const [platformName, format] of Object.entries(platformMapping)) {
+        // Look for aspect ratio in the specs text
+        if (specs.includes('ASPECT RATIO: 16x9') || specs.includes('16x9')) {
+          suggestedFormat = '16x9';
+        } else if (specs.includes('ASPECT RATIO: 9x16') || specs.includes('9x16')) {
+          suggestedFormat = '9x16';
+        } else if (specs.includes('ASPECT RATIO: 1x1') || specs.includes('1x1') || specs.includes('1:1')) {
+          suggestedFormat = '1x1';
+        } else if (specs.includes('ASPECT RATIO: 4x5') || specs.includes('4x5') || specs.includes('4:5')) {
+          suggestedFormat = '4x5';
+        } else {
+          // Fallback to platform mapping
+          for (const [platformName, format] of Object.entries(platformMapping)) {
+            if (specs.includes(platformName)) {
+              suggestedFormat = format;
+              platform = platformName;
+              break;
+            }
+          }
+        }
+
+        // Extract platform from specs for display
+        for (const [platformName] of Object.entries(platformMapping)) {
           if (specs.includes(platformName)) {
-            suggestedFormat = format;
             platform = platformName;
             break;
           }
         }
 
+        // Create formatted title with aspect ratio (e.g., "SIP IT TEASER :15 16x9")
+        const formattedTitle = `${currentTitle} ${suggestedFormat}`;
+
         deliveries.push({
           id: deliveries.length + 1,
-          video_title: currentTitle,
+          video_title: formattedTitle,
+          original_title: currentTitle,
           ship_date: shipDate,
           platform: platform,
           specs: specs,
+          aspect_ratio: aspectRatioCol,
           suggested_slate_format: suggestedFormat,
-          client: headerInfo.client,
+          duration: duration,
           agency: headerInfo.agency,
+          client: headerInfo.client,
           product: headerInfo.product,
           isci: headerInfo.isci,
           audio: headerInfo.audio,
@@ -162,7 +214,7 @@ const DeliveryTool = () => {
     });
 
     const uniquePlatforms = [...new Set(deliveries.map(d => d.platform))];
-    const uniqueVideos = [...new Set(deliveries.map(d => d.video_title))];
+    const uniqueVideos = [...new Set(deliveries.map(d => d.original_title))];
 
     return {
       project_info: headerInfo,
@@ -204,26 +256,77 @@ const DeliveryTool = () => {
 
   const generateTTGContent = (delivery, templateKey) => {
     const template = ttgTemplates[templateKey];
-    const currentDate = new Date().toDateString();
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      year: 'numeric'
+    });
 
-    // Build the text content for slate
-    const slateInfo = [
-      `Title: ${delivery.video_title}`,
-      `Client: ${delivery.client}`,
-      `Ship Date: ${delivery.ship_date}`,
-      `Platform: ${delivery.platform}`,
-      `Specs: ${delivery.specs}`,
-      delivery.agency ? `Agency: ${delivery.agency}` : null,
-      delivery.product ? `Product: ${delivery.product}` : null,
-      delivery.isci ? `ISCI: ${delivery.isci}` : null,
-      delivery.audio ? `Audio: ${delivery.audio}` : null,
-      delivery.copyright ? `Copyright: ${delivery.copyright}` : null
-    ].filter(Boolean).join('\\n');
+    // Helper function to convert text to ASCII codes
+    const textToAsciiCodes = (text) => {
+      return Array.from(text).map(char => char.charCodeAt(0)).join(' ');
+    };
 
-    // Generate the full TTG content
+    // Format today's date for slate (e.g., "June 3 2025")
+    const todaysDate = new Date().toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    });
+
+    // Build the text fields for slate - exact field mapping as requested
+    const slateFields = [
+      { value: delivery.agency || 'N/A' },           // Agency from JSON header
+      { value: delivery.client || 'N/A' },           // Client from JSON header
+      { value: delivery.product || 'N/A' },          // Product from JSON header
+      { value: delivery.video_title || 'N/A' },      // Title / Version (e.g., "SIP IT TEASER :15 16x9")
+      { value: delivery.isci || 'N/A' },             // ISCI / AD-ID from JSON header
+      { value: delivery.duration || 'N/A' },         // Duration (e.g., ":15")
+      { value: delivery.audio || 'N/A' },            // Audio Mix from JSON header
+      { value: todaysDate },                         // Today's date (not ship date!)
+      { value: delivery.copyright || 'N/A' }         // Copyright from JSON header
+    ];
+
+    // Generate paragraph sections for each field - exact format match
+    let paragraphSections = '';
+
+    slateFields.forEach((field, index) => {
+      const isLast = index === slateFields.length - 1;
+      const asciiCodes = textToAsciiCodes(field.value);
+
+      paragraphSections += `TextLength ${field.value.length}
+Text ${asciiCodes}
+ParagraphType Inside
+
+#
+# layer paragraph channels
+#
+Channel leading
+	Extrapolation constant
+	Value 17.5
+	End
+ChannelEnd
+TransformHasOffset no
+End
+#
+# layer paragraph ruler
+#
+Justification Justify_Left
+LeftMargin 0
+LeftIndent 0
+RightMargin 1535
+End
+`;
+    });
+
+    // Generate the complete TTG content - exact format match
     const ttgContent = `Module Text
 Program Flame
-Version 2023.3.2
+Version 2025.2.2
 FileVersion 4.19999981
 CreationDate ${currentDate}
 
@@ -231,7 +334,7 @@ FrameWidth ${template.frameWidth}
 FrameHeight ${template.frameHeight}
 FrameAspectRatio ${template.aspectRatio}
 
-	CurrentFrame 1
+	CurrentFrame 55
 	MaxFrames -1
 	UpdateMode yes
 	PlayLockMode no
@@ -326,28 +429,11 @@ ColourFill 100 100 100 50
 ColourOut 0 0 100 100
 ColourDrop 0 0 0 100
 ColorUnderline 100 100 100 100
-ParagraphType Inside
-
-#
-# layer paragraph channels
-#
-Channel leading
-	Extrapolation constant
-	Value 17.5
-	End
-ChannelEnd
-TransformHasOffset no
-End
-#
-# layer paragraph ruler
-#
-Justification Justify_Left
-LeftMargin 0
-LeftIndent 0
-RightMargin 1535
-End
-TextLength ${slateInfo.length}
-Text ${slateInfo}
+${paragraphSections}FontSize 50
+ColourFill 100 100 100 100
+ColourOut 0 0 100 100
+ColourDrop 0 0 0 50
+ColorUnderline 100 100 100 100
 ParagraphType Last
 
 #
