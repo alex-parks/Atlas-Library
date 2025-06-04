@@ -17,7 +17,7 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
       id: 1,
       title: '',
       duration: '',
-      shipDate: '',
+      shipDate: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
       platform: 'YouTube',
       aspectRatio: '16x9',
       isci: '',
@@ -28,15 +28,13 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
   // Available options
   const platformOptions = [
     'YouTube',
-    'TikTok + YouTube Shorts',
-    'Stories (Vertical)',
-    'Meta 1:1',
+    'TikTok',
     'Meta',
+    'IG Stories',
+    'Google',
     'Pinterest',
-    'OTT SPECS',
-    'Youtube Specs (For Google)',
-    'Under 100 mb',
-    'Other'
+    'OTT',
+    'Custom'
   ];
 
   const aspectRatioOptions = [
@@ -51,7 +49,7 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
     'Broadcast Stereo',
     'Mono',
     'Surround 5.1',
-    'Other'
+    'Custom'
   ];
 
   // Add new deliverable row
@@ -61,7 +59,7 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
       id: newId,
       title: '',
       duration: '',
-      shipDate: '',
+      shipDate: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
       platform: 'YouTube',
       aspectRatio: '16x9',
       isci: '',
@@ -127,16 +125,16 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
         video_title: `${d.title} ${d.aspectRatio}`,
         original_title: d.title,
         ship_date: d.shipDate,
-        platform: d.platform,
-        specs: d.platform,
+        platform: d.platform === 'Custom' ? (d.customPlatform || 'Custom') : d.platform,
+        specs: d.platform === 'Custom' ? (d.customPlatform || 'Custom') : d.platform,
         aspect_ratio: d.aspectRatio,
         suggested_slate_format: d.aspectRatio,
-        duration: d.duration,
+        duration: d.duration ? `:${d.duration}` : 'N/A', // Add the colon automatically
         agency: slateInfo.agency,
         client: slateInfo.client,
         product: slateInfo.product,
         isci: d.isci || 'N/A',
-        audio: d.audio,
+        audio: d.audio === 'Custom' ? (d.customAudio || 'Custom') : d.audio,
         copyright: slateInfo.copyright || `©${new Date().getFullYear()} ${slateInfo.client}. All rights reserved.`
       })),
       summary: {
@@ -273,28 +271,39 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
                       type="text"
                       value={deliverable.duration}
                       onChange={(e) => updateDeliverable(deliverable.id, 'duration', e.target.value)}
-                      placeholder=":30"
+                      placeholder="30"
                       className="w-full bg-neutral-500 border border-neutral-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
                     />
                   </td>
                   <td className="py-3 px-2">
                     <input
-                      type="date"
+                      type="text"
                       value={deliverable.shipDate}
                       onChange={(e) => updateDeliverable(deliverable.id, 'shipDate', e.target.value)}
+                      placeholder="MM/DD/YYYY"
                       className="w-full bg-neutral-500 border border-neutral-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
                     />
                   </td>
                   <td className="py-3 px-2">
-                    <select
-                      value={deliverable.platform}
-                      onChange={(e) => updateDeliverable(deliverable.id, 'platform', e.target.value)}
-                      className="w-full bg-neutral-500 border border-neutral-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
-                    >
-                      {platformOptions.map(platform => (
-                        <option key={platform} value={platform}>{platform}</option>
-                      ))}
-                    </select>
+                    {deliverable.platform === 'Custom' ? (
+                      <input
+                        type="text"
+                        value={deliverable.customPlatform || ''}
+                        onChange={(e) => updateDeliverable(deliverable.id, 'customPlatform', e.target.value)}
+                        placeholder="Enter platform..."
+                        className="w-full bg-neutral-500 border border-neutral-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
+                      />
+                    ) : (
+                      <select
+                        value={deliverable.platform}
+                        onChange={(e) => updateDeliverable(deliverable.id, 'platform', e.target.value)}
+                        className="w-full bg-neutral-500 border border-neutral-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
+                      >
+                        {platformOptions.map(platform => (
+                          <option key={platform} value={platform}>{platform}</option>
+                        ))}
+                      </select>
+                    )}
                   </td>
                   <td className="py-3 px-2">
                     <select
@@ -317,15 +326,25 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
                     />
                   </td>
                   <td className="py-3 px-2">
-                    <select
-                      value={deliverable.audio}
-                      onChange={(e) => updateDeliverable(deliverable.id, 'audio', e.target.value)}
-                      className="w-full bg-neutral-500 border border-neutral-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
-                    >
-                      {audioOptions.map(audio => (
-                        <option key={audio} value={audio}>{audio}</option>
-                      ))}
-                    </select>
+                    {deliverable.audio === 'Custom' ? (
+                      <input
+                        type="text"
+                        value={deliverable.customAudio || ''}
+                        onChange={(e) => updateDeliverable(deliverable.id, 'customAudio', e.target.value)}
+                        placeholder="Enter audio type..."
+                        className="w-full bg-neutral-500 border border-neutral-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
+                      />
+                    ) : (
+                      <select
+                        value={deliverable.audio}
+                        onChange={(e) => updateDeliverable(deliverable.id, 'audio', e.target.value)}
+                        className="w-full bg-neutral-500 border border-neutral-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
+                      >
+                        {audioOptions.map(audio => (
+                          <option key={audio} value={audio}>{audio}</option>
+                        ))}
+                      </select>
+                    )}
                   </td>
                   <td className="py-3 px-2">
                     <button

@@ -1,6 +1,7 @@
-// frontend/src/components/DeliveryTool.jsx - Updated with Enhanced Preview
+// frontend/src/components/DeliveryTool.jsx - PART 1
 import React, { useState, useRef } from 'react';
 import { Upload, Download, FileText, CheckCircle, AlertCircle, Eye, Trash2, Settings, FolderOpen, Play } from 'lucide-react';
+import ManualDeliveryCreator from './ManualDeliveryCreator';
 
 const DeliveryTool = () => {
   const [rawJsonData, setRawJsonData] = useState(null);
@@ -11,6 +12,7 @@ const DeliveryTool = () => {
   const [previewSlate, setPreviewSlate] = useState(null);
   const [previewFormat, setPreviewFormat] = useState('readable'); // 'readable' or 'ttg'
   const [showPreview, setShowPreview] = useState(false);
+  const [showManualCreator, setShowManualCreator] = useState(false);
   const fileInputRef = useRef(null);
 
   // TTG Templates based on your actual files
@@ -71,25 +73,20 @@ const DeliveryTool = () => {
   const parseTTGContent = (ttgContent) => {
     const lines = ttgContent.split('\n');
 
-    // Extract the slate fields from the TTG content
-    // TTG files store text as ASCII codes, so we need to convert them back
     const asciiToText = (asciiCodes) => {
       return asciiCodes.split(' ').map(code => String.fromCharCode(parseInt(code))).join('');
     };
 
-    // Find all text fields in the TTG content
     const textFields = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
 
-      // Look for TextLength indicators
       if (line.startsWith('TextLength ')) {
-        const length = parseInt(line.split(' ')[1]);
         const nextLine = lines[i + 1]?.trim();
 
         if (nextLine && nextLine.startsWith('Text ')) {
-          const asciiCodes = nextLine.substring(5); // Remove "Text " prefix
+          const asciiCodes = nextLine.substring(5);
           try {
             const text = asciiToText(asciiCodes);
             textFields.push(text);
@@ -100,7 +97,6 @@ const DeliveryTool = () => {
       }
     }
 
-    // Map the fields to their labels (based on your slate structure)
     const fieldLabels = [
       'Agency',
       'Client',
@@ -113,7 +109,6 @@ const DeliveryTool = () => {
       'Copyright'
     ];
 
-    // Create the parsed object
     const parsedData = {};
     fieldLabels.forEach((label, index) => {
       parsedData[label] = textFields[index] || 'N/A';
@@ -122,41 +117,55 @@ const DeliveryTool = () => {
     return parsedData;
   };
 
+  // Dynamic parsing function for any Blacksmith delivery schedule
   const parseAndCleanDeliveryJSON = (data) => {
     const deliveries = [];
     let currentTitle = '';
+
     let headerInfo = {
-      agency: '72andSunny', // Default based on your example
-      client: 'Venmo', // Default based on your example
-      product: 'Venmo Debit Card and Pay with Venmo', // Default based on your example
+      agency: 'N/A',
+      client: 'N/A',
+      product: 'N/A',
       title: 'N/A',
-      isci: 'NA', // Default based on your example
+      isci: 'N/A',
       duration: 'N/A',
-      audio: 'Web Stereo', // Default based on your example
-      copyright: '©2025 Venmo. All rights reserved.' // Default based on your example
+      audio: 'N/A',
+      copyright: 'N/A'
     };
 
-    // Dynamically detect column names from the first row
     const firstRow = data[0] || {};
     const columnNames = Object.keys(firstRow);
-    const mainColumn = columnNames[0] || ''; // First column (usually the project name)
-    const specsColumn = columnNames[1] || ''; // Second column (usually specs)
+    console.log('All available columns:', columnNames);
 
-    console.log('Detected columns:', columnNames);
-    console.log('Main column:', mainColumn);
-    console.log('Specs column:', specsColumn);
+    const mainColumn = columnNames[0] || '';
+    const specsColumn = columnNames[1] || '';
+    const columnC = columnNames[2] || null;
+    const columnE = columnNames[3] || null;
+    const columnG = columnNames[4] || null;
+    const columnK = columnNames[5] || null;
 
-    // In your JSON, the slate information appears to be in rows 2-11 but the values are empty
-    // Based on your explanation, we need to extract from specific locations:
-    // Row 3 (index 2): Agency information
-    // Row 4 (index 3): Client information
-    // Row 5 (index 4): Product information
-    // Row 11 (index 10): Copyright information
+    // Extract slate information from specific rows
+    if (data[3] && columnC && data[3][columnC]) {
+      const agencyValue = data[3][columnC].replace(/^Agency:\s*/i, '').trim();
+      if (agencyValue) headerInfo.agency = agencyValue;
+    }
 
-    // For now, using the defaults you provided, but this structure suggests
-    // the actual values should be in additional columns (C, E, G, K) that aren't in this JSON
+    if (data[4] && columnC && data[4][columnC]) {
+      const clientValue = data[4][columnC].replace(/^Client:\s*/i, '').trim();
+      if (clientValue) headerInfo.client = clientValue;
+    }
 
-    // Extract header information (rows 2-11) - Parse the SLATE INFORMATION section
+    if (data[5] && columnC && data[5][columnC]) {
+      const productValue = data[5][columnC].replace(/^Product:\s*/i, '').trim();
+      if (productValue) headerInfo.product = productValue;
+    }
+
+    if (data[11] && columnC && data[11][columnC]) {
+      const copyrightValue = data[11][columnC].replace(/^Copyright:\s*/i, '').trim();
+      if (copyrightValue) headerInfo.copyright = copyrightValue;
+    }
+
+    // Also try to extract from main column
     for (let i = 2; i <= 11; i++) {
       if (data[i]) {
         const key = data[i][mainColumn];
@@ -165,7 +174,6 @@ const DeliveryTool = () => {
           const cleanField = field.trim().toLowerCase();
           const cleanValue = value ? value.trim() : '';
 
-          // Only update if we actually have a value (not empty string)
           if (cleanValue && cleanValue !== '') {
             if (cleanField === 'agency') headerInfo.agency = cleanValue;
             if (cleanField === 'client') headerInfo.client = cleanValue;
@@ -180,25 +188,26 @@ const DeliveryTool = () => {
       }
     }
 
-    // Parse delivery items (starting from row 14)
-    for (let i = 14; i < data.length; i++) {
+    // Parse delivery items (starting from row 14, index 13)
+    for (let i = 13; i < data.length; i++) {
       const row = data[i];
       const col1 = row[mainColumn] || '';
       const col2 = row[specsColumn] || '';
-      const aspectRatioCol = row["Aspect Ratio"] || '';
 
-      // Skip empty rows
+      const colC = columnC && row[columnC] ? row[columnC].trim() : '';
+      const colE = columnE && row[columnE] ? row[columnE].trim() : '';
+      const colG = columnG && row[columnG] ? row[columnG].trim() : '';
+      const colK = columnK && row[columnK] ? row[columnK].trim() : '';
+
       if (!col1 && !col2) continue;
 
-      // Check if this is a title row (contains duration like :30, :15, etc.)
       if (col1 && (col1.includes(':') && /:\d+/.test(col1)) && !col2) {
         currentTitle = col1;
+        console.log('Found new title:', currentTitle);
         continue;
       }
 
-      // Check if this is a delivery item (has ship date and specs)
       if (col1 && col2 && currentTitle) {
-        // Skip ProRes Unslated items
         if (col2.includes('ProRes Unslated')) {
           continue;
         }
@@ -206,26 +215,36 @@ const DeliveryTool = () => {
         let shipDate = col1;
         const specs = col2;
 
-        // Parse date formats
         if (shipDate.includes('2025-')) {
-          shipDate = shipDate.split('T')[0]; // Remove time part
+          shipDate = shipDate.split('T')[0];
         } else if (shipDate.includes('/')) {
           const [month, day] = shipDate.split('/');
           shipDate = `2025-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
         }
 
-        // Extract duration from current title (e.g., ":15" from "SIP IT TEASER :15")
-        let duration = 'N/A';
+        let duration = headerInfo.duration;
         const durationMatch = currentTitle.match(/:(\d+)/);
         if (durationMatch) {
           duration = `:${durationMatch[1]}`;
         }
 
-        // Determine suggested format from specs (parsing ASPECT RATIO from specs text)
-        let suggestedFormat = '16x9'; // default
+        if (colG && colG.includes(':')) {
+          duration = colG;
+        }
+
+        let isci = headerInfo.isci;
+        if (colE) {
+          isci = colE;
+        }
+
+        let audio = headerInfo.audio;
+        if (colK) {
+          audio = colK;
+        }
+
+        let suggestedFormat = '16x9';
         let platform = 'Other';
 
-        // Look for aspect ratio in the specs text
         if (specs.includes('ASPECT RATIO: 16x9') || specs.includes('16x9')) {
           suggestedFormat = '16x9';
         } else if (specs.includes('ASPECT RATIO: 9x16') || specs.includes('9x16')) {
@@ -235,7 +254,6 @@ const DeliveryTool = () => {
         } else if (specs.includes('ASPECT RATIO: 4x5') || specs.includes('4x5') || specs.includes('4:5')) {
           suggestedFormat = '4x5';
         } else {
-          // Fallback to platform mapping
           for (const [platformName, format] of Object.entries(platformMapping)) {
             if (specs.includes(platformName)) {
               suggestedFormat = format;
@@ -245,7 +263,6 @@ const DeliveryTool = () => {
           }
         }
 
-        // Extract platform from specs for display
         for (const [platformName] of Object.entries(platformMapping)) {
           if (specs.includes(platformName)) {
             platform = platformName;
@@ -253,7 +270,6 @@ const DeliveryTool = () => {
           }
         }
 
-        // Create formatted title with aspect ratio (e.g., "SIP IT TEASER :15 16x9")
         const formattedTitle = `${currentTitle} ${suggestedFormat}`;
 
         deliveries.push({
@@ -263,20 +279,19 @@ const DeliveryTool = () => {
           ship_date: shipDate,
           platform: platform,
           specs: specs,
-          aspect_ratio: aspectRatioCol,
+          aspect_ratio: suggestedFormat,
           suggested_slate_format: suggestedFormat,
           duration: duration,
           agency: headerInfo.agency,
           client: headerInfo.client,
           product: headerInfo.product,
-          isci: headerInfo.isci,
-          audio: headerInfo.audio,
+          isci: isci,
+          audio: audio,
           copyright: headerInfo.copyright
         });
       }
     }
 
-    // Create summary
     const formatCounts = {};
     deliveries.forEach(d => {
       formatCounts[d.suggested_slate_format] = (formatCounts[d.suggested_slate_format] || 0) + 1;
@@ -297,6 +312,19 @@ const DeliveryTool = () => {
         platforms: uniquePlatforms
       }
     };
+  };
+
+  // Handle manual creation save
+  const handleManualSave = (manualData) => {
+    setCleanedData(manualData);
+    setRawJsonData({ manual: true });
+    setShowManualCreator(false);
+    console.log('Manual delivery data created:', manualData);
+  };
+
+  // Handle manual creation cancel
+  const handleManualCancel = () => {
+    setShowManualCreator(false);
   };
 
   const handleFileUpload = (event) => {
@@ -323,6 +351,8 @@ const DeliveryTool = () => {
     }
   };
 
+  // frontend/src/components/DeliveryTool.jsx - PART 2 (Append to Part 1)
+
   const generateTTGContent = (delivery, templateKey) => {
     const template = ttgTemplates[templateKey];
     const currentDate = new Date().toLocaleDateString('en-US', {
@@ -335,36 +365,31 @@ const DeliveryTool = () => {
       year: 'numeric'
     });
 
-    // Helper function to convert text to ASCII codes
     const textToAsciiCodes = (text) => {
       return Array.from(text).map(char => char.charCodeAt(0)).join(' ');
     };
 
-    // Format today's date for slate (e.g., "June 3 2025")
     const todaysDate = new Date().toLocaleDateString('en-US', {
       month: 'long',
       day: 'numeric',
       year: 'numeric'
     });
 
-    // Build the text fields for slate - exact field mapping as requested
     const slateFields = [
-      { value: delivery.agency || 'N/A' },           // Agency from JSON header
-      { value: delivery.client || 'N/A' },           // Client from JSON header
-      { value: delivery.product || 'N/A' },          // Product from JSON header
-      { value: delivery.video_title || 'N/A' },      // Title / Version (e.g., "SIP IT TEASER :15 16x9")
-      { value: delivery.isci || 'N/A' },             // ISCI / AD-ID from JSON header
-      { value: delivery.duration || 'N/A' },         // Duration (e.g., ":15")
-      { value: delivery.audio || 'N/A' },            // Audio Mix from JSON header
-      { value: todaysDate },                         // Today's date (not ship date!)
-      { value: delivery.copyright || 'N/A' }         // Copyright from JSON header
+      { value: delivery.agency || 'N/A' },
+      { value: delivery.client || 'N/A' },
+      { value: delivery.product || 'N/A' },
+      { value: delivery.video_title || 'N/A' },
+      { value: delivery.isci || 'N/A' },
+      { value: delivery.duration || 'N/A' },
+      { value: delivery.audio || 'N/A' },
+      { value: todaysDate },
+      { value: delivery.copyright || 'N/A' }
     ];
 
-    // Generate paragraph sections for each field - exact format match
     let paragraphSections = '';
 
     slateFields.forEach((field, index) => {
-      const isLast = index === slateFields.length - 1;
       const asciiCodes = textToAsciiCodes(field.value);
 
       paragraphSections += `TextLength ${field.value.length}
@@ -392,7 +417,6 @@ End
 `;
     });
 
-    // Generate the complete TTG content - exact format match
     const ttgContent = `Module Text
 Program Flame
 Version 2025.2.2
@@ -560,18 +584,12 @@ EndGen`;
 
   const selectOutputFolder = async () => {
     try {
-      // Use the File System Access API for modern browsers
       if ('showDirectoryPicker' in window) {
         const dirHandle = await window.showDirectoryPicker();
-        // Try to get the full path if possible
         const fullPath = dirHandle.name;
         setOutputPath(fullPath);
-        console.log('Selected folder:', dirHandle);
-
-        // Store the directory handle for later use
         window.selectedDirectoryHandle = dirHandle;
       } else {
-        // Fallback: use input element with webkitdirectory
         const input = document.createElement('input');
         input.type = 'file';
         input.webkitdirectory = true;
@@ -597,11 +615,8 @@ EndGen`;
     const a = document.createElement('a');
     a.href = url;
     a.download = ttgFile.filename;
-
-    // Add attributes to prevent popup
     a.style.display = 'none';
     a.target = '_self';
-
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -611,7 +626,6 @@ EndGen`;
   const downloadAllTTG = async () => {
     if (ttgFiles.length === 0) return;
 
-    // Try to write directly to selected folder if possible
     if (window.selectedDirectoryHandle && 'showDirectoryPicker' in window) {
       try {
         let successCount = 0;
@@ -637,22 +651,17 @@ EndGen`;
         }
       } catch (error) {
         console.error('Direct folder write failed:', error);
-        // Fall back to download method
       }
     }
 
-    // Fallback: Create a single ZIP file to avoid multiple popups
     try {
-      // Import JSZip dynamically
       const JSZip = (await import('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js')).default;
       const zip = new JSZip();
 
-      // Add each TTG file to the zip
       ttgFiles.forEach(file => {
         zip.file(file.filename, file.content);
       });
 
-      // Generate and download the zip
       const zipBlob = await zip.generateAsync({type: 'blob'});
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
@@ -689,118 +698,125 @@ EndGen`;
         <p className="text-gray-400">Upload delivery schedule JSON, auto-parse, and generate TTG slate files for Flame</p>
       </div>
 
-      {/* Step 1: Upload - Centered */}
-      <div className="bg-neutral-700 border border-neutral-600 rounded-lg p-8 mb-8">
-        <h2 className="text-xl font-semibold text-white mb-6 text-center">Upload Delivery Schedule or Create Manually</h2>
+      {/* Step 1: Upload OR Manual Creation */}
+      {!showManualCreator ? (
+        <div className="bg-neutral-700 border border-neutral-600 rounded-lg p-8 mb-8">
+          <h2 className="text-xl font-semibold text-white mb-6 text-center">Upload Delivery Schedule or Create Manually</h2>
 
-        <div className="flex flex-col items-center max-w-2xl mx-auto">
-          {/* Centered Upload Area */}
-          <div
-            className="border-2 border-dashed border-neutral-500 rounded-lg p-12 text-center hover:border-blue-500 transition-colors cursor-pointer w-full mb-6"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="mx-auto text-neutral-400 mb-4" size={64} />
-            <p className="text-white font-medium mb-2 text-lg">
-              {rawJsonData ? '✅ JSON file loaded' : 'Click to upload JSON file'}
-            </p>
-            <p className="text-neutral-400 text-sm">
-              {cleanedData ? `${cleanedData.deliverables.length} slated deliverables found` : 'Upload your Blacksmith delivery schedule'}
-            </p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
+          <div className="flex flex-col items-center max-w-2xl mx-auto">
+            <div
+              className="border-2 border-dashed border-neutral-500 rounded-lg p-12 text-center hover:border-blue-500 transition-colors cursor-pointer w-full mb-6"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="mx-auto text-neutral-400 mb-4" size={64} />
+              <p className="text-white font-medium mb-2 text-lg">
+                {rawJsonData ? '✅ JSON file loaded' : 'Click to upload JSON file'}
+              </p>
+              <p className="text-neutral-400 text-sm">
+                {cleanedData ? `${cleanedData.deliverables.length} slated deliverables found` : 'Upload your Blacksmith delivery schedule'}
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </div>
+
+            {!rawJsonData && (
+              <div className="w-full">
+                <div className="flex items-center mb-4">
+                  <div className="flex-1 h-px bg-neutral-500"></div>
+                  <span className="px-4 text-neutral-400 text-sm">OR</span>
+                  <div className="flex-1 h-px bg-neutral-500"></div>
+                </div>
+
+                <button
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 px-6 rounded-lg flex items-center justify-center gap-3 transition-colors text-lg font-medium"
+                  onClick={() => setShowManualCreator(true)}
+                >
+                  <FileText size={24} />
+                  Manual Creation
+                </button>
+                <p className="text-neutral-400 text-xs text-center mt-2">
+                  Create delivery slates manually without uploading a file
+                </p>
+              </div>
+            )}
+
+            {rawJsonData && (
+              <div className="w-full">
+                <div className="flex items-center justify-between bg-neutral-600 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="text-green-400" size={24} />
+                    <div>
+                      <p className="text-white font-medium">
+                        {rawJsonData.manual ? 'Manual Deliverables Created' : 'JSON File Loaded'}
+                      </p>
+                      <p className="text-neutral-400 text-sm">{cleanedData?.deliverables.length || 0} deliverables ready</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setRawJsonData(null);
+                      setCleanedData(null);
+                      setTtgFiles([]);
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <Trash2 size={16} />
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Manual Creation Button - Only show when no JSON is loaded */}
-          {!rawJsonData && (
-            <div className="w-full">
-              <div className="flex items-center mb-4">
-                <div className="flex-1 h-px bg-neutral-500"></div>
-                <span className="px-4 text-neutral-400 text-sm">OR</span>
-                <div className="flex-1 h-px bg-neutral-500"></div>
-              </div>
-
-              <button
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 px-6 rounded-lg flex items-center justify-center gap-3 transition-colors text-lg font-medium"
-                onClick={() => {/* TODO: Implement manual creation */}}
-              >
-                <FileText size={24} />
-                Manual Creation
-              </button>
-              <p className="text-neutral-400 text-xs text-center mt-2">
-                Create delivery slates manually without uploading a file
-              </p>
-            </div>
-          )}
-
-          {/* Cancel/Clear JSON Button - Only show when JSON is loaded */}
-          {rawJsonData && (
-            <div className="w-full">
-              <div className="flex items-center justify-between bg-neutral-600 rounded-lg p-4">
-                <div className="flex items-center gap-3">
-                  <CheckCircle className="text-green-400" size={24} />
-                  <div>
-                    <p className="text-white font-medium">JSON File Loaded</p>
-                    <p className="text-neutral-400 text-sm">{cleanedData?.deliverables.length || 0} deliverables ready</p>
+          {cleanedData && (
+            <div className="bg-neutral-600 rounded-lg p-6 mt-6 max-w-2xl mx-auto">
+              <h3 className="text-white font-medium mb-4 text-center">
+                {rawJsonData?.manual ? 'Manual Entry Summary' : 'Parsed Summary'}
+              </h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Total Videos:</span>
+                    <span className="text-blue-400">{cleanedData.summary.total_videos}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Slated Deliverables:</span>
+                    <span className="text-green-400">{cleanedData.summary.total_slated_deliverables}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Client:</span>
+                    <span className="text-purple-400">{cleanedData.project_info.client}</span>
                   </div>
                 </div>
-                <button
-                  onClick={() => {
-                    setRawJsonData(null);
-                    setCleanedData(null);
-                    setTtgFiles([]);
-                  }}
-                  className="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg flex items-center gap-2 transition-colors"
-                >
-                  <Trash2 size={16} />
-                  Clear
-                </button>
+                <div>
+                  <span className="text-neutral-400 block mb-2">Formats Needed:</span>
+                  <div className="space-y-1">
+                    {Object.entries(cleanedData.summary.formats_needed).map(([format, count]) => (
+                      <div key={format} className="flex justify-between text-xs">
+                        <span className="text-neutral-300">{format}:</span>
+                        <span className="text-orange-400">{count} files</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}
         </div>
+      ) : (
+        <ManualDeliveryCreator
+          onSave={handleManualSave}
+          onCancel={handleManualCancel}
+        />
+      )}
 
-        {/* Parsed Summary - Only show when JSON is loaded */}
-        {cleanedData && (
-          <div className="bg-neutral-600 rounded-lg p-6 mt-6 max-w-2xl mx-auto">
-            <h3 className="text-white font-medium mb-4 text-center">Parsed Summary</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">Total Videos:</span>
-                  <span className="text-blue-400">{cleanedData.summary.total_videos}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">Slated Deliverables:</span>
-                  <span className="text-green-400">{cleanedData.summary.total_slated_deliverables}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">Client:</span>
-                  <span className="text-purple-400">{cleanedData.project_info.client}</span>
-                </div>
-              </div>
-              <div>
-                <span className="text-neutral-400 block mb-2">Formats Needed:</span>
-                <div className="space-y-1">
-                  {Object.entries(cleanedData.summary.formats_needed).map(([format, count]) => (
-                    <div key={format} className="flex justify-between text-xs">
-                      <span className="text-neutral-300">{format}:</span>
-                      <span className="text-orange-400">{count} files</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Step 2: Output Path - Only show when JSON is loaded */}
-      {cleanedData && (
+      {/* Step 2: Output Path */}
+      {cleanedData && !showManualCreator && (
         <div className="bg-neutral-700 border border-neutral-600 rounded-lg p-6 mb-8">
           <h2 className="text-xl font-semibold text-white mb-4">2. Set Output Path</h2>
           <div className="flex gap-4">
@@ -825,7 +841,7 @@ EndGen`;
       )}
 
       {/* Step 3: Preview & Generate */}
-      {cleanedData && (
+      {cleanedData && !showManualCreator && (
         <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-8">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-white">3. Preview & Generate TTG Files</h2>
@@ -861,7 +877,6 @@ EndGen`;
             </div>
           </div>
 
-          {/* File Preview */}
           {showPreview && (
             <div className="bg-neutral-600 rounded-lg p-4 mb-6">
               <h3 className="text-white font-medium mb-3">Files that will be generated:</h3>
@@ -898,7 +913,7 @@ EndGen`;
       )}
 
       {/* Generated Files */}
-      {ttgFiles.length > 0 && (
+      {ttgFiles.length > 0 && !showManualCreator && (
         <div className="bg-neutral-700 border border-neutral-600 rounded-lg p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-white">
@@ -1051,7 +1066,6 @@ EndGen`;
                       .join('\n');
 
                     navigator.clipboard.writeText(readableText).then(() => {
-                      // You could add a toast notification here
                       console.log('Readable format copied to clipboard');
                     });
                   }}
