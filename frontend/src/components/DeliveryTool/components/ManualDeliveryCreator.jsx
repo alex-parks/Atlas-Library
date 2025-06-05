@@ -22,7 +22,9 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
       platform: 'YouTube',
       aspectRatio: '16x9',
       isci: '',
-      audio: 'Web Stereo'
+      audio: 'Web Stereo',
+      customPlatform: '',
+      customAudio: ''
     }
   ]);
 
@@ -64,7 +66,9 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
       platform: 'YouTube',
       aspectRatio: '16x9',
       isci: '',
-      audio: 'Web Stereo'
+      audio: 'Web Stereo',
+      customPlatform: '',
+      customAudio: ''
     }]);
   };
 
@@ -251,14 +255,14 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
           <table className="w-full">
             <thead>
               <tr className="border-b border-neutral-500">
-                <th className="text-left py-3 px-2 text-neutral-300 font-medium">Title *</th>
-                <th className="text-left py-3 px-2 text-neutral-300 font-medium">Duration</th>
-                <th className="text-left py-3 px-2 text-neutral-300 font-medium">Ship Date *</th>
-                <th className="text-left py-3 px-2 text-neutral-300 font-medium">Platform</th>
-                <th className="text-left py-3 px-2 text-neutral-300 font-medium">Aspect Ratio</th>
-                <th className="text-left py-3 px-2 text-neutral-300 font-medium">ISCI</th>
-                <th className="text-left py-3 px-2 text-neutral-300 font-medium">Audio</th>
-                <th className="text-left py-3 px-2 text-neutral-300 font-medium">Actions</th>
+                <th className="text-left py-3 px-2 text-neutral-300 font-medium min-w-[120px]">Title *</th>
+                <th className="text-left py-3 px-2 text-neutral-300 font-medium min-w-[80px]">Duration</th>
+                <th className="text-left py-3 px-2 text-neutral-300 font-medium min-w-[100px]">Ship Date *</th>
+                <th className="text-left py-3 px-2 text-neutral-300 font-medium min-w-[120px]">Platform</th>
+                <th className="text-left py-3 px-2 text-neutral-300 font-medium min-w-[120px]">Aspect Ratio</th>
+                <th className="text-left py-3 px-2 text-neutral-300 font-medium min-w-[100px]">ISCI</th>
+                <th className="text-left py-3 px-2 text-neutral-300 font-medium min-w-[120px]">Audio</th>
+                <th className="text-left py-3 px-2 text-neutral-300 font-medium min-w-[80px]">Actions</th>
               </tr>
             </thead>
             <tbody>

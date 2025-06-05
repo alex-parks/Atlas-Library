@@ -1,132 +1,96 @@
 // frontend/src/components/DeliveryTool/components/OutputPathSection.jsx
 
-import React, { useState } from 'react';
-import { FolderOpen, CheckCircle, AlertCircle } from 'lucide-react';
+import React from 'react';
+import { FolderOpen, CheckCircle } from 'lucide-react';
 
 const OutputPathSection = ({ outputPath, setOutputPath }) => {
-  const [folderSelected, setFolderSelected] = useState(false);
-  const [isSelecting, setIsSelecting] = useState(false);
 
-  const chooseSaveLocation = async () => {
-    setIsSelecting(true);
+  const selectFolder = async () => {
+    console.log('🔄 Starting folder selection...');
 
     try {
-      // Method 1: Try the File System Access API (modern browsers)
+      // Method 1: Try modern File System Access API first
       if ('showDirectoryPicker' in window) {
-        try {
-          const dirHandle = await window.showDirectoryPicker({
-            mode: 'readwrite',
-            startIn: 'desktop'
-          });
+        console.log('📁 Using showDirectoryPicker API');
 
-          // Store the directory handle globally for file saving
-          window.selectedDirectoryHandle = dirHandle;
+        const dirHandle = await window.showDirectoryPicker({
+          mode: 'readwrite'
+        });
 
-          // Set a user-friendly display name
-          const displayName = dirHandle.name || 'Selected Folder';
-          setOutputPath(displayName);
-          setFolderSelected(true);
+        console.log('✅ Directory handle received:', dirHandle);
 
-          console.log('✅ Folder selected:', dirHandle);
+        // Store the handle globally for file saving
+        window.selectedDirectoryHandle = dirHandle;
 
-          // Test if we can actually write to this folder
-          try {
-            const testFile = await dirHandle.getFileHandle('test_write.txt', { create: true });
-            await testFile.remove(); // Clean up test file
-            console.log('✅ Write permission confirmed');
-          } catch (writeError) {
-            console.warn('⚠️ Write permission uncertain:', writeError);
-          }
+        // Set the display path
+        const folderName = dirHandle.name;
+        console.log('📂 Setting path to:', folderName);
+        setOutputPath(folderName);
 
-          setIsSelecting(false);
-          return;
-
-        } catch (fsError) {
-          console.log('File System Access API failed:', fsError);
-          // Fall through to next method
-        }
+        console.log('✅ Path set successfully');
+        return;
       }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('❌ User cancelled folder selection');
+        return;
+      }
+      console.log('⚠️ showDirectoryPicker failed:', error);
+    }
 
-      // Method 2: Fallback using webkitdirectory (works in most browsers)
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.webkitdirectory = true;
-      input.multiple = true;
+    // Method 2: Fallback to webkitdirectory
+    console.log('📁 Using webkitdirectory fallback');
 
-      // Create a promise to handle the file selection
-      const fileSelection = new Promise((resolve, reject) => {
-        input.onchange = (e) => {
-          const files = Array.from(e.target.files);
-          if (files.length > 0) {
-            resolve(files);
-          } else {
-            reject(new Error('No files selected'));
-          }
-        };
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.webkitdirectory = true;
+    input.multiple = true;
 
-        input.oncancel = () => {
-          reject(new Error('Selection cancelled'));
-        };
+    const handleFiles = (event) => {
+      const files = event.target.files;
+      console.log('📂 Files received:', files.length);
 
-        // Trigger file picker
-        input.click();
-      });
-
-      try {
-        const files = await fileSelection;
+      if (files && files.length > 0) {
         const firstFile = files[0];
+        console.log('📄 First file:', firstFile);
+        console.log('📄 WebkitRelativePath:', firstFile.webkitRelativePath);
 
-        // Extract the folder path
-        let folderPath = 'Selected Folder';
+        // Extract folder path
+        let folderPath = '';
         if (firstFile.webkitRelativePath) {
           const pathParts = firstFile.webkitRelativePath.split('/');
+          console.log('🗂️ Path parts:', pathParts);
+
           if (pathParts.length > 1) {
             pathParts.pop(); // Remove filename
             folderPath = pathParts.join('/');
+          } else {
+            folderPath = pathParts[0] || 'Selected Folder';
           }
         }
 
-        // Store reference for fallback saving
-        window.selectedFolderFiles = files;
+        if (!folderPath) {
+          folderPath = 'Selected Folder';
+        }
+
+        console.log('📂 Setting folder path to:', folderPath);
+        setOutputPath(folderPath);
+
+        // Store for download functionality
+        window.selectedFolderFiles = Array.from(files);
         window.selectedFolderPath = folderPath;
 
-        setOutputPath(folderPath);
-        setFolderSelected(true);
-
-        console.log('✅ Folder selected via webkitdirectory:', folderPath);
-
-      } catch (selectionError) {
-        if (selectionError.message !== 'Selection cancelled') {
-          console.error('File selection failed:', selectionError);
-          throw selectionError;
-        }
+        console.log('✅ Folder selection complete');
       }
+    };
 
-    } catch (error) {
-      console.error('All folder selection methods failed:', error);
-
-      // Final fallback - let user type manually
-      const manualPath = prompt(
-        'Folder selection failed. Please enter the full path where you want to save TTG files:\n\n' +
-        'Examples:\n' +
-        '• Windows: C:\\Users\\YourName\\Desktop\\TTG_Files\n' +
-        '• macOS: /Users/YourName/Desktop/TTG_Files\n' +
-        '• Simple: TTG_Files'
-      );
-
-      if (manualPath && manualPath.trim()) {
-        setOutputPath(manualPath.trim());
-        setFolderSelected(true);
-        console.log('✅ Manual path entered:', manualPath);
-      }
-    }
-
-    setIsSelecting(false);
+    input.addEventListener('change', handleFiles);
+    input.click();
   };
 
-  const clearSelection = () => {
+  const clearPath = () => {
+    console.log('🗑️ Clearing output path');
     setOutputPath('');
-    setFolderSelected(false);
     delete window.selectedDirectoryHandle;
     delete window.selectedFolderFiles;
     delete window.selectedFolderPath;
@@ -137,108 +101,65 @@ const OutputPathSection = ({ outputPath, setOutputPath }) => {
       <h2 className="text-xl font-semibold text-white mb-4">2. Choose Save Location</h2>
 
       <div className="space-y-4">
-        {/* Main action area */}
-        {!folderSelected ? (
-          <div className="border-2 border-dashed border-neutral-500 rounded-lg p-8 text-center">
-            <FolderOpen className="mx-auto text-neutral-400 mb-4" size={48} />
-            <p className="text-white font-medium mb-2">Choose where to save your TTG files</p>
-            <p className="text-neutral-400 text-sm mb-4">
-              Select a folder on your computer where the generated TTG files will be saved
-            </p>
-
+        {/* Folder Selection */}
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <input
+              type="text"
+              placeholder="No folder selected - click 'Select Folder' or type path manually"
+              value={outputPath}
+              onChange={(e) => {
+                console.log('✏️ Manual path entered:', e.target.value);
+                setOutputPath(e.target.value);
+              }}
+              className="w-full bg-neutral-600 border border-neutral-500 rounded-lg px-4 py-3 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <button
+            onClick={selectFolder}
+            className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg flex items-center gap-2 transition-colors text-white font-medium"
+          >
+            <FolderOpen size={18} />
+            Select Folder
+          </button>
+          {outputPath && (
             <button
-              onClick={chooseSaveLocation}
-              disabled={isSelecting}
-              className={`px-6 py-3 rounded-lg flex items-center gap-2 mx-auto transition-colors ${
-                isSelecting 
-                  ? 'bg-neutral-600 text-neutral-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
+              onClick={clearPath}
+              className="bg-red-600 hover:bg-red-700 px-4 py-3 rounded-lg text-white font-medium"
             >
-              {isSelecting ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Selecting...
-                </>
-              ) : (
-                <>
-                  <FolderOpen size={18} />
-                  Choose Folder
-                </>
-              )}
+              Clear
             </button>
+          )}
+        </div>
+
+        {/* Status Display */}
+        {outputPath ? (
+          <div className="bg-green-900/20 border border-green-500 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="text-green-400" size={20} />
+              <span className="text-green-400 font-medium">Save location set:</span>
+              <span className="text-white">{outputPath}</span>
+              {window.selectedDirectoryHandle && (
+                <span className="text-green-300 text-sm ml-2">✓ Direct save enabled</span>
+              )}
+            </div>
           </div>
         ) : (
-          // Show selected folder
-          <div className="bg-green-900/20 border border-green-500 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <CheckCircle className="text-green-400" size={24} />
-                <div>
-                  <p className="text-white font-medium">Save location selected</p>
-                  <p className="text-green-400 text-sm">{outputPath}</p>
-                  {window.selectedDirectoryHandle && (
-                    <p className="text-xs text-green-300">✓ Direct file saving enabled</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={chooseSaveLocation}
-                  className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded text-sm transition-colors"
-                >
-                  Change
-                </button>
-                <button
-                  onClick={clearSelection}
-                  className="bg-neutral-600 hover:bg-neutral-500 text-white py-2 px-3 rounded text-sm transition-colors"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
+          <div className="bg-yellow-900/20 border border-yellow-500 rounded-lg p-3">
+            <p className="text-yellow-400 text-sm">
+              ⚠️ Please select a save location - files will save as individual TTG files
+            </p>
           </div>
         )}
 
-        {/* Manual entry option */}
-        <div className="border-t border-neutral-600 pt-4">
-          <p className="text-neutral-400 text-sm mb-2">Or enter path manually:</p>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="e.g., C:\Users\YourName\Desktop\TTG_Files"
-              value={outputPath}
-              onChange={(e) => {
-                setOutputPath(e.target.value);
-                setFolderSelected(!!e.target.value.trim());
-              }}
-              className="flex-1 bg-neutral-600 border border-neutral-500 rounded-lg px-3 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 text-sm"
-            />
-            {outputPath && (
-              <button
-                onClick={clearSelection}
-                className="bg-red-600 hover:bg-red-700 text-white py-2 px-3 rounded text-sm transition-colors"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Status indicator */}
-        <div className="flex items-center gap-2 text-sm">
-          {folderSelected ? (
-            <>
-              <CheckCircle size={16} className="text-green-400" />
-              <span className="text-green-400">Ready to save files</span>
-            </>
-          ) : (
-            <>
-              <AlertCircle size={16} className="text-yellow-400" />
-              <span className="text-yellow-400">Choose a save location to continue</span>
-            </>
-          )}
+        {/* Debug Info */}
+        <div className="text-xs text-neutral-500">
+          <p className="mb-1">💡 Debug Info:</p>
+          <ul className="list-disc list-inside space-y-1 ml-2">
+            <li>Current path: {outputPath || 'None'}</li>
+            <li>Directory handle: {window.selectedDirectoryHandle ? 'Available' : 'Not available'}</li>
+            <li>Browser support: {('showDirectoryPicker' in window) ? 'Modern API' : 'Legacy webkitdirectory'}</li>
+          </ul>
         </div>
       </div>
     </div>

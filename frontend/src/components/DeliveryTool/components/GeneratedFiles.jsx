@@ -1,67 +1,173 @@
 // frontend/src/components/DeliveryTool/components/GeneratedFiles.jsx
 
 import React, { useState } from 'react';
-import { Download, FileText, Eye, CheckCircle, AlertTriangle } from 'lucide-react';
-import { downloadSingleTTG, downloadAllTTG, getSaveMethodDescription } from '../utils/fileUtils';
+import { Download, FileText, Eye, CheckCircle, AlertTriangle, FolderOpen } from 'lucide-react';
 
 const GeneratedFiles = ({ ttgFiles, outputPath, setPreviewSlate }) => {
   const [downloading, setDownloading] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState(null);
 
-  const handleSingleDownload = async (ttgFile) => {
-    try {
-      const result = await downloadSingleTTG(ttgFile);
+  const downloadSingleTTG = async (ttgFile) => {
+    console.log('📥 Downloading single file:', ttgFile.filename);
 
-      if (result.success) {
-        if (result.method === 'direct') {
-          setDownloadStatus({
-            type: 'success',
-            message: `✅ ${result.filename} saved to your selected folder!`
-          });
-        } else {
-          setDownloadStatus({
-            type: 'info',
-            message: `📥 ${result.filename} downloaded to your browser's download folder`
-          });
-        }
+    // Method 1: Try to save directly to selected folder
+    if (window.selectedDirectoryHandle) {
+      try {
+        console.log('💾 Attempting direct save to folder...');
 
-        // Clear status after 3 seconds
+        const fileHandle = await window.selectedDirectoryHandle.getFileHandle(
+          ttgFile.filename,
+          { create: true }
+        );
+
+        const writable = await fileHandle.createWritable();
+        await writable.write(ttgFile.content);
+        await writable.close();
+
+        console.log('✅ File saved directly to folder');
+        setDownloadStatus({
+          type: 'success',
+          message: `✅ ${ttgFile.filename} saved to ${outputPath}`
+        });
+
         setTimeout(() => setDownloadStatus(null), 3000);
-      }
+        return;
 
-    } catch (error) {
-      setDownloadStatus({
-        type: 'error',
-        message: `❌ Failed to download ${ttgFile.filename}: ${error.message}`
-      });
-      setTimeout(() => setDownloadStatus(null), 5000);
+      } catch (error) {
+        console.error('❌ Direct save failed:', error);
+        // Fall through to browser download
+      }
     }
+
+    // Method 2: Browser download fallback
+    console.log('📥 Using browser download...');
+    const blob = new Blob([ttgFile.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+
+    a.href = url;
+    a.download = ttgFile.filename;
+    a.style.display = 'none';
+    a.target = '_self';
+
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setDownloadStatus({
+      type: 'info',
+      message: `📥 ${ttgFile.filename} downloaded to Downloads folder`
+    });
+
+    setTimeout(() => setDownloadStatus(null), 3000);
   };
 
-  const handleDownloadAll = async () => {
+  const downloadAllTTG = async () => {
     if (ttgFiles.length === 0) return;
+
+    console.log('🔄 Starting download of all files...');
+    console.log('📁 Output path:', outputPath);
+    console.log('📦 Files to download:', ttgFiles.length);
 
     setDownloading(true);
     setDownloadStatus(null);
 
-    try {
-      const result = await downloadAllTTG(ttgFiles, outputPath);
+    // Method 1: Try to save all files directly to selected folder
+    if (window.selectedDirectoryHandle) {
+      console.log('💾 Attempting to save all files directly to folder...');
 
-      if (result.success) {
-        setDownloadStatus({
-          type: 'success',
-          message: result.message
-        });
+      try {
+        let successCount = 0;
+        let failureCount = 0;
+
+        for (const file of ttgFiles) {
+          try {
+            console.log(`💾 Saving ${file.filename}...`);
+
+            const fileHandle = await window.selectedDirectoryHandle.getFileHandle(
+              file.filename,
+              { create: true }
+            );
+
+            const writable = await fileHandle.createWritable();
+            await writable.write(file.content);
+            await writable.close();
+
+            successCount++;
+            console.log(`✅ Saved ${file.filename}`);
+
+          } catch (error) {
+            console.error(`❌ Failed to save ${file.filename}:`, error);
+            failureCount++;
+          }
+        }
+
+        setDownloading(false);
+
+        if (successCount === ttgFiles.length) {
+          setDownloadStatus({
+            type: 'success',
+            message: `✅ Successfully saved all ${successCount} TTG files to ${outputPath}!`
+          });
+        } else {
+          setDownloadStatus({
+            type: 'success',
+            message: `✅ Saved ${successCount} files, ${failureCount} failed. Check ${outputPath} folder.`
+          });
+        }
+
+        setTimeout(() => setDownloadStatus(null), 5000);
+        return;
+
+      } catch (error) {
+        console.error('❌ Bulk direct save failed:', error);
+        // Fall through to individual downloads
+      }
+    }
+
+    // Method 2: Individual browser downloads
+    console.log('📥 Using individual browser downloads...');
+
+    try {
+      for (let i = 0; i < ttgFiles.length; i++) {
+        const file = ttgFiles[i];
+
+        console.log(`📥 Downloading ${file.filename} (${i + 1}/${ttgFiles.length})`);
+
+        const blob = new Blob([file.content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+
+        a.href = url;
+        a.download = file.filename;
+        a.style.display = 'none';
+        a.target = '_self';
+
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        // Small delay between downloads to avoid browser blocking
+        if (i < ttgFiles.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
       }
 
+      setDownloadStatus({
+        type: 'success',
+        message: `✅ Downloaded all ${ttgFiles.length} TTG files to your Downloads folder!`
+      });
+
     } catch (error) {
+      console.error('❌ Individual downloads failed:', error);
       setDownloadStatus({
         type: 'error',
         message: `❌ Download failed: ${error.message}`
       });
     } finally {
       setDownloading(false);
-      // Clear status after 5 seconds
       setTimeout(() => setDownloadStatus(null), 5000);
     }
   };
@@ -73,7 +179,7 @@ const GeneratedFiles = ({ ttgFiles, outputPath, setPreviewSlate }) => {
           Generated TTG Files ({ttgFiles.length})
         </h2>
         <button
-          onClick={handleDownloadAll}
+          onClick={downloadAllTTG}
           disabled={downloading}
           className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
             downloading 
@@ -84,12 +190,12 @@ const GeneratedFiles = ({ ttgFiles, outputPath, setPreviewSlate }) => {
           {downloading ? (
             <>
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              Saving...
+              Saving Files...
             </>
           ) : (
             <>
               <Download size={18} />
-              Download All
+              Download All TTG Files
             </>
           )}
         </button>
@@ -117,9 +223,15 @@ const GeneratedFiles = ({ ttgFiles, outputPath, setPreviewSlate }) => {
 
       {/* Save method info */}
       <div className="mb-4 p-3 bg-neutral-600 rounded-lg">
-        <p className="text-sm text-neutral-300">
-          💾 {getSaveMethodDescription()}
-        </p>
+        <div className="flex items-center gap-2">
+          <FolderOpen size={16} className="text-neutral-400" />
+          <p className="text-sm text-neutral-300">
+            {window.selectedDirectoryHandle
+              ? `💾 Files will save directly to: ${outputPath || 'selected folder'}`
+              : `📥 Files will download individually to your Downloads folder${outputPath ? ` (move to: ${outputPath})` : ''}`
+            }
+          </p>
+        </div>
       </div>
 
       {/* File list */}
@@ -145,9 +257,9 @@ const GeneratedFiles = ({ ttgFiles, outputPath, setPreviewSlate }) => {
                 <Eye size={16} />
               </button>
               <button
-                onClick={() => handleSingleDownload(file)}
+                onClick={() => downloadSingleTTG(file)}
                 className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition-colors"
-                title="Download"
+                title="Download Single File"
               >
                 <Download size={16} />
               </button>
