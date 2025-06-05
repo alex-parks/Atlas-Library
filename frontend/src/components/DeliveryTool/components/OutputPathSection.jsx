@@ -1,99 +1,60 @@
 // frontend/src/components/DeliveryTool/components/OutputPathSection.jsx
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { FolderOpen, CheckCircle } from 'lucide-react';
 
 const OutputPathSection = ({ outputPath, setOutputPath }) => {
+  const folderInputRef = useRef(null);
 
-  const selectFolder = async () => {
-    console.log('🔄 Starting folder selection...');
-
+  const selectOutputFolder = async () => {
     try {
-      // Method 1: Try modern File System Access API first
       if ('showDirectoryPicker' in window) {
-        console.log('📁 Using showDirectoryPicker API');
-
-        const dirHandle = await window.showDirectoryPicker({
-          mode: 'readwrite'
-        });
-
-        console.log('✅ Directory handle received:', dirHandle);
-
-        // Store the handle globally for file saving
+        const dirHandle = await window.showDirectoryPicker();
+        setOutputPath(dirHandle.name);
         window.selectedDirectoryHandle = dirHandle;
-
-        // Set the display path
-        const folderName = dirHandle.name;
-        console.log('📂 Setting path to:', folderName);
-        setOutputPath(folderName);
-
-        console.log('✅ Path set successfully');
+        window.hasFolderSelected = true;
         return;
       }
     } catch (error) {
       if (error.name === 'AbortError') {
-        console.log('❌ User cancelled folder selection');
         return;
       }
-      console.log('⚠️ showDirectoryPicker failed:', error);
+      // If showDirectoryPicker fails, fall back to file input
     }
 
-    // Method 2: Fallback to webkitdirectory
-    console.log('📁 Using webkitdirectory fallback');
+    // Fallback to webkitdirectory
+    folderInputRef.current?.click();
+  };
 
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.webkitdirectory = true;
-    input.multiple = true;
+  const handleFolderSelect = (event) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      const firstFile = files[0];
+      let folderPath = '';
 
-    const handleFiles = (event) => {
-      const files = event.target.files;
-      console.log('📂 Files received:', files.length);
-
-      if (files && files.length > 0) {
-        const firstFile = files[0];
-        console.log('📄 First file:', firstFile);
-        console.log('📄 WebkitRelativePath:', firstFile.webkitRelativePath);
-
-        // Extract folder path
-        let folderPath = '';
-        if (firstFile.webkitRelativePath) {
-          const pathParts = firstFile.webkitRelativePath.split('/');
-          console.log('🗂️ Path parts:', pathParts);
-
-          if (pathParts.length > 1) {
-            pathParts.pop(); // Remove filename
-            folderPath = pathParts.join('/');
-          } else {
-            folderPath = pathParts[0] || 'Selected Folder';
-          }
-        }
-
-        if (!folderPath) {
-          folderPath = 'Selected Folder';
-        }
-
-        console.log('📂 Setting folder path to:', folderPath);
-        setOutputPath(folderPath);
-
-        // Store for download functionality
-        window.selectedFolderFiles = Array.from(files);
-        window.selectedFolderPath = folderPath;
-
-        console.log('✅ Folder selection complete');
+      if (firstFile.webkitRelativePath) {
+        const pathParts = firstFile.webkitRelativePath.split('/');
+        pathParts.pop(); // Remove filename to get folder path
+        folderPath = pathParts.join('/');
       }
-    };
 
-    input.addEventListener('change', handleFiles);
-    input.click();
+      if (!folderPath) {
+        folderPath = 'Selected Folder';
+      }
+
+      setOutputPath(folderPath);
+      window.selectedFolderPath = folderPath;
+      window.hasFolderSelected = true; // Flag for manual paths
+    }
   };
 
   const clearPath = () => {
-    console.log('🗑️ Clearing output path');
     setOutputPath('');
     delete window.selectedDirectoryHandle;
-    delete window.selectedFolderFiles;
     delete window.selectedFolderPath;
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
+    }
   };
 
   return (
@@ -106,21 +67,28 @@ const OutputPathSection = ({ outputPath, setOutputPath }) => {
           <div className="flex-1">
             <input
               type="text"
-              placeholder="No folder selected - click 'Select Folder' or type path manually"
+              placeholder="Click 'Browse' to select output folder or type path manually..."
               value={outputPath}
               onChange={(e) => {
-                console.log('✏️ Manual path entered:', e.target.value);
                 setOutputPath(e.target.value);
+                // Set flag when user types manual path
+                if (e.target.value.trim()) {
+                  window.selectedFolderPath = e.target.value.trim();
+                  window.hasFolderSelected = true;
+                } else {
+                  delete window.selectedFolderPath;
+                  delete window.hasFolderSelected;
+                }
               }}
               className="w-full bg-neutral-600 border border-neutral-500 rounded-lg px-4 py-3 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
             />
           </div>
           <button
-            onClick={selectFolder}
+            onClick={selectOutputFolder}
             className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg flex items-center gap-2 transition-colors text-white font-medium"
           >
             <FolderOpen size={18} />
-            Select Folder
+            Browse
           </button>
           {outputPath && (
             <button
@@ -132,35 +100,33 @@ const OutputPathSection = ({ outputPath, setOutputPath }) => {
           )}
         </div>
 
+        {/* Hidden folder input - modified to show "Open" like CSV upload */}
+        <input
+          ref={folderInputRef}
+          type="file"
+          onChange={handleFolderSelect}
+          className="hidden"
+          webkitdirectory=""
+          directory=""
+          multiple
+        />
+
         {/* Status Display */}
         {outputPath ? (
           <div className="bg-green-900/20 border border-green-500 rounded-lg p-3">
             <div className="flex items-center gap-2">
               <CheckCircle className="text-green-400" size={20} />
-              <span className="text-green-400 font-medium">Save location set:</span>
+              <span className="text-green-400 font-medium">Save location:</span>
               <span className="text-white">{outputPath}</span>
-              {window.selectedDirectoryHandle && (
-                <span className="text-green-300 text-sm ml-2">✓ Direct save enabled</span>
-              )}
             </div>
           </div>
         ) : (
           <div className="bg-yellow-900/20 border border-yellow-500 rounded-lg p-3">
             <p className="text-yellow-400 text-sm">
-              ⚠️ Please select a save location - files will save as individual TTG files
+              Select a folder to save TTG files
             </p>
           </div>
         )}
-
-        {/* Debug Info */}
-        <div className="text-xs text-neutral-500">
-          <p className="mb-1">💡 Debug Info:</p>
-          <ul className="list-disc list-inside space-y-1 ml-2">
-            <li>Current path: {outputPath || 'None'}</li>
-            <li>Directory handle: {window.selectedDirectoryHandle ? 'Available' : 'Not available'}</li>
-            <li>Browser support: {('showDirectoryPicker' in window) ? 'Modern API' : 'Legacy webkitdirectory'}</li>
-          </ul>
-        </div>
       </div>
     </div>
   );
