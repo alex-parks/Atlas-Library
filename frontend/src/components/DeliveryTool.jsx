@@ -55,18 +55,293 @@ const DeliveryTool = () => {
     }
   };
 
-  // Platform to aspect ratio mapping
-  const platformMapping = {
-    'YouTube': '16x9',
-    'Youtube': '16x9',
-    'TikTok + YouTube Shorts': '9x16',
-    'Stories (Vertical)': '9x16',
-    'Meta 1:1': '1x1',
-    'Meta': '1x1',
-    'Pinterest': '4x5',
-    'OTT SPECS': '16x9',
-    'Youtube Specs (For Google)': '16x9',
-    'Under 100 mb': '16x9'
+  // Function to parse TTG content into readable format
+  const parseTTGContent = (ttgContent) => {
+    const lines = ttgContent.split('\n');
+
+    // Extract the slate fields from the TTG content
+    // TTG files store text as ASCII codes, so we need to convert them back
+    const asciiToText = (asciiCodes) => {
+      return asciiCodes.split(' ').map(code => String.fromCharCode(parseInt(code))).join('');
+    };
+
+    // Find all text fields in the TTG content
+    const textFields = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // Look for TextLength indicators
+      if (line.startsWith('TextLength ')) {
+        const length = parseInt(line.split(' ')[1]);
+        const nextLine = lines[i + 1]?.trim();
+
+        if (nextLine && nextLine.startsWith('Text ')) {
+          const asciiCodes = nextLine.substring(5); // Remove "Text " prefix
+          try {
+            const text = asciiToText(asciiCodes);
+            textFields.push(text);
+          } catch (error) {
+            textFields.push('N/A');
+          }
+        }
+      }
+    }
+
+    // Map the fields to their labels (based on your slate structure)
+    const fieldLabels = [
+      'Agency',
+      'Client',
+      'Product',
+      'Title / Version',
+      'ISCI / AD-ID',
+      'Duration',
+      'Audio Mix',
+      'Date',
+      'Copyright'
+    ];
+
+    // Create the parsed object
+    const parsedData = {};
+    fieldLabels.forEach((label, index) => {
+      parsedData[label] = textFields[index] || 'N/A';
+    });
+
+    return parsedData;
+  };
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (file.name.endsWith('.csv')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const csvData = e.target.result;
+          setRawCsvData(csvData);
+
+          // Parse and set data
+          reprocessData(csvData, slatedOnlyMode);
+        } catch (error) {
+          alert('Invalid CSV file. Please check the format.');
+        }
+      };
+      reader.readAsText(file);
+    } else {
+      alert('Please upload a CSV file.');
+    }
+  };
+
+  // Function to reprocess data when toggle changes
+  const reprocessData = (csvData, slatedOnly) => {
+    const cleaned = parseDeliverableSheetWithMode(csvData, slatedOnly);
+    setCleanedData(cleaned);
+    // Initialize all groups as enabled by default
+    setEnabledGroups(new Set(cleaned.deliverable_groups.map(group => group.groupTitle)));
+    // Initialize individual deliverables as DISABLED by default (they start unchecked)
+    setEnabledDeliverables(new Set());
+    console.log('Cleaned data:', cleaned);
+  };
+
+  // FIXED PARSING FUNCTION - Main fix here
+  const parseDeliverableSheetWithMode = (csvData, slatedOnly) => {
+    const lines = csvData.split('\n');
+    const data = lines.map(line => {
+      // Simple CSV parsing - handles quoted fields
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    });
+
+    // Extract header information (rows 4-12, columns B+C)
+    const headerInfo = {
+      agency: data[3] ? data[3][1] || 'N/A' : 'N/A',
+      client: data[4] ? data[4][1] || 'N/A' : 'N/A',
+      product: data[5] ? data[5][1] || 'N/A' : 'N/A',
+      title: data[6] ? data[6][1] || 'N/A' : 'N/A',
+      isci: data[7] ? data[7][1] || 'N/A' : 'N/A',
+      duration: data[8] ? data[8][1] || 'N/A' : 'N/A',
+      audio: data[9] ? data[9][1] || 'N/A' : 'N/A',
+      date: new Date().toLocaleDateString('en-US'),
+      copyright: data[11] ? data[11][1] || 'N/A' : 'N/A'
+    };
+
+    // Parse deliverables starting from row 15 (index 14)
+    const deliverableGroups = [];
+    let currentGroup = null;
+    let totalRowsProcessed = 0;
+    let slatedFilteredOut = 0;
+
+    console.log('=== PARSING DEBUG INFO ===');
+    console.log(`Slated Only Mode: ${slatedOnly}`);
+    console.log(`Total CSV rows: ${data.length}`);
+
+    for (let i = 14; i < data.length; i++) {
+      const row = data[i];
+      if (!row || !row[0]) continue;
+
+      const firstCol = row[0].toString();
+      totalRowsProcessed++;
+
+      // CORRECT GROUP DETECTION: Real groups are single-column titles only
+      if (!firstCol.match(/^\d+\/\d+/) && firstCol !== "Ship Date " && firstCol.trim() !== '') {
+        // Real groups are ONLY single-column titles with empty B and C columns
+        const isRealGroup = (row[1] === '' || row[1] === undefined) &&
+                           (row[2] === '' || row[2] === undefined) &&
+                           (row[12] === '' || row[12] === undefined) &&
+                           !firstCol.includes('NEW CASH BACK DISCLAIMER') &&
+                           !firstCol.includes('PWV:') &&
+                           !firstCol.includes('RESOULTION') &&
+                           !firstCol.includes('ProRes422');
+
+        if (isRealGroup) {
+          // Save previous group if exists
+          if (currentGroup && currentGroup.deliverables.length > 0) {
+            deliverableGroups.push(currentGroup);
+          }
+
+          // Start new group
+          currentGroup = {
+            groupTitle: firstCol,
+            deliverables: [],
+            enabled: true
+          };
+          console.log(`📁 New Group: "${firstCol}"`);
+        } else {
+          // This might be a deliverable row that spans A:C (disclaimer + specs)
+          if (currentGroup && (row[1] !== '' || row[2] !== '')) {
+            console.log(`📋 Multi-column deliverable info row: "${firstCol.substring(0, 50)}..."`);
+          } else {
+            console.log(`⚠️ Skipping non-group row: "${firstCol.substring(0, 50)}..."`);
+          }
+        }
+      } else if (firstCol.match(/^\d+\/\d+/) && currentGroup) {
+        // This is a spec row for the current group
+        const spec = {
+          shipDate: row[0] || '',
+          shipped: row[1] === 'TRUE' || row[1] === true || row[1] === 'true',
+          version: row[2] || '',
+          platform: row[3] || '',
+          isciAdId: row[4] || '',
+          fileName: row[5] || '',
+          length: row[6] || '',
+          subtitles: row[7] || '',
+          frameRate: row[8] || '',
+          aspectRatio: row[9] || '',
+          audioMix: row[10] || '',
+          legal: row[11] || '',
+          slated: row[12] || '', // Column M - "Slated / Unslated"
+          flameExports: row[13] || '',
+          reviewedBy: row[14] || '',
+          specs: row[15] || ''
+        };
+
+        console.log(`📝 Processing row ${i}: Version="${spec.version}", Slated="${spec.slated}", Platform="${spec.platform}"`);
+
+        // DETAILED DEBUG FOR VENMO GROUP
+        if (currentGroup && currentGroup.groupTitle.includes('Venmo Everything')) {
+          console.log(`🔍 VENMO DEBUG - Row ${i}:`);
+          console.log(`   - Version: "${spec.version}"`);
+          console.log(`   - Slated Status: "${spec.slated}"`);
+          console.log(`   - Platform: "${spec.platform}"`);
+          console.log(`   - Ship Date: "${spec.shipDate}"`);
+          console.log(`   - Specs: "${spec.specs}"`);
+          console.log(`   - All row data:`, row);
+        }
+
+        // FIXED SLATED LOGIC: Check slated status properly
+        const slatedValue = spec.slated.toLowerCase().trim();
+        let shouldInclude = false;
+
+        if (slatedOnly) {
+          // Only include items that are exactly "slated" (not "unslated" or "slated and unslated")
+          shouldInclude = slatedValue === 'slated';
+        } else {
+          // Include anything that has slating info - "slated", "unslated", "slated and unslated"
+          shouldInclude = slatedValue === 'slated' ||
+                         slatedValue === 'unslated' ||
+                         slatedValue.includes('slated and unslated') ||
+                         slatedValue.includes('slated & unslated');
+        }
+
+        // DETAILED DEBUG FOR VENMO FILTERING
+        if (currentGroup && currentGroup.groupTitle.includes('Venmo Everything')) {
+          console.log(`🔍 VENMO FILTER CHECK - Row ${i}:`);
+          console.log(`   - Slated Value: "${slatedValue}"`);
+          console.log(`   - Slated Only Mode: ${slatedOnly}`);
+          console.log(`   - Should Include: ${shouldInclude}`);
+        }
+
+        ifimport React, { useState, useRef } from 'react';
+import { Upload, Download, FileText, CheckCircle, AlertCircle, Eye, Trash2, Settings, FolderOpen, Play } from 'lucide-react';
+
+const DeliveryTool = () => {
+  const [rawCsvData, setRawCsvData] = useState(null);
+  const [cleanedData, setCleanedData] = useState(null);
+  const [ttgFiles, setTtgFiles] = useState([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [outputPath, setOutputPath] = useState('');
+  const [previewSlate, setPreviewSlate] = useState(null);
+  const [previewFormat, setPreviewFormat] = useState('readable'); // 'readable' or 'ttg'
+  const [enabledGroups, setEnabledGroups] = useState(new Set());
+  const [enabledDeliverables, setEnabledDeliverables] = useState(new Set());
+  const [slatedOnlyMode, setSlatedOnlyMode] = useState(true); // New toggle state
+  const [showPreview, setShowPreview] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // TTG Templates based on your actual files
+  const ttgTemplates = {
+    '1x1': {
+      name: "Slate 1x1 (Square)",
+      frameWidth: 1080,
+      frameHeight: 1080,
+      aspectRatio: 1,
+      translationX: -337,
+      translationY: 130,
+      description: "Square format for Meta 1:1"
+    },
+    '4x5': {
+      name: "Slate 4x5 (Portrait)",
+      frameWidth: 864,
+      frameHeight: 1080,
+      aspectRatio: 0.800000012,
+      translationX: -244,
+      translationY: 130,
+      description: "Portrait format for Pinterest"
+    },
+    '9x16': {
+      name: "Slate 9x16 (Vertical)",
+      frameWidth: 1080,
+      frameHeight: 1920,
+      aspectRatio: 0.5625,
+      translationX: -342,
+      translationY: 128.111115,
+      description: "Vertical format for TikTok/Stories"
+    },
+    '16x9': {
+      name: "Slate 16x9 (Widescreen)",
+      frameWidth: 1920,
+      frameHeight: 1080,
+      aspectRatio: 1.77777779,
+      translationX: -440,
+      translationY: 130,
+      description: "Widescreen format for YouTube/OTT"
+    }
   };
 
   // Function to parse TTG content into readable format
@@ -124,270 +399,6 @@ const DeliveryTool = () => {
     return parsedData;
   };
 
-  const parseDeliverableSheet = (csvData) => {
-    const lines = csvData.split('\n');
-    const data = lines.map(line => {
-      // Simple CSV parsing - handles quoted fields
-      const result = [];
-      let current = '';
-      let inQuotes = false;
-
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-          result.push(current.trim());
-          current = '';
-        } else {
-          current += char;
-        }
-      }
-      result.push(current.trim());
-      return result;
-    });
-
-    // Extract header information (rows 4-12, columns B+C)
-    const headerInfo = {
-      agency: data[3] ? data[3][1] || '' : '',
-      client: data[4] ? data[4][1] || '' : '',
-      product: data[5] ? data[5][1] || '' : '',
-      title: data[6] ? data[6][1] || '' : '',
-      isci: data[7] ? data[7][1] || '' : '',
-      duration: data[8] ? data[8][1] || '' : '',
-      audio: data[9] ? data[9][1] || '' : '',
-      date: new Date().toLocaleDateString('en-US'),
-      copyright: data[11] ? data[11][1] || '' : ''
-    };
-
-    // Parse deliverables starting from row 15 (index 14)
-    const deliverableGroups = [];
-    let currentGroup = null;
-
-    for (let i = 14; i < data.length; i++) {
-      const row = data[i];
-      if (!row || !row[0]) continue;
-
-      const firstCol = row[0].toString();
-
-      // Check if this is a deliverable group title (not a date)
-      // Replace the problematic section around line 430-460 with this corrected version:
-
-    // CORRECT GROUP DETECTION: Real groups are single-column titles only
-    if (!firstCol.match(/^\d+\/\d+/) && firstCol !== "Ship Date " && firstCol.trim() !== '') {
-
-      // Real groups are ONLY single-column titles with empty B and C columns
-      const isRealGroup = (row[1] === '' || row[1] === undefined) &&  // Column B should be empty for real groups
-                         (row[2] === '' || row[2] === undefined) &&  // Column C should be empty for real groups
-                         (row[12] === '' || row[12] === undefined) && // Column M should be empty for real groups
-                         !firstCol.includes('NEW CASH BACK DISCLAIMER') &&
-                         !firstCol.includes('PWV:') &&
-                         !firstCol.includes('RESOULTION') &&
-                         !firstCol.includes('ProRes422');
-
-      if (isRealGroup) {
-        // Save previous group if exists
-        if (currentGroup && currentGroup.deliverables.length > 0) {
-          deliverableGroups.push(currentGroup);
-        }
-
-        // Start new group
-        currentGroup = {
-          groupTitle: firstCol,
-          deliverables: [],
-          enabled: true
-        };
-        console.log(`📁 New Group: "${firstCol}"`);
-      } else {
-        // This might be a deliverable row that spans A:C (disclaimer + specs)
-        if (currentGroup && (row[1] !== '' || row[2] !== '')) {
-          console.log(`📋 Multi-column deliverable info row: "${firstCol.substring(0, 50)}..."`);
-          // We'll handle this as a special deliverable type later if needed
-        } else {
-          console.log(`⚠️ Skipping non-group row: "${firstCol.substring(0, 50)}..."`);
-        }
-      }
-    } else if (firstCol.match(/^\d+\/\d+/) && currentGroup) {
-      // This is a spec row for the current group
-      const spec = {
-        shipDate: row[0] || '',
-        shipped: row[1] === 'TRUE' || row[1] === true || row[1] === 'true',
-        version: row[2] || '',
-        platform: row[3] || '',
-        isciAdId: row[4] || '',
-        fileName: row[5] || '',
-        length: row[6] || '',
-        subtitles: row[7] || '',
-        frameRate: row[8] || '',
-        aspectRatio: row[9] || '',
-        audioMix: row[10] || '',
-        legal: row[11] || '',
-        slated: row[12] || '', // Column M - "Slated / Unslated"
-        flameExports: row[13] || '',
-        reviewedBy: row[14] || '',
-        specs: row[15] || ''
-      };
-
-      console.log(`📝 Processing row ${i}: Version="${spec.version}", Slated="${spec.slated}", Platform="${spec.platform}"`);
-
-      // FIXED SLATED LOGIC: Check slated status properly
-      const slatedValue = spec.slated.toLowerCase().trim();
-      let shouldInclude = false;
-
-      if (slatedOnly) {
-        // Only include items that are exactly "slated" (not "unslated" or "slated and unslated")
-        shouldInclude = slatedValue === 'slated';
-      } else {
-        // Include anything that has slating info - "slated", "unslated", "slated and unslated"
-        shouldInclude = slatedValue === 'slated' ||
-                       slatedValue === 'unslated' ||
-                       slatedValue.includes('slated and unslated') ||
-                       slatedValue.includes('slated & unslated');
-      }
-
-      if (!shouldInclude) {
-        console.log(`❌ FILTERED OUT (Slated): "${spec.version}" - Slated value: "${spec.slated}"`);
-        slatedFilteredOut++;
-        continue;
-      }
-
-      // REMOVED ProRes filter - include everything but mark ProRes items
-      const isProRes = spec.specs.includes('ProRes Unslated');
-      if (isProRes) {
-        console.log(`⚠️ ProRes Unslated item included: "${spec.version}"`);
-        proResFilteredOut++; // Just for counting, not filtering
-      }
-
-      console.log(`✅ INCLUDED: "${spec.version}" - Slated: "${spec.slated}"`);
-
-      // Use the individual title from Column C (Title / Version) - DEFAULT TO GROUP TITLE IF EMPTY
-      const individualTitle = spec.version || currentGroup.groupTitle || 'Untitled';
-
-      // Get aspect ratio from Column J first, then fallback
-      let suggestedFormat = '16x9'; // default
-      let platform = spec.platform || 'N/A';
-
-      // Primary: Use the actual Aspect Ratio column (Column J)
-      if (spec.aspectRatio) {
-        const aspectRatio = spec.aspectRatio.toString().toLowerCase();
-        if (aspectRatio.includes('16x9') || aspectRatio.includes('16:9')) {
-          suggestedFormat = '16x9';
-        } else if (aspectRatio.includes('9x16') || aspectRatio.includes('9:16')) {
-          suggestedFormat = '9x16';
-        } else if (aspectRatio.includes('1x1') || aspectRatio.includes('1:1')) {
-          suggestedFormat = '1x1';
-        } else if (aspectRatio.includes('4x5') || aspectRatio.includes('4:5')) {
-          suggestedFormat = '4x5';
-        }
-      } else {
-        // Fallback: Check specs text if aspect ratio column is empty
-        if (spec.specs.includes('ASPECT RATIO: 16x9') || spec.specs.includes('16x9')) {
-          suggestedFormat = '16x9';
-        } else if (spec.specs.includes('ASPECT RATIO: 9x16') || spec.specs.includes('9x16')) {
-          suggestedFormat = '9x16';
-        } else if (spec.specs.includes('ASPECT RATIO: 1x1') || spec.specs.includes('1x1') || spec.specs.includes('1:1')) {
-          suggestedFormat = '1x1';
-        } else if (spec.specs.includes('ASPECT RATIO: 4x5') || spec.specs.includes('4x5') || spec.specs.includes('4:5')) {
-          suggestedFormat = '4x5';
-        } else {
-          // Enhanced platform mapping as final fallback
-          const platformLower = platform.toLowerCase();
-          const specsLower = spec.specs.toLowerCase();
-
-          if (platformLower.includes('tiktok') ||
-              platformLower.includes('stories') ||
-              platformLower.includes('vertical') ||
-              specsLower.includes('tiktok') ||
-              specsLower.includes('stories') ||
-              specsLower.includes('vertical')) {
-            suggestedFormat = '9x16';
-          } else if (platformLower.includes('1:1') ||
-                     platformLower.includes('meta 1:1') ||
-                     specsLower.includes('1:1') ||
-                     specsLower.includes('square')) {
-            suggestedFormat = '1x1';
-          } else if (platformLower.includes('pinterest') ||
-                     specsLower.includes('pinterest') ||
-                     specsLower.includes('4:5')) {
-            suggestedFormat = '4x5';
-          } else {
-            suggestedFormat = '16x9';
-          }
-        }
-      }
-
-      // Parse ship date - KEEP EVEN IF EMPTY
-      let shipDate = spec.shipDate || 'N/A';
-      if (shipDate !== 'N/A') {
-        if (shipDate.includes('2025-')) {
-          shipDate = shipDate.split('T')[0]; // Remove time part
-        } else if (shipDate.includes('/')) {
-          const [month, day] = shipDate.split('/');
-          shipDate = `2025-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-        }
-      }
-
-      // Use length column for duration - DEFAULT TO N/A IF EMPTY
-      let duration = spec.length ? `${spec.length}s` : 'N/A';
-
-      // Create unique ID for this deliverable
-      const deliverableId = `${deliverableGroups.length}_${currentGroup.deliverables.length}`;
-
-      currentGroup.deliverables.push({
-        id: deliverableId,
-        video_title: individualTitle,
-        original_title: currentGroup.groupTitle || 'Untitled Group',
-        ship_date: shipDate,
-        platform: platform,
-        specs: spec.specs || 'N/A',
-        aspect_ratio: spec.aspectRatio || 'N/A',
-        suggested_slate_format: suggestedFormat,
-        duration: duration,
-        shipped: spec.shipped,
-        slated_status: spec.slated || 'N/A',
-        agency: headerInfo.agency,
-        client: headerInfo.client,
-        product: headerInfo.product,
-        isci: headerInfo.isci,
-        audio: headerInfo.audio,
-        copyright: headerInfo.copyright
-      });
-    }
-      }
-    }
-
-    // Don't forget the last group
-    if (currentGroup && currentGroup.deliverables.length > 0) {
-      deliverableGroups.push(currentGroup);
-    }
-
-    // Flatten deliverables for summary
-    const allDeliverables = deliverableGroups.flatMap(group =>
-      group.enabled ? group.deliverables : []
-    );
-
-    // Create summary
-    const formatCounts = {};
-    allDeliverables.forEach(d => {
-      formatCounts[d.suggested_slate_format] = (formatCounts[d.suggested_slate_format] || 0) + 1;
-    });
-
-    const uniquePlatforms = [...new Set(allDeliverables.map(d => d.platform))];
-    const uniqueVideos = [...new Set(allDeliverables.map(d => d.original_title))];
-
-    return {
-      project_info: headerInfo,
-      deliverable_groups: deliverableGroups,
-      summary: {
-        total_slated_deliverables: allDeliverables.length,
-        total_videos: uniqueVideos.length,
-        date_range: allDeliverables.length > 0 ?
-          `${Math.min(...allDeliverables.map(d => d.ship_date))} to ${Math.max(...allDeliverables.map(d => d.ship_date))}` : '',
-        formats_needed: formatCounts,
-        platforms: uniquePlatforms
-      }
-    };
-  };
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -422,295 +433,246 @@ const DeliveryTool = () => {
     console.log('Cleaned data:', cleaned);
   };
 
-  // Updated parsing function that takes slatedOnly parameter
-  // Add this debug version to see what's being filtered out
-// Replace your parseDeliverableSheetWithMode function with this debug version
+  // FIXED PARSING FUNCTION - Main fix here
+  const parseDeliverableSheetWithMode = (csvData, slatedOnly) => {
+    const lines = csvData.split('\n');
+    const data = lines.map(line => {
+      // Simple CSV parsing - handles quoted fields
+      const result = [];
+      let current = '';
+      let inQuotes = false;
 
-// Add this debug version to see what's being filtered out
-// Replace your parseDeliverableSheetWithMode function with this debug version
-
-// Add this debug version to see what's being filtered out
-// Replace your parseDeliverableSheetWithMode function with this debug version
-
-// Add this debug version to see what's being filtered out
-// Replace your parseDeliverableSheetWithMode function with this debug version
-
-const parseDeliverableSheetWithMode = (csvData, slatedOnly) => {
-  const lines = csvData.split('\n');
-  const data = lines.map(line => {
-    // Simple CSV parsing - handles quoted fields
-    const result = [];
-    let current = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        result.push(current.trim());
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    result.push(current.trim());
-    return result;
-  });
-
-  // Extract header information (rows 4-12, columns B+C)
-  const headerInfo = {
-    agency: data[3] ? data[3][1] || 'N/A' : 'N/A',
-    client: data[4] ? data[4][1] || 'N/A' : 'N/A',
-    product: data[5] ? data[5][1] || 'N/A' : 'N/A',
-    title: data[6] ? data[6][1] || 'N/A' : 'N/A',
-    isci: data[7] ? data[7][1] || 'N/A' : 'N/A',
-    duration: data[8] ? data[8][1] || 'N/A' : 'N/A',
-    audio: data[9] ? data[9][1] || 'N/A' : 'N/A',
-    date: new Date().toLocaleDateString('en-US'),
-    copyright: data[11] ? data[11][1] || 'N/A' : 'N/A'
-  };
-
-  // Parse deliverables starting from row 15 (index 14)
-  const deliverableGroups = [];
-  let currentGroup = null;
-  let totalRowsProcessed = 0;
-  let rowsSkipped = 0;
-  let slatedFilteredOut = 0;
-  let proResFilteredOut = 0;
-
-  console.log('=== PARSING DEBUG INFO ===');
-  console.log(`Slated Only Mode: ${slatedOnly}`);
-  console.log(`Total CSV rows: ${data.length}`);
-
-  for (let i = 14; i < data.length; i++) {
-    const row = data[i];
-    if (!row || !row[0]) continue;
-
-    const firstCol = row[0].toString();
-    totalRowsProcessed++;
-
-    // CORRECT GROUP DETECTION: Real groups are single-column titles only
-    if (!firstCol.match(/^\d+\/\d+/) && firstCol !== "Ship Date " && firstCol.trim() !== '') {
-
-      // Real groups are ONLY single-column titles with empty B and C columns
-      const isRealGroup = (row[1] === '' || row[1] === undefined) &&  // Column B should be empty for real groups
-                         (row[2] === '' || row[2] === undefined) &&  // Column C should be empty for real groups
-                         (row[12] === '' || row[12] === undefined) && // Column M should be empty for real groups
-                         !firstCol.includes('NEW CASH BACK DISCLAIMER') &&
-                         !firstCol.includes('PWV:') &&
-                         !firstCol.includes('RESOULTION') &&
-                         !firstCol.includes('ProRes422');
-
-      if (isRealGroup) {
-        // Save previous group if exists
-        if (currentGroup && currentGroup.deliverables.length > 0) {
-          deliverableGroups.push(currentGroup);
-        }
-
-        // Start new group
-        currentGroup = {
-          groupTitle: firstCol,
-          deliverables: [],
-          enabled: true
-        };
-        console.log(`📁 New Group: "${firstCol}"`);
-      } else {
-        // This might be a deliverable row that spans A:C (disclaimer + specs)
-        if (currentGroup && (row[1] !== '' || row[2] !== '')) {
-          console.log(`📋 Multi-column deliverable info row: "${firstCol.substring(0, 50)}..."`);
-          // We'll handle this as a special deliverable type later if needed
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
         } else {
-          console.log(`⚠️ Skipping non-group row: "${firstCol.substring(0, 50)}..."`);
+          current += char;
         }
-      } else if (firstCol.match(/^\d+\/\d+/) && currentGroup) {
-      // This is a spec row for the current group
-      const spec = {
-        shipDate: row[0] || '',
-        shipped: row[1] === 'TRUE' || row[1] === true || row[1] === 'true',
-        version: row[2] || '',
-        platform: row[3] || '',
-        isciAdId: row[4] || '',
-        fileName: row[5] || '',
-        length: row[6] || '',
-        subtitles: row[7] || '',
-        frameRate: row[8] || '',
-        aspectRatio: row[9] || '',
-        audioMix: row[10] || '',
-        legal: row[11] || '',
-        slated: row[12] || '', // Column M - "Slated / Unslated"
-        flameExports: row[13] || '',
-        reviewedBy: row[14] || '',
-        specs: row[15] || ''
-      };
-
-      console.log(`📝 Processing row ${i}: Version="${spec.version}", Slated="${spec.slated}", Platform="${spec.platform}"`);
-
-      // FIXED SLATED LOGIC: Check slated status properly
-      const slatedValue = spec.slated.toLowerCase().trim();
-      let shouldInclude = false;
-
-      if (slatedOnly) {
-        // Only include items that are exactly "slated" (not "unslated" or "slated and unslated")
-        shouldInclude = slatedValue === 'slated';
-      } else {
-        // Include anything that has slating info - "slated", "unslated", "slated and unslated"
-        shouldInclude = slatedValue === 'slated' ||
-                       slatedValue === 'unslated' ||
-                       slatedValue.includes('slated and unslated') ||
-                       slatedValue.includes('slated & unslated');
       }
+      result.push(current.trim());
+      return result;
+    });
 
-      if (!shouldInclude) {
-        console.log(`❌ FILTERED OUT (Slated): "${spec.version}" - Slated value: "${spec.slated}"`);
-        slatedFilteredOut++;
-        continue;
-      }
+    // Extract header information (rows 4-12, columns B+C)
+    const headerInfo = {
+      agency: data[3] ? data[3][1] || 'N/A' : 'N/A',
+      client: data[4] ? data[4][1] || 'N/A' : 'N/A',
+      product: data[5] ? data[5][1] || 'N/A' : 'N/A',
+      title: data[6] ? data[6][1] || 'N/A' : 'N/A',
+      isci: data[7] ? data[7][1] || 'N/A' : 'N/A',
+      duration: data[8] ? data[8][1] || 'N/A' : 'N/A',
+      audio: data[9] ? data[9][1] || 'N/A' : 'N/A',
+      date: new Date().toLocaleDateString('en-US'),
+      copyright: data[11] ? data[11][1] || 'N/A' : 'N/A'
+    };
 
-      // REMOVED ProRes filter - include everything but mark ProRes items
-      const isProRes = spec.specs.includes('ProRes Unslated');
-      if (isProRes) {
-        console.log(`⚠️ ProRes Unslated item included: "${spec.version}"`);
-        proResFilteredOut++; // Just for counting, not filtering
-      }
+    // Parse deliverables starting from row 15 (index 14)
+    const deliverableGroups = [];
+    let currentGroup = null;
+    let totalRowsProcessed = 0;
+    let slatedFilteredOut = 0;
 
-      console.log(`✅ INCLUDED: "${spec.version}" - Slated: "${spec.slated}"`);
+    console.log('=== PARSING DEBUG INFO ===');
+    console.log(`Slated Only Mode: ${slatedOnly}`);
+    console.log(`Total CSV rows: ${data.length}`);
 
-      // Use the individual title from Column C (Title / Version) - DEFAULT TO GROUP TITLE IF EMPTY
-      const individualTitle = spec.version || currentGroup.groupTitle || 'Untitled';
+    for (let i = 14; i < data.length; i++) {
+      const row = data[i];
+      if (!row || !row[0]) continue;
 
-      // Get aspect ratio from Column J first, then fallback
-      let suggestedFormat = '16x9'; // default
-      let platform = spec.platform || 'N/A';
+      const firstCol = row[0].toString();
+      totalRowsProcessed++;
 
-      // Primary: Use the actual Aspect Ratio column (Column J)
-      if (spec.aspectRatio) {
-        const aspectRatio = spec.aspectRatio.toString().toLowerCase();
-        if (aspectRatio.includes('16x9') || aspectRatio.includes('16:9')) {
-          suggestedFormat = '16x9';
-        } else if (aspectRatio.includes('9x16') || aspectRatio.includes('9:16')) {
-          suggestedFormat = '9x16';
-        } else if (aspectRatio.includes('1x1') || aspectRatio.includes('1:1')) {
-          suggestedFormat = '1x1';
-        } else if (aspectRatio.includes('4x5') || aspectRatio.includes('4:5')) {
-          suggestedFormat = '4x5';
-        }
-      } else {
-        // Fallback: Check specs text if aspect ratio column is empty
-        if (spec.specs.includes('ASPECT RATIO: 16x9') || spec.specs.includes('16x9')) {
-          suggestedFormat = '16x9';
-        } else if (spec.specs.includes('ASPECT RATIO: 9x16') || spec.specs.includes('9x16')) {
-          suggestedFormat = '9x16';
-        } else if (spec.specs.includes('ASPECT RATIO: 1x1') || spec.specs.includes('1x1') || spec.specs.includes('1:1')) {
-          suggestedFormat = '1x1';
-        } else if (spec.specs.includes('ASPECT RATIO: 4x5') || spec.specs.includes('4x5') || spec.specs.includes('4:5')) {
-          suggestedFormat = '4x5';
+      // CORRECT GROUP DETECTION: Real groups are single-column titles only
+      if (!firstCol.match(/^\d+\/\d+/) && firstCol !== "Ship Date " && firstCol.trim() !== '') {
+        // Real groups are ONLY single-column titles with empty B and C columns
+        const isRealGroup = (row[1] === '' || row[1] === undefined) &&
+                           (row[2] === '' || row[2] === undefined) &&
+                           (row[12] === '' || row[12] === undefined) &&
+                           !firstCol.includes('NEW CASH BACK DISCLAIMER') &&
+                           !firstCol.includes('PWV:') &&
+                           !firstCol.includes('RESOULTION') &&
+                           !firstCol.includes('ProRes422');
+
+        if (isRealGroup) {
+          // Save previous group if exists
+          if (currentGroup && currentGroup.deliverables.length > 0) {
+            deliverableGroups.push(currentGroup);
+          }
+
+          // Start new group
+          currentGroup = {
+            groupTitle: firstCol,
+            deliverables: [],
+            enabled: true
+          };
+          console.log(`📁 New Group: "${firstCol}"`);
         } else {
-          // Enhanced platform mapping as final fallback
-          const platformLower = platform.toLowerCase();
-          const specsLower = spec.specs.toLowerCase();
-
-          if (platformLower.includes('tiktok') ||
-              platformLower.includes('stories') ||
-              platformLower.includes('vertical') ||
-              specsLower.includes('tiktok') ||
-              specsLower.includes('stories') ||
-              specsLower.includes('vertical')) {
-            suggestedFormat = '9x16';
-          } else if (platformLower.includes('1:1') ||
-                     platformLower.includes('meta 1:1') ||
-                     specsLower.includes('1:1') ||
-                     specsLower.includes('square')) {
-            suggestedFormat = '1x1';
-          } else if (platformLower.includes('pinterest') ||
-                     specsLower.includes('pinterest') ||
-                     specsLower.includes('4:5')) {
-            suggestedFormat = '4x5';
+          // This might be a deliverable row that spans A:C (disclaimer + specs)
+          if (currentGroup && (row[1] !== '' || row[2] !== '')) {
+            console.log(`📋 Multi-column deliverable info row: "${firstCol.substring(0, 50)}..."`);
           } else {
-            suggestedFormat = '16x9';
+            console.log(`⚠️ Skipping non-group row: "${firstCol.substring(0, 50)}..."`);
           }
         }
-      }
+      } else if (firstCol.match(/^\d+\/\d+/) && currentGroup) {
+        // This is a spec row for the current group
+        const spec = {
+          shipDate: row[0] || '',
+          shipped: row[1] === 'TRUE' || row[1] === true || row[1] === 'true',
+          version: row[2] || '',
+          platform: row[3] || '',
+          isciAdId: row[4] || '',
+          fileName: row[5] || '',
+          length: row[6] || '',
+          subtitles: row[7] || '',
+          frameRate: row[8] || '',
+          aspectRatio: row[9] || '',
+          audioMix: row[10] || '',
+          legal: row[11] || '',
+          slated: row[12] || '', // Column M - "Slated / Unslated"
+          flameExports: row[13] || '',
+          reviewedBy: row[14] || '',
+          specs: row[15] || ''
+        };
 
-      // Parse ship date - KEEP EVEN IF EMPTY
-      let shipDate = spec.shipDate || 'N/A';
-      if (shipDate !== 'N/A') {
-        if (shipDate.includes('2025-')) {
-          shipDate = shipDate.split('T')[0]; // Remove time part
-        } else if (shipDate.includes('/')) {
-          const [month, day] = shipDate.split('/');
-          shipDate = `2025-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        console.log(`📝 Processing row ${i}: Version="${spec.version}", Slated="${spec.slated}", Platform="${spec.platform}"`);
+
+        // FIXED SLATED LOGIC: Check slated status properly
+        const slatedValue = spec.slated.toLowerCase().trim();
+        let shouldInclude = false;
+
+        if (slatedOnly) {
+          // Only include items that are exactly "slated" (not "unslated" or "slated and unslated")
+          shouldInclude = slatedValue === 'slated';
+        } else {
+          // Include anything that has slating info - "slated", "unslated", "slated and unslated"
+          shouldInclude = slatedValue === 'slated' ||
+                         slatedValue === 'unslated' ||
+                         slatedValue.includes('slated and unslated') ||
+                         slatedValue.includes('slated & unslated');
         }
+
+        if (!shouldInclude) {
+          console.log(`❌ FILTERED OUT (Slated): "${spec.version}" - Slated value: "${spec.slated}"`);
+          slatedFilteredOut++;
+          continue;
+        }
+
+        console.log(`✅ INCLUDED: "${spec.version}" - Slated: "${spec.slated}"`);
+
+        // Use the individual title from Column C (Title / Version) - DEFAULT TO GROUP TITLE IF EMPTY
+        const individualTitle = spec.version || currentGroup.groupTitle || 'Untitled';
+
+        // Get aspect ratio ONLY from Column J (Aspect Ratio column) - NO SPECS COLUMN CHECKING
+        let suggestedFormat = '16x9'; // default
+        let platform = spec.platform || 'N/A';
+
+        // ONLY use the dedicated Aspect Ratio column (Column J)
+        if (spec.aspectRatio && spec.aspectRatio.trim() !== '') {
+          const aspectRatio = spec.aspectRatio.toString().toLowerCase().trim();
+          console.log(`🔍 Aspect Ratio from Column J: "${aspectRatio}"`);
+
+          if (aspectRatio.includes('16x9') || aspectRatio.includes('16:9')) {
+            suggestedFormat = '16x9';
+          } else if (aspectRatio.includes('9x16') || aspectRatio.includes('9:16')) {
+            suggestedFormat = '9x16';
+          } else if (aspectRatio.includes('1x1') || aspectRatio.includes('1:1')) {
+            suggestedFormat = '1x1';
+          } else if (aspectRatio.includes('4x5') || aspectRatio.includes('4:5')) {
+            suggestedFormat = '4x5';
+          } else {
+            console.log(`⚠️ Unknown aspect ratio format: "${aspectRatio}", using default 16x9`);
+            suggestedFormat = '16x9';
+          }
+        } else {
+          // If aspect ratio column is empty, just use default 16x9
+          console.log(`⚠️ No aspect ratio in Column J, using default 16x9`);
+          suggestedFormat = '16x9';
+        }
+
+        // Parse ship date - KEEP EVEN IF EMPTY
+        let shipDate = spec.shipDate || 'N/A';
+        if (shipDate !== 'N/A') {
+          if (shipDate.includes('2025-')) {
+            shipDate = shipDate.split('T')[0]; // Remove time part
+          } else if (shipDate.includes('/')) {
+            const [month, day] = shipDate.split('/');
+            shipDate = `2025-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          }
+        }
+
+        // Use length column for duration - DEFAULT TO N/A IF EMPTY
+        let duration = spec.length ? `${spec.length}s` : 'N/A';
+
+        // Create unique ID for this deliverable
+        const deliverableId = `${deliverableGroups.length}_${currentGroup.deliverables.length}`;
+
+        currentGroup.deliverables.push({
+          id: deliverableId,
+          video_title: individualTitle,
+          original_title: currentGroup.groupTitle || 'Untitled Group',
+          ship_date: shipDate,
+          platform: platform,
+          specs: spec.specs || 'N/A',
+          aspect_ratio: spec.aspectRatio || 'N/A',
+          suggested_slate_format: suggestedFormat,
+          duration: duration,
+          shipped: spec.shipped,
+          slated_status: spec.slated || 'N/A',
+          agency: headerInfo.agency,
+          client: headerInfo.client,
+          product: headerInfo.product,
+          isci: headerInfo.isci,
+          audio: headerInfo.audio,
+          copyright: headerInfo.copyright
+        });
       }
-
-      // Use length column for duration - DEFAULT TO N/A IF EMPTY
-      let duration = spec.length ? `${spec.length}s` : 'N/A';
-
-      // Create unique ID for this deliverable
-      const deliverableId = `${deliverableGroups.length}_${currentGroup.deliverables.length}`;
-
-      currentGroup.deliverables.push({
-        id: deliverableId,
-        video_title: individualTitle,
-        original_title: currentGroup.groupTitle || 'Untitled Group',
-        ship_date: shipDate,
-        platform: platform,
-        specs: spec.specs || 'N/A',
-        aspect_ratio: spec.aspectRatio || 'N/A',
-        suggested_slate_format: suggestedFormat,
-        duration: duration,
-        shipped: spec.shipped,
-        slated_status: spec.slated || 'N/A',
-        agency: headerInfo.agency,
-        client: headerInfo.client,
-        product: headerInfo.product,
-        isci: headerInfo.isci,
-        audio: headerInfo.audio,
-        copyright: headerInfo.copyright
-      });
     }
-  }
 
-  // Don't forget the last group
-  if (currentGroup && currentGroup.deliverables.length > 0) {
-    deliverableGroups.push(currentGroup);
-  }
-
-  // Debug summary
-  console.log('=== PARSING SUMMARY ===');
-  console.log(`Total rows processed: ${totalRowsProcessed}`);
-  console.log(`Filtered out by slated status: ${slatedFilteredOut}`);
-  console.log(`Filtered out by ProRes Unslated: ${proResFilteredOut}`);
-  console.log(`Groups found: ${deliverableGroups.length}`);
-  console.log(`Total deliverables included: ${deliverableGroups.reduce((sum, g) => sum + g.deliverables.length, 0)}`);
-
-  // Flatten deliverables for summary
-  const allDeliverables = deliverableGroups.flatMap(group =>
-    group.enabled ? group.deliverables : []
-  );
-
-  // Create summary
-  const formatCounts = {};
-  allDeliverables.forEach(d => {
-    formatCounts[d.suggested_slate_format] = (formatCounts[d.suggested_slate_format] || 0) + 1;
-  });
-
-  const uniquePlatforms = [...new Set(allDeliverables.map(d => d.platform))];
-  const uniqueVideos = [...new Set(allDeliverables.map(d => d.original_title))];
-
-  return {
-    project_info: headerInfo,
-    deliverable_groups: deliverableGroups,
-    summary: {
-      total_slated_deliverables: allDeliverables.length,
-      total_videos: uniqueVideos.length,
-      date_range: allDeliverables.length > 0 ?
-        `${Math.min(...allDeliverables.map(d => d.ship_date))} to ${Math.max(...allDeliverables.map(d => d.ship_date))}` : '',
-      formats_needed: formatCounts,
-      platforms: uniquePlatforms
+    // Don't forget the last group
+    if (currentGroup && currentGroup.deliverables.length > 0) {
+      deliverableGroups.push(currentGroup);
     }
+
+    // Debug summary
+    console.log('=== PARSING SUMMARY ===');
+    console.log(`Total rows processed: ${totalRowsProcessed}`);
+    console.log(`Filtered out by slated status: ${slatedFilteredOut}`);
+    console.log(`Groups found: ${deliverableGroups.length}`);
+    console.log(`Total deliverables included: ${deliverableGroups.reduce((sum, g) => sum + g.deliverables.length, 0)}`);
+
+    // Flatten deliverables for summary
+    const allDeliverables = deliverableGroups.flatMap(group =>
+      group.enabled ? group.deliverables : []
+    );
+
+    // Create summary
+    const formatCounts = {};
+    allDeliverables.forEach(d => {
+      formatCounts[d.suggested_slate_format] = (formatCounts[d.suggested_slate_format] || 0) + 1;
+    });
+
+    const uniquePlatforms = [...new Set(allDeliverables.map(d => d.platform))];
+    const uniqueVideos = [...new Set(allDeliverables.map(d => d.original_title))];
+
+    return {
+      project_info: headerInfo,
+      deliverable_groups: deliverableGroups,
+      summary: {
+        total_slated_deliverables: allDeliverables.length,
+        total_videos: uniqueVideos.length,
+        date_range: allDeliverables.length > 0 ?
+          `${Math.min(...allDeliverables.map(d => d.ship_date))} to ${Math.max(...allDeliverables.map(d => d.ship_date))}` : '',
+        formats_needed: formatCounts,
+        platforms: uniquePlatforms
+      }
+    };
   };
-}
 
   const generateTTGContent = (delivery, templateKey) => {
     const template = ttgTemplates[templateKey];
@@ -1209,7 +1171,7 @@ EndGen`;
                 </span>
               </div>
               <div className="ml-4 text-xs text-neutral-400">
-                {slatedOnlyMode ? 'Excludes "Slated and Unslated"' : 'Includes "Slated and Unslated"'}
+                {slatedOnlyMode ? 'Excludes "Unslated" items - VERY RESTRICTIVE' : 'Includes both "Slated" and "Unslated" items'}
               </div>
             </div>
 
