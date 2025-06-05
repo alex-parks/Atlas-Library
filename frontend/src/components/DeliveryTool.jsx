@@ -118,179 +118,271 @@ const DeliveryTool = () => {
   };
 
   // Dynamic parsing function for any Blacksmith delivery schedule
-  const parseAndCleanDeliveryJSON = (data) => {
-    const deliveries = [];
-    let currentTitle = '';
+  // REPLACE the parseAndCleanDeliveryJSON function in your DeliveryTool.jsx with this universal version:
 
-    let headerInfo = {
-      agency: 'N/A',
-      client: 'N/A',
-      product: 'N/A',
-      title: 'N/A',
-      isci: 'N/A',
-      duration: 'N/A',
-      audio: 'N/A',
-      copyright: 'N/A'
-    };
+const parseAndCleanDeliveryJSON = (data) => {
+  const deliveries = [];
+  let currentTitle = '';
 
-    const firstRow = data[0] || {};
-    const columnNames = Object.keys(firstRow);
-    console.log('All available columns:', columnNames);
+  // Initialize empty header info - will be populated from actual JSON data
+  let headerInfo = {
+    agency: 'N/A',
+    client: 'N/A',
+    product: 'N/A',
+    title: 'N/A',
+    isci: 'N/A',
+    duration: 'N/A',
+    audio: 'N/A',
+    copyright: 'N/A'
+  };
 
-    const mainColumn = columnNames[0] || '';
-    const specsColumn = columnNames[1] || '';
-    const columnC = columnNames[2] || null;
-    const columnE = columnNames[3] || null;
-    const columnG = columnNames[4] || null;
-    const columnK = columnNames[5] || null;
+  // Detect all available columns
+  const firstRow = data[0] || {};
+  const columnNames = Object.keys(firstRow);
+  console.log('All available columns:', columnNames);
 
-    // Extract slate information from specific rows
-    if (data[3] && columnC && data[3][columnC]) {
-      const agencyValue = data[3][columnC].replace(/^Agency:\s*/i, '').trim();
-      if (agencyValue) headerInfo.agency = agencyValue;
-    }
+  // Primary columns (usually A and B in your spreadsheet)
+  const mainColumn = columnNames[0] || ''; // Column A
+  const specsColumn = columnNames[1] || ''; // Column B
 
-    if (data[4] && columnC && data[4][columnC]) {
-      const clientValue = data[4][columnC].replace(/^Client:\s*/i, '').trim();
-      if (clientValue) headerInfo.client = clientValue;
-    }
+  console.log('Column mapping:');
+  console.log('A (Main):', mainColumn);
+  console.log('B (Specs):', specsColumn);
 
-    if (data[5] && columnC && data[5][columnC]) {
-      const productValue = data[5][columnC].replace(/^Product:\s*/i, '').trim();
-      if (productValue) headerInfo.product = productValue;
-    }
+  // Extract slate information from main column text (rows 2-11)
+  // Parse the actual company data from the JSON
+  for (let i = 2; i <= 11; i++) {
+    if (data[i]) {
+      const key = data[i][mainColumn];
+      if (key && key.includes(':')) {
+        const [field, value] = key.split(':');
+        const cleanField = field.trim().toLowerCase();
+        const cleanValue = value ? value.trim() : '';
 
-    if (data[11] && columnC && data[11][columnC]) {
-      const copyrightValue = data[11][columnC].replace(/^Copyright:\s*/i, '').trim();
-      if (copyrightValue) headerInfo.copyright = copyrightValue;
-    }
-
-    // Also try to extract from main column
-    for (let i = 2; i <= 11; i++) {
-      if (data[i]) {
-        const key = data[i][mainColumn];
-        if (key && key.includes(':')) {
-          const [field, value] = key.split(':');
-          const cleanField = field.trim().toLowerCase();
-          const cleanValue = value ? value.trim() : '';
-
-          if (cleanValue && cleanValue !== '') {
-            if (cleanField === 'agency') headerInfo.agency = cleanValue;
-            if (cleanField === 'client') headerInfo.client = cleanValue;
-            if (cleanField === 'product') headerInfo.product = cleanValue;
-            if (cleanField === 'title') headerInfo.title = cleanValue;
-            if (cleanField === 'isci') headerInfo.isci = cleanValue;
-            if (cleanField === 'duration') headerInfo.duration = cleanValue;
-            if (cleanField === 'audio') headerInfo.audio = cleanValue;
-            if (cleanField === 'copyright') headerInfo.copyright = cleanValue;
-          }
+        // Extract based on field names and use actual values from JSON
+        if (cleanField === 'agency') {
+          headerInfo.agency = cleanValue || 'N/A';
+        } else if (cleanField === 'client') {
+          headerInfo.client = cleanValue || 'N/A';
+        } else if (cleanField === 'product') {
+          headerInfo.product = cleanValue || 'N/A';
+        } else if (cleanField === 'title') {
+          headerInfo.title = cleanValue || 'N/A';
+        } else if (cleanField === 'isci') {
+          headerInfo.isci = cleanValue || 'N/A';
+        } else if (cleanField === 'duration') {
+          headerInfo.duration = cleanValue || 'N/A';
+        } else if (cleanField === 'audio') {
+          headerInfo.audio = cleanValue || 'N/A';
+        } else if (cleanField === 'copyright') {
+          headerInfo.copyright = cleanValue || 'N/A';
         }
       }
     }
+  }
 
-    // Parse delivery items (starting from row 14, index 13)
-    for (let i = 13; i < data.length; i++) {
-      const row = data[i];
-      const col1 = row[mainColumn] || '';
-      const col2 = row[specsColumn] || '';
+  // If key fields are still N/A, try to infer from project name or use smart defaults
+  if (headerInfo.client === 'N/A') {
+    // Try to extract client from the project name (first row)
+    const projectName = data[0] && data[0][mainColumn];
+    if (projectName) {
+      // Extract client name from project title (e.g., "Nike 'Just Do It'" -> "Nike")
+      const clientMatch = projectName.match(/^([^'"\s]+)/);
+      if (clientMatch) {
+        headerInfo.client = clientMatch[1];
+      }
+    }
+  }
 
-      const colC = columnC && row[columnC] ? row[columnC].trim() : '';
-      const colE = columnE && row[columnE] ? row[columnE].trim() : '';
-      const colG = columnG && row[columnG] ? row[columnG].trim() : '';
-      const colK = columnK && row[columnK] ? row[columnK].trim() : '';
+  // Smart defaults based on client
+  if (headerInfo.agency === 'N/A' && headerInfo.client !== 'N/A') {
+    // You could add logic here to set common agencies based on client
+    headerInfo.agency = 'Agency TBD';
+  }
 
-      if (!col1 && !col2) continue;
+  if (headerInfo.copyright === 'N/A' && headerInfo.client !== 'N/A') {
+    const currentYear = new Date().getFullYear();
+    headerInfo.copyright = `©${currentYear} ${headerInfo.client}. All rights reserved.`;
+  }
 
-      if (col1 && (col1.includes(':') && /:\d+/.test(col1)) && !col2) {
-        currentTitle = col1;
-        console.log('Found new title:', currentTitle);
+  if (headerInfo.audio === 'N/A') {
+    headerInfo.audio = 'Web Stereo'; // Common default
+  }
+
+  console.log('Extracted header info:', headerInfo);
+
+  // Parse delivery items (starting from row 14, index 13)
+  for (let i = 13; i < data.length; i++) {
+    const row = data[i];
+    const col1 = row[mainColumn] || '';
+    const col2 = row[specsColumn] || '';
+
+    // Skip empty rows
+    if (!col1 && !col2) continue;
+
+    // Check if this is a title row (contains duration like :30, :15, etc.)
+    if (col1 && (col1.includes(':') && /:\d+/.test(col1)) && !col2) {
+      currentTitle = col1;
+      console.log('Found new title:', currentTitle);
+      continue;
+    }
+
+    // Check if this is a delivery item (has ship date and specs)
+    if (col1 && col2 && currentTitle) {
+      // Skip ProRes Unslated items
+      if (col2.includes('ProRes Unslated')) {
         continue;
       }
 
-      if (col1 && col2 && currentTitle) {
-        if (col2.includes('ProRes Unslated')) {
-          continue;
-        }
+      let shipDate = col1;
+      const specs = col2;
 
-        let shipDate = col1;
-        const specs = col2;
+      // Parse date formats
+      if (shipDate.includes('2025-')) {
+        shipDate = shipDate.split('T')[0]; // Remove time part
+      } else if (shipDate.includes('/')) {
+        const [month, day] = shipDate.split('/');
+        shipDate = `2025-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      }
 
-        if (shipDate.includes('2025-')) {
-          shipDate = shipDate.split('T')[0];
-        } else if (shipDate.includes('/')) {
-          const [month, day] = shipDate.split('/');
-          shipDate = `2025-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-        }
+      // Extract duration from current title (e.g., ":15" from "SIP IT TEASER :15")
+      let duration = headerInfo.duration;
+      const durationMatch = currentTitle.match(/:(\d+)/);
+      if (durationMatch) {
+        duration = `:${durationMatch[1]}`;
+      }
 
-        let duration = headerInfo.duration;
-        const durationMatch = currentTitle.match(/:(\d+)/);
-        if (durationMatch) {
-          duration = `:${durationMatch[1]}`;
-        }
+      // Use header info for ISCI and Audio (no separate columns in standard format)
+      let isci = headerInfo.isci;
+      let audio = headerInfo.audio;
 
-        if (colG && colG.includes(':')) {
-          duration = colG;
-        }
+      // Determine suggested format from specs
+      let suggestedFormat = '16x9'; // default
+      let platform = 'Other';
 
-        let isci = headerInfo.isci;
-        if (colE) {
-          isci = colE;
-        }
+      // Look for aspect ratio in the specs text
+      if (specs.includes('ASPECT RATIO: 16x9') || specs.includes('16x9')) {
+        suggestedFormat = '16x9';
+      } else if (specs.includes('ASPECT RATIO: 9x16') || specs.includes('9x16')) {
+        suggestedFormat = '9x16';
+      } else if (specs.includes('ASPECT RATIO: 1x1') || specs.includes('1x1') || specs.includes('1:1')) {
+        suggestedFormat = '1x1';
+      } else if (specs.includes('ASPECT RATIO: 4x5') || specs.includes('4x5') || specs.includes('4:5')) {
+        suggestedFormat = '4x5';
+      } else {
+        // Platform-based mapping
+        const platformMapping = {
+          'YouTube': '16x9',
+          'Youtube': '16x9',
+          'TikTok + YouTube Shorts': '9x16',
+          'Stories (Vertical)': '9x16',
+          'Meta 1:1': '1x1',
+          'Meta': '1x1',
+          'Pinterest': '4x5',
+          'OTT SPECS': '16x9',
+          'Youtube Specs (For Google)': '16x9',
+          'Under 100 mb': '16x9',
+          // New manual creator formats
+          'TikTok': '9x16',
+          'IG Stories': '9x16',
+          'Google': '16x9',
+          'OTT': '16x9',
+          'Custom': '16x9'
+        };
 
-        let audio = headerInfo.audio;
-        if (colK) {
-          audio = colK;
-        }
-
-        let suggestedFormat = '16x9';
-        let platform = 'Other';
-
-        if (specs.includes('ASPECT RATIO: 16x9') || specs.includes('16x9')) {
-          suggestedFormat = '16x9';
-        } else if (specs.includes('ASPECT RATIO: 9x16') || specs.includes('9x16')) {
-          suggestedFormat = '9x16';
-        } else if (specs.includes('ASPECT RATIO: 1x1') || specs.includes('1x1') || specs.includes('1:1')) {
-          suggestedFormat = '1x1';
-        } else if (specs.includes('ASPECT RATIO: 4x5') || specs.includes('4x5') || specs.includes('4:5')) {
-          suggestedFormat = '4x5';
-        } else {
-          for (const [platformName, format] of Object.entries(platformMapping)) {
-            if (specs.includes(platformName)) {
-              suggestedFormat = format;
-              platform = platformName;
-              break;
-            }
-          }
-        }
-
-        for (const [platformName] of Object.entries(platformMapping)) {
+        for (const [platformName, format] of Object.entries(platformMapping)) {
           if (specs.includes(platformName)) {
+            suggestedFormat = format;
             platform = platformName;
             break;
           }
         }
-
-        const formattedTitle = `${currentTitle} ${suggestedFormat}`;
-
-        deliveries.push({
-          id: deliveries.length + 1,
-          video_title: formattedTitle,
-          original_title: currentTitle,
-          ship_date: shipDate,
-          platform: platform,
-          specs: specs,
-          aspect_ratio: suggestedFormat,
-          suggested_slate_format: suggestedFormat,
-          duration: duration,
-          agency: headerInfo.agency,
-          client: headerInfo.client,
-          product: headerInfo.product,
-          isci: isci,
-          audio: audio,
-          copyright: headerInfo.copyright
-        });
       }
+
+      // Extract platform from specs for display
+      const platformMapping = {
+        'YouTube': '16x9',
+        'Youtube': '16x9',
+        'TikTok + YouTube Shorts': '9x16',
+        'Stories (Vertical)': '9x16',
+        'Meta 1:1': '1x1',
+        'Meta': '1x1',
+        'Pinterest': '4x5',
+        'OTT SPECS': '16x9',
+        'Youtube Specs (For Google)': '16x9',
+        'Under 100 mb': '16x9',
+        'TikTok': '9x16',
+        'IG Stories': '9x16',
+        'Google': '16x9',
+        'OTT': '16x9',
+        'Custom': '16x9'
+      };
+
+      for (const [platformName] of Object.entries(platformMapping)) {
+        if (specs.includes(platformName)) {
+          platform = platformName;
+          break;
+        }
+      }
+
+      // Create formatted title with aspect ratio
+      const formattedTitle = `${currentTitle} ${suggestedFormat}`;
+
+      // Create delivery object with extracted header data
+      deliveries.push({
+        id: deliveries.length + 1,
+        video_title: formattedTitle,
+        original_title: currentTitle,
+        ship_date: shipDate,
+        platform: platform,
+        specs: specs,
+        aspect_ratio: suggestedFormat,
+        suggested_slate_format: suggestedFormat,
+        duration: duration,
+        agency: headerInfo.agency,
+        client: headerInfo.client,
+        product: headerInfo.product,
+        isci: isci,
+        audio: audio,
+        copyright: headerInfo.copyright
+      });
+
+      console.log('Created delivery:', {
+        title: formattedTitle,
+        platform: platform,
+        format: suggestedFormat,
+        duration: duration,
+        agency: headerInfo.agency,
+        client: headerInfo.client
+      });
     }
+  }
+
+  // Create summary
+  const formatCounts = {};
+  deliveries.forEach(d => {
+    formatCounts[d.suggested_slate_format] = (formatCounts[d.suggested_slate_format] || 0) + 1;
+  });
+
+  const uniquePlatforms = [...new Set(deliveries.map(d => d.platform))];
+  const uniqueVideos = [...new Set(deliveries.map(d => d.original_title))];
+
+  console.log('Final header info:', headerInfo);
+  console.log('Total deliveries created:', deliveries.length);
+
+  return {
+    project_info: headerInfo,
+    deliverables: deliveries,
+    summary: {
+      total_slated_deliverables: deliveries.length,
+      total_videos: uniqueVideos.length,
+      date_range: deliveries.length > 0 ?
+        `${Math.min(...deliveries.map(d => d.ship_date))} to ${Math.max(...deliveries.map(d => d.ship_date))}` : '',
+      formats_needed: formatCounts,
+      platforms: uniquePlatforms
+    }
+  };
+};
 
     const formatCounts = {};
     deliveries.forEach(d => {
