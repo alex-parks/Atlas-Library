@@ -4,7 +4,7 @@ import { Library, Briefcase, Bot, Package } from 'lucide-react';
 import AssetLibrary from './components/AssetLibrary';
 import ProducerTools from './components/ProducerTools';
 import AITools from './components/AITools';
-import DeliveryTool from './components/DeliveryTool';
+import DeliveryTool from './components/DeliveryTool/DeliveryTool.jsx';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('delivery-tool'); // Start with delivery tool

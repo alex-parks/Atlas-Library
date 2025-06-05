@@ -1,4 +1,5 @@
-// frontend/src/components/ManualDeliveryCreator.jsx
+// frontend/src/components/DeliveryTool/components/ManualDeliveryCreator.jsx
+
 import React, { useState } from 'react';
 import { Plus, Trash2, Save, ArrowLeft } from 'lucide-react';
 
@@ -108,7 +109,7 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
       return;
     }
 
-    // Convert to the same format as JSON parser output
+    // Convert to the same format as CSV parser output
     const manualData = {
       project_info: {
         agency: slateInfo.agency,
@@ -120,23 +121,29 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
         duration: 'Various',
         audio: 'Various'
       },
-      deliverables: deliverables.map((d, index) => ({
-        id: index + 1,
-        video_title: `${d.title} ${d.aspectRatio}`,
-        original_title: d.title,
-        ship_date: d.shipDate,
-        platform: d.platform === 'Custom' ? (d.customPlatform || 'Custom') : d.platform,
-        specs: d.platform === 'Custom' ? (d.customPlatform || 'Custom') : d.platform,
-        aspect_ratio: d.aspectRatio,
-        suggested_slate_format: d.aspectRatio,
-        duration: d.duration ? `:${d.duration}` : 'N/A', // Add the colon automatically
-        agency: slateInfo.agency,
-        client: slateInfo.client,
-        product: slateInfo.product,
-        isci: d.isci || 'N/A',
-        audio: d.audio === 'Custom' ? (d.customAudio || 'Custom') : d.audio,
-        copyright: slateInfo.copyright || `©${new Date().getFullYear()} ${slateInfo.client}. All rights reserved.`
-      })),
+      deliverable_groups: [{
+        groupTitle: 'Manual Deliverables',
+        deliverables: deliverables.map((d, index) => ({
+          id: `manual_${index}`,
+          video_title: d.title,
+          original_title: 'Manual Deliverables',
+          ship_date: d.shipDate,
+          platform: d.platform === 'Custom' ? (d.customPlatform || 'Custom') : d.platform,
+          specs: d.platform === 'Custom' ? (d.customPlatform || 'Custom') : d.platform,
+          aspect_ratio: d.aspectRatio,
+          suggested_slate_format: d.aspectRatio,
+          duration: d.duration ? `${d.duration}s` : 'N/A',
+          shipped: false,
+          slated_status: 'Manual',
+          agency: slateInfo.agency,
+          client: slateInfo.client,
+          product: slateInfo.product,
+          isci: d.isci || 'N/A',
+          audio: d.audio === 'Custom' ? (d.customAudio || 'Custom') : d.audio,
+          copyright: slateInfo.copyright || `©${new Date().getFullYear()} ${slateInfo.client}. All rights reserved.`
+        })),
+        enabled: true
+      }],
       summary: {
         total_slated_deliverables: deliverables.length,
         total_videos: [...new Set(deliverables.map(d => d.title))].length,
@@ -290,7 +297,7 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
                         type="text"
                         value={deliverable.customPlatform || ''}
                         onChange={(e) => updateDeliverable(deliverable.id, 'customPlatform', e.target.value)}
-                        placeholder="Enter platform..."
+                        placeholder="Enter custom platform..."
                         className="w-full bg-neutral-500 border border-neutral-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
                       />
                     ) : (
@@ -331,7 +338,7 @@ const ManualDeliveryCreator = ({ onSave, onCancel }) => {
                         type="text"
                         value={deliverable.customAudio || ''}
                         onChange={(e) => updateDeliverable(deliverable.id, 'customAudio', e.target.value)}
-                        placeholder="Enter audio type..."
+                        placeholder="Enter custom audio..."
                         className="w-full bg-neutral-500 border border-neutral-400 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
                       />
                     ) : (
