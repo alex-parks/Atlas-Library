@@ -1,60 +1,44 @@
 // frontend/src/components/DeliveryTool/components/OutputPathSection.jsx
 
-import React, { useRef } from 'react';
-import { FolderOpen, CheckCircle } from 'lucide-react';
+import React from 'react';
+import { FolderOpen, CheckCircle, AlertCircle } from 'lucide-react';
 
 const OutputPathSection = ({ outputPath, setOutputPath }) => {
-  const folderInputRef = useRef(null);
-
   const selectOutputFolder = async () => {
     try {
+      // Check if the File System Access API is available
       if ('showDirectoryPicker' in window) {
-        const dirHandle = await window.showDirectoryPicker();
-        setOutputPath(dirHandle.name);
+        const dirHandle = await window.showDirectoryPicker({
+          mode: 'readwrite'
+        });
+
+        // Store the handle for later use
         window.selectedDirectoryHandle = dirHandle;
-        window.hasFolderSelected = true;
+
+        // Set a user-friendly display name
+        setOutputPath(dirHandle.name);
+
+        console.log('✅ Folder selected:', dirHandle.name);
         return;
+      } else {
+        // Fallback for browsers that don't support showDirectoryPicker
+        alert('Your browser doesn\'t support folder selection. Please enter the path manually or use Chrome/Edge.');
       }
     } catch (error) {
       if (error.name === 'AbortError') {
+        // User cancelled the dialog
+        console.log('User cancelled folder selection');
         return;
       }
-      // If showDirectoryPicker fails, fall back to file input
-    }
-
-    // Fallback to webkitdirectory
-    folderInputRef.current?.click();
-  };
-
-  const handleFolderSelect = (event) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      const firstFile = files[0];
-      let folderPath = '';
-
-      if (firstFile.webkitRelativePath) {
-        const pathParts = firstFile.webkitRelativePath.split('/');
-        pathParts.pop(); // Remove filename to get folder path
-        folderPath = pathParts.join('/');
-      }
-
-      if (!folderPath) {
-        folderPath = 'Selected Folder';
-      }
-
-      setOutputPath(folderPath);
-      window.selectedFolderPath = folderPath;
-      window.hasFolderSelected = true; // Flag for manual paths
+      console.error('Error selecting folder:', error);
+      alert('Failed to select folder. Please try again or enter the path manually.');
     }
   };
 
   const clearPath = () => {
     setOutputPath('');
     delete window.selectedDirectoryHandle;
-    delete window.selectedFolderPath;
-    if (folderInputRef.current) {
-      folderInputRef.current.value = '';
-    }
+    console.log('Path cleared');
   };
 
   return (
@@ -67,18 +51,12 @@ const OutputPathSection = ({ outputPath, setOutputPath }) => {
           <div className="flex-1">
             <input
               type="text"
-              placeholder="Click 'Browse' to select output folder or type path manually..."
+              placeholder="Click 'Browse' to select folder or enter path manually..."
               value={outputPath}
               onChange={(e) => {
                 setOutputPath(e.target.value);
-                // Set flag when user types manual path
-                if (e.target.value.trim()) {
-                  window.selectedFolderPath = e.target.value.trim();
-                  window.hasFolderSelected = true;
-                } else {
-                  delete window.selectedFolderPath;
-                  delete window.hasFolderSelected;
-                }
+                // Clear the directory handle if user types manually
+                delete window.selectedDirectoryHandle;
               }}
               className="w-full bg-neutral-600 border border-neutral-500 rounded-lg px-4 py-3 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
             />
@@ -100,16 +78,17 @@ const OutputPathSection = ({ outputPath, setOutputPath }) => {
           )}
         </div>
 
-        {/* Hidden folder input - modified to show "Open" like CSV upload */}
-        <input
-          ref={folderInputRef}
-          type="file"
-          onChange={handleFolderSelect}
-          className="hidden"
-          webkitdirectory=""
-          directory=""
-          multiple
-        />
+        {/* Browser Compatibility Notice */}
+        {!window.showDirectoryPicker && (
+          <div className="bg-yellow-900/20 border border-yellow-500 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="text-yellow-400" size={20} />
+              <p className="text-yellow-400 text-sm">
+                Folder selection requires Chrome or Edge browser. You can still enter the path manually.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Status Display */}
         {outputPath ? (
@@ -119,11 +98,21 @@ const OutputPathSection = ({ outputPath, setOutputPath }) => {
               <span className="text-green-400 font-medium">Save location:</span>
               <span className="text-white">{outputPath}</span>
             </div>
+            {window.selectedDirectoryHandle && (
+              <p className="text-green-300 text-xs mt-1">
+                ✅ Folder access granted - files will save directly
+              </p>
+            )}
+            {!window.selectedDirectoryHandle && outputPath && (
+              <p className="text-yellow-300 text-xs mt-1">
+                ⚠️ Manual path entered - files will download to Downloads folder
+              </p>
+            )}
           </div>
         ) : (
-          <div className="bg-yellow-900/20 border border-yellow-500 rounded-lg p-3">
-            <p className="text-yellow-400 text-sm">
-              Select a folder to save TTG files
+          <div className="bg-neutral-600 border border-neutral-500 rounded-lg p-3">
+            <p className="text-neutral-300 text-sm">
+              Select a folder where TTG files will be saved
             </p>
           </div>
         )}
