@@ -51,10 +51,28 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  console.log('All windows closed');
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  console.log('All windows closed - killing backend processes');
+  
+  // Kill the backend and frontend processes
+  const { spawn } = require('child_process');
+  const killPorts = spawn('npx', ['kill-port', '3011', '8000'], {
+    cwd: path.join(__dirname, '..'),
+    stdio: 'inherit'
+  });
+  
+  killPorts.on('close', () => {
+    console.log('Ports cleaned up');
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+  
+  // Force quit after 3 seconds if kill-port doesn't work
+  setTimeout(() => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  }, 3000);
 });
 
 app.on('activate', () => {

@@ -13,6 +13,27 @@ const GroupSelection = ({
     <div className="bg-neutral-700 border border-neutral-600 rounded-lg p-6 mb-8">
       <h2 className="text-xl font-semibold text-white mb-4">3. Select Deliverable Groups</h2>
 
+      <div className="mb-6 flex gap-3">
+        <button
+          onClick={() => {
+            setEnabledGroups(new Set(cleanedData.deliverable_groups.map(g => g.groupTitle)));
+            setEnabledDeliverables(new Set()); // Clear individual selections
+          }}
+          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-white transition-colors"
+        >
+          Enable All Groups
+        </button>
+        <button
+          onClick={() => {
+            setEnabledGroups(new Set());
+            setEnabledDeliverables(new Set());
+          }}
+          className="bg-neutral-600 hover:bg-neutral-500 px-4 py-2 rounded-lg text-white transition-colors"
+        >
+          Disable All
+        </button>
+      </div>
+
       <div className="space-y-4">
         {cleanedData.deliverable_groups.map((group, index) => {
           const isGroupEnabled = enabledGroups.has(group.groupTitle);
@@ -122,27 +143,6 @@ const GroupSelection = ({
             </div>
           );
         })}
-      </div>
-
-      <div className="mt-6 flex gap-3">
-        <button
-          onClick={() => {
-            setEnabledGroups(new Set(cleanedData.deliverable_groups.map(g => g.groupTitle)));
-            setEnabledDeliverables(new Set()); // Clear individual selections
-          }}
-          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-white transition-colors"
-        >
-          Enable All Groups
-        </button>
-        <button
-          onClick={() => {
-            setEnabledGroups(new Set());
-            setEnabledDeliverables(new Set());
-          }}
-          className="bg-neutral-600 hover:bg-neutral-500 px-4 py-2 rounded-lg text-white transition-colors"
-        >
-          Disable All
-        </button>
       </div>
     </div>
   );

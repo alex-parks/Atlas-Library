@@ -121,7 +121,10 @@ export const parseDeliverableSheetWithMode = (csvData, slatedOnly = false) => {
 
       if (slatedOnly) {
         const slatedValue = spec.slated.toLowerCase().trim();
-        shouldInclude = slatedValue === 'slated';
+        console.log(`🔍 SLATED DEBUG: Raw value: "${spec.slated}" | Cleaned: "${slatedValue}" | Length: ${slatedValue.length}`);
+        
+        // Include "Slated" or "Slated and Unslated" but exclude strictly "Unslated"
+        shouldInclude = (slatedValue === 'slated' || slatedValue === 'slated and unslated') && slatedValue !== 'unslated';
 
         if (!shouldInclude) {
           console.log(`❌ FILTERED OUT (Slated Only): "${spec.version}" - Slated value: "${spec.slated}"`);
@@ -187,7 +190,7 @@ export const parseDeliverableSheetWithMode = (csvData, slatedOnly = false) => {
         agency: headerInfo.agency,
         client: headerInfo.client,
         product: headerInfo.product,
-        isci: headerInfo.isci,
+        isci: spec.isciAdId || 'N/A',
         audio: headerInfo.audio,
         copyright: headerInfo.copyright
       });

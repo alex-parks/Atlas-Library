@@ -3,15 +3,17 @@
   "version": "1.0.0",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently --kill-others-on-fail \"npm run backend\" \"npm run frontend\" \"npm run electron\"",
-    "backend": "cd backend && python -m uvicorn main:app --reload --port 8000 --host 0.0.0.0",
+    "dev": "npm run kill-ports && concurrently --kill-others-on-fail --names \"BACKEND,FRONTEND,ELECTRON\" --prefix-colors \"blue,green,yellow\" \"npm run backend\" \"npm run frontend\" \"npm run electron\"",
+    "backend": "cd backend && source ../venv/bin/activate && python -m uvicorn main:app --reload --port 8000 --host 0.0.0.0",
     "frontend": "cd frontend && npm run dev -- --port 3011 --host --strictPort",
-    "electron": "electron .",
-    "kill-ports": "npx kill-port 3011 8000",
-    "install:all": "npm install && cd frontend && npm install"
+    "electron": "sleep 3 && electron .",
+    "kill-ports": "npx kill-port 3011 8000 || true",
+    "install:all": "npm install && cd frontend && npm install",
+    "cleanup": "npm run kill-ports"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
-    "electron": "^36.3.2"
+    "electron": "^36.3.2",
+    "kill-port": "^2.0.1"
   }
 }

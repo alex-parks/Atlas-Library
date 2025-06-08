@@ -21,7 +21,7 @@ const DeliveryTool = () => {
   const [previewFormat, setPreviewFormat] = useState('readable');
   const [enabledGroups, setEnabledGroups] = useState(new Set());
   const [enabledDeliverables, setEnabledDeliverables] = useState(new Set());
-  const [slatedOnlyMode, setSlatedOnlyMode] = useState(false);
+  const [slatedOnlyMode, setSlatedOnlyMode] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
   const fileInputRef = useRef(null);
 

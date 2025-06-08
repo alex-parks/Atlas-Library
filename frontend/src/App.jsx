@@ -20,23 +20,23 @@ const App = () => {
 
   const tabs = [
     {
-      id: 'delivery-tool',
-      name: 'Delivery Tool',
-      icon: Package,
-      component: DeliveryTool
-    },
-    {
       id: 'asset-library',
       name: 'Asset Library',
       icon: Library,
       component: AssetLibrary
     },
     {
-      id: 'producer-tools',
-      name: 'Producer Tools',
-      icon: Briefcase,
-      component: ProducerTools
+      id: 'delivery-tool',
+      name: 'Delivery Tool',
+      icon: Package,
+      component: DeliveryTool
     },
+    // {
+    //   id: 'producer-tools',
+    //   name: 'Producer Tools',
+    //   icon: Briefcase,
+    //   component: ProducerTools
+    // },
     {
       id: 'ai-tools',
       name: 'AI Tools',
