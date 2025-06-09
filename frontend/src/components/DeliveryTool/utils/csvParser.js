@@ -6,27 +6,44 @@
  */
 
 export const parseDeliverableSheetWithMode = (csvData, slatedOnly = false) => {
-  const lines = csvData.split('\n');
-  const data = lines.map(line => {
-    // Simple CSV parsing - handles quoted fields
-    const result = [];
-    let current = '';
-    let inQuotes = false;
+  // Enhanced CSV parsing to handle multiline quoted fields
+  const data = [];
+  let currentRow = [];
+  let currentField = '';
+  let inQuotes = false;
+  let i = 0;
 
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        result.push(current.trim());
-        current = '';
-      } else {
-        current += char;
+  while (i < csvData.length) {
+    const char = csvData[i];
+    
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentField.trim());
+      currentField = '';
+    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+      // End of row - add the last field and push the row
+      currentRow.push(currentField.trim());
+      if (currentRow.length > 0 && currentRow.some(field => field !== '')) {
+        data.push(currentRow);
       }
+      currentRow = [];
+      currentField = '';
+      // Skip \r\n combinations
+      if (char === '\r' && csvData[i + 1] === '\n') {
+        i++;
+      }
+    } else {
+      currentField += char;
     }
-    result.push(current.trim());
-    return result;
-  });
+    i++;
+  }
+  
+  // Don't forget the last row if file doesn't end with newline
+  if (currentRow.length > 0 || currentField !== '') {
+    currentRow.push(currentField.trim());
+    data.push(currentRow);
+  }
 
   // Extract header information (rows 4-12, columns B+C)
   const headerInfo = {
@@ -41,17 +58,23 @@ export const parseDeliverableSheetWithMode = (csvData, slatedOnly = false) => {
     copyright: data[11] ? data[11][1] || 'N/A' : 'N/A'
   };
 
-  // Parse deliverables starting from row 15 (index 14)
+  // Parse deliverables starting from row 13 (index 12)
   const deliverableGroups = [];
   let currentGroup = null;
   let totalRowsProcessed = 0;
   let totalDeliverables = 0;
 
-  console.log('=== FIXED PARSING DEBUG INFO ===');
-  console.log(`Slated Only Mode: ${slatedOnly}`);
-  console.log(`Total CSV rows: ${data.length}`);
-
-  for (let i = 14; i < data.length; i++) {
+  console.log('=== PARSING START ===');
+  console.log(`Slated Only Mode: ${slatedOnly}, Total CSV rows: ${data.length}`);
+  
+  // Debug rows 12-20 to find the issue
+  console.log('=== ROWS 12-20 DEBUG ===');
+  for (let debugIdx = 12; debugIdx <= 20 && debugIdx < data.length; debugIdx++) {
+    const row = data[debugIdx];
+    console.log(`Row ${debugIdx}: "${row ? row[0] : 'EMPTY'}" | "${row ? row[1] : ''}" | "${row ? row[2] : ''}" | Cols: ${row ? row.length : 0}`);
+  }
+  
+  for (let i = 12; i < data.length; i++) {
     const row = data[i];
     if (!row || !row[0]) continue;
 
@@ -60,13 +83,23 @@ export const parseDeliverableSheetWithMode = (csvData, slatedOnly = false) => {
 
     // GROUP DETECTION: Real groups are single-column titles only
     if (!firstCol.match(/^\d+\/\d+/) && firstCol !== "Ship Date " && firstCol !== '') {
-      // Real groups are ONLY single-column titles with empty B and C columns
-      const isRealGroup = (row[1] === '' || row[1] === undefined) &&
-                         (row[2] === '' || row[2] === undefined) &&
-                         !firstCol.includes('NEW CASH BACK DISCLAIMER') &&
+      console.log(`🔍 GROUP CHECK Row ${i}: "${firstCol}"`);
+      console.log(`   Has date pattern: ${firstCol.match(/^\d+\/\d+/) ? 'YES' : 'NO'}`);
+      console.log(`   Is Ship Date: ${firstCol === "Ship Date " ? 'YES' : 'NO'}`);
+      console.log(`   Column B: "${row[1] || 'EMPTY'}"`);
+      console.log(`   Column C: "${row[2] || 'EMPTY'}"`);
+      
+      // Real groups are titles that don't have dates and aren't disclaimer text
+      // Check if this looks like a group title (not a deliverable with a date)
+      const isRealGroup = !firstCol.includes('NEW CASH BACK DISCLAIMER') &&
                          !firstCol.includes('PWV:') &&
                          !firstCol.includes('RESOLUTION') &&
-                         !firstCol.includes('ProRes422');
+                         !firstCol.includes('RESOULTION') &&
+                         !firstCol.includes('ProRes422') &&
+                         // If Column C has content, check if it's NOT a title (deliverable)
+                         (row[2] === '' || row[2] === undefined || row[2] === 'Title / Version');
+
+      console.log(`   Is Real Group: ${isRealGroup ? 'YES' : 'NO'}`);
 
       if (isRealGroup) {
         // Save previous group if exists
@@ -80,13 +113,13 @@ export const parseDeliverableSheetWithMode = (csvData, slatedOnly = false) => {
           deliverables: [],
           enabled: true
         };
-        console.log(`📁 New Group: "${firstCol}"`);
+        console.log(`📁 NEW GROUP DETECTED: "${firstCol}" (Row ${i})`);
       } else {
         // This might be a deliverable row that spans A:C (disclaimer + specs)
         console.log(`⚠️ Skipping non-group row: "${firstCol.substring(0, 50)}..."`);
       }
-    } else if (firstCol.match(/^\d+\/\d+/) && currentGroup) {
-      // This is a spec row for the current group
+    } else if ((firstCol.match(/^\d+\/\d+/) || (row[2] && row[2].trim() !== '')) && currentGroup) {
+      // This is a spec row for the current group (either has a date OR has a title in Column C)
       const spec = {
         shipDate: row[0] || '',
         shipped: row[1] === 'TRUE' || row[1] === true || row[1] === 'true',
@@ -99,20 +132,17 @@ export const parseDeliverableSheetWithMode = (csvData, slatedOnly = false) => {
         frameRate: row[8] || '',
         aspectRatio: row[9] || '',
         audioMix: row[10] || '',
-        legal: row[11] || '',
+        legal: 'N/A', // Ignore Column L (Legal) completely
         slated: row[12] || '', // Column M - "Slated / Unslated"
         flameExports: row[13] || '',
         reviewedBy: row[14] || '',
         specs: row[15] || ''
       };
 
-      console.log(`📝 Processing row ${i}: Version="${spec.version}", Slated="${spec.slated}", Platform="${spec.platform}"`);
-
       // CRITICAL FIX: Create deliverable if there's a TITLE (Column C), regardless of slated status
       const hasTitle = spec.version && spec.version.trim() !== '';
 
       if (!hasTitle) {
-        console.log(`❌ SKIPPED (No Title): Row ${i} - No title in Column C`);
         continue;
       }
 
@@ -121,18 +151,27 @@ export const parseDeliverableSheetWithMode = (csvData, slatedOnly = false) => {
 
       if (slatedOnly) {
         const slatedValue = spec.slated.toLowerCase().trim();
-        console.log(`🔍 SLATED DEBUG: Raw value: "${spec.slated}" | Cleaned: "${slatedValue}" | Length: ${slatedValue.length}`);
         
-        // Include "Slated" or "Slated and Unslated" but exclude strictly "Unslated"
-        shouldInclude = (slatedValue === 'slated' || slatedValue === 'slated and unslated') && slatedValue !== 'unslated';
+        // Check if the slated field contains slated keywords (more robust for multiline content)
+        const containsSlated = slatedValue.includes('slated');
+        const containsUnslated = slatedValue.includes('unslated');
+        const containsAmpersand = slatedValue.includes('&');
+        const containsAnd = slatedValue.includes(' and ');
+        
+        // Include if:
+        // 1. Contains "slated" but NOT "unslated" (pure "Slated")
+        // 2. Contains "slated & unslated" 
+        // 3. Contains "slated and unslated"
+        shouldInclude = (containsSlated && !containsUnslated) ||
+                       (containsSlated && containsUnslated && containsAmpersand) ||
+                       (containsSlated && containsUnslated && containsAnd);
 
         if (!shouldInclude) {
-          console.log(`❌ FILTERED OUT (Slated Only): "${spec.version}" - Slated value: "${spec.slated}"`);
           continue;
         }
+        
+        console.log(`✅ SLATED: "${spec.version}" - Group: "${currentGroup?.groupTitle}"`);
       }
-
-      console.log(`✅ INCLUDED: "${spec.version}" - Slated: "${spec.slated}"`);
 
       // Use the individual title from Column C (Title / Version)
       const individualTitle = spec.version;
