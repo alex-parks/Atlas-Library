@@ -1,0 +1,190 @@
+MLB: Reaction Time,,,,,,,,,,,,,
+,,,,,,,,,,,,,
+SLATE INFORMATION,,,,,SHIPPING DATE KEY,,,,,,,,
+Agency: ,Good Sports,,,,1st SHIP DATE,,,,,,,,
+Client:,MLB,,,,2nd SHIP DATE,,,,,,,,
+Product: ,Reaction Time,,,,3rd SHIP DATE,,,,,,,,
+Title: ,Reaction Time,,,,DELIVERED,,,,,,,,
+ISCI: ,,,,,,,,,,,,,
+Duration: ,":30, :15, :10",,,,,,,,,,,,
+Audio: ,,,,,,,,,,,,,
+Date: ,,,,,,,,,,,,,
+Copyright: ,,,,,,,,,,,,,
+,,,,,,,,,,,,,
+Ship Date ,Shipped,Title / Version,Delivery Platform,ISCI / AD-ID,File Name,Length,Aspect Ratio,Audio Mix: Broadcast / Web,Legal,Slated / Unslated,Flame Exports Needed,Reviewed By,Specs
+Broadcast,,,,,,,,,,,,,
+6/27,FALSE,,Comcast Ad Delivery,,,:30,16x9,Broadcast Stereo,Only use the assigned ISCI code as the file name,,x,,"Stream type - Apple ProRes 422 HQ
+Bitrate - 40 - 220 Mbps (VBR)
+FPS - ""29.97 (1080i),
+ 59.94 (720p)""
+GOP Structure - N/A
+CCC - EIA-608 and EIA-708
+Chroma - 4:02:02
+Interlacing - ""Upper Field First (1080i),
+ Progressive (720p)""
+Aspect Ratio - 16:9
+Pixel Ratio - ""1920x1080 (1080i),
+ 1280x720 (720p)""
+Audio - LPCM
+Typical Transfer - 4-90 minutes
+ASA Typical Export < 1 minute
+
+Audio Encode - LPCM
+Channels - 2 (Stereo)
+PID/Channels - 1/2
+Channel 1 - Stereo Left
+Channel 2 - Stereo Right
+Channel 3 - Mono SAP (optional)7
+Channel 4 - Mono VDS (optional)7
+Bit Depth - 16
+Bit Rate - 1536 Kbps
+Sampling Rate - 48 KHz
+Instantaneous Peak -8 dBFS
+Average Peak - -10 dBFS
+Average Level -20 dBFS"
+6/30,FALSE,,Comcast Ad Delivery,,,:15,16x9,Broadcast Stereo,Only use the assigned ISCI code as the file name,,x,,
+6/30,FALSE,,Comcast Ad Delivery,,,:15,16x9,Broadcast Stereo,Only use the assigned ISCI code as the file name,,x,,
+7/1,FALSE,,Comcast Ad Delivery,,,:10,16x9,Broadcast Stereo,Only use the assigned ISCI code as the file name,,x,,
+6/27,FALSE,,MLB Network,,,:30,16x9,Broadcast Stereo,,,x,,
+6/30,FALSE,Player Spots - Tatis,MLB Network,,,:15,16x9,Broadcast Stereo,,,x,,
+6/30,FALSE,Player Spots - Ohtani,MLB Network,,,:15,16x9,Broadcast Stereo,,,x,,
+7/1,FALSE,,MLB Network,,,:10,16x9,Broadcast Stereo,,,x,,
+6/27,FALSE,,"International - ENG, PAL",,,:30,16x9,Broadcast Stereo,Logo on end card needs to be on the upper third,,x,,
+6/27,FALSE,,"International - ENG, NTSC",,,:30,16x9,Broadcast Stereo,Logo on end card needs to be on the upper third,,x,,
+6/30,FALSE,Player Spots - Tatis,"International - ENG, PAL",,,:15,16x9,Broadcast Stereo,Logo on end card needs to be on the upper third,,x,,
+6/30,FALSE,Player Spots - Ohtani,"International - ENG, PAL",,,:15,16x9,Broadcast Stereo,Logo on end card needs to be on the upper third,,,,
+6/30,FALSE,Player Spots - Tatis,"International - ENG, NTSC",,,:15,16x9,Broadcast Stereo,Logo on end card needs to be on the upper third,,x,,
+6/30,FALSE,Player Spots - Ohtani,"International - ENG, NTSC",,,:15,16x9,Broadcast Stereo,Logo on end card needs to be on the upper third,,,,
+Digital O&O: On-Portal,,,,,,,,,,,,,
+6/27,FALSE,,MLB.com,,,:30,16x9,Web Stereo,,,,,"Bitrate: 1500kpbs or less
+1280x720
+h264
+23.98
+no blended frames
+stereo pcm 48khz sample rate, 16 or 24 bit only
+AAC: 192kpbs or higher, MP3: 192kpbs or higher"
+6/30,FALSE,Player Spots - Tatis,MLB.com,,,:15,16x9,Web Stereo,,,,,
+6/30,FALSE,Player Spots - Ohtani,MLB.com,,,:15,16x9,Web Stereo,,,,,
+7/1,FALSE,,MLB.com,,,:10,16x9,Web Stereo,,,,,
+In Ballpark ,,,,,,,,,,,,,
+6/27,FALSE,,In-Ballpark: 1080i,,,:30,16x9,,,,,,MP4
+6/30,FALSE,Player Spots - Tatis,In-Ballpark: 1080i,,,:15,16x9,,,,,,MP4
+6/30,FALSE,Player Spots - Ohtani,In-Ballpark: 1080i,,,:15,,,,,,,MP5
+6/27,FALSE,,In-Ballpark: 1080p,,,:30,16x9,,,,,,MP6
+6/30,FALSE,Player Spots - Tatis,In-Ballpark: 1080p,,,:15,16x9,,,,,,MP7
+6/30,FALSE,Player Spots - Ohtani,In-Ballpark: 1080p,,,:15,,,,,,,MP8
+Paid Digital - OTT,,,,,,,,,,,,,
+6/27,FALSE,,OTT - 1080p,,,:30,16x9,,upfront branding or watermark,,,,"""Bitrate: 1500kpbs or less
+1280x720
+h264
+29.97
+no blended frames
+stereo pcm 48khz sample rate, 16 or 24 bit only
+AAC: 192kpbs or higher, MP3: 192kpbs or higher"""
+6/30,FALSE,Player Spots - Tatis,OTT - 1080p,,,:15,16x9,,upfront branding or watermark,,,,
+6/30,FALSE,Player Spots - Ohtani,OTT - 1080p,,,:15,16x9,,upfront branding or watermark,,,,
+Paid Social,,,,,,,,,,,,,
+6/27,FALSE,,Facebook/Instagram,,,:30,1x1,Web Stereo,upfront branding or watermark,,,,
+6/30,FALSE,Player Spots - Tatis,Facebook/Instagram,,,:15,1x1,Web Stereo,upfront branding or watermark,,,,
+6/30,FALSE,Player Spots - Ohtani,Facebook/Instagram,,,:15,1x1,Web Stereo,upfront branding or watermark,,,,
+7/1,FALSE,,Facebook/Instagram,,,:10,1x1,Web Stereo,upfront branding or watermark,,,,
+6/30,FALSE,Player Spots - Tatis,Instagram Story/Reel,,,:15,9x16,Web Stereo,upfront branding or watermark,,,,
+6/30,FALSE,Player Spots - Ohtani,Instagram Story/Reel,,,:15,9x16,Web Stereo,upfront branding or watermark,,,,
+7/1,FALSE,,Instagram Story/Reel,,,:10,9x16,Web Stereo,upfront branding or watermark,,,,
+6/30,FALSE,Player Spots - Tatis,TikTok,,,:15,9x16,Web Stereo,upfront branding or watermark,,,,
+6/30,FALSE,Player Spots - Ohtani,TikTok,,,:15,9x16,Web Stereo,upfront branding or watermark,,,,
+7/1,FALSE,,TikTok,,,:10,9x16,Web Stereo,upfront branding or watermark,,,,
+6/30,FALSE,Player Spots - Tatis,YouTube,,,:15,16x9,Web Stereo,upfront branding or watermark,,,,
+6/30,FALSE,Player Spots - Ohtani,YouTube,,,:15,16x9,Web Stereo,upfront branding or watermark,,,,
+7/1,FALSE,,YouTube,,,:10,16x9,Web Stereo,upfront branding or watermark,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+MLB Social,,,,,,,,,,,,,
+6/27,FALSE,,Facebook / Instgram,,,:30,1x1,,,,,,
+,FALSE,Player Spots - Tatis,Facebook / Instgram,,,:15,1x1,,,,,,
+,FALSE,Player Spots - Ohtani,Facebook / Instgram,,,:15,1x1,,,,,,
+,FALSE,,Facebook / Instgram,,,:10,1x1,,,,,,
+6/27,FALSE,,Facebook / Instgram,,,:30,4x5,,,,,,
+,FALSE,Player Spots - Tatis,Facebook / Instgram,,,:15,4x5,,,,,,
+,FALSE,Player Spots - Ohtani,Facebook / Instgram,,,:15,4x5,,,,,,
+6/27,FALSE,,IG Story / Reel,,,:30,9x16,,,,,,
+,FALSE,Player Spots - Tatis,IG Story / Reel,,,:15,9x16,,,,,,
+,FALSE,Player Spots - Ohtani,IG Story / Reel,,,:15,9x16,,,,,,
+6/27,FALSE,,TikTok,,,:30,9x16,,,,,,
+,FALSE,Player Spots - Tatis,TikTok,,,:15,9x16,,,,,,
+,FALSE,Player Spots - Ohtani,TikTok,,,:15,9x16,,,,,,
+6/27,FALSE,,Youtube,,,:30,16x9,,,,,,
+,FALSE,Player Spots - Tatis,Youtube,,,:15,16x9,,,,,,
+,FALSE,Player Spots - Ohtani,Youtube,,,:15,16x9,,,,,,
+6/27,FALSE,,Twitter,,,:30,1x1,,,,,,
+,FALSE,Player Spots - Tatis,Twitter,,,:15,1x1,,,,,,
+,FALSE,Player Spots - Ohtani,Twitter,,,:15,1x1,,,,,,
+,FALSE,,,,,,,,,,,,
+,,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,
+,FALSE,,,,,,,,,,,,

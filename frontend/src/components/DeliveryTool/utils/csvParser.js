@@ -45,17 +45,26 @@ export const parseDeliverableSheetWithMode = (csvData, slatedOnly = false) => {
     data.push(currentRow);
   }
 
-  // Extract header information (rows 4-12, columns B+C)
+  // Debug header rows to find correct indices
+  console.log('=== HEADER DEBUG ===');
+  for (let headerIdx = 0; headerIdx <= 15; headerIdx++) {
+    const row = data[headerIdx];
+    if (row) {
+      console.log(`Row ${headerIdx}: "${row[0]}" | "${row[1]}" | "${row[2]}"`);
+    }
+  }
+
+  // Extract header information using correct row indices
   const headerInfo = {
-    agency: data[3] ? data[3][1] || 'N/A' : 'N/A',
-    client: data[4] ? data[4][1] || 'N/A' : 'N/A',
-    product: data[5] ? data[5][1] || 'N/A' : 'N/A',
-    title: data[6] ? data[6][1] || 'N/A' : 'N/A',
-    isci: data[7] ? data[7][1] || 'N/A' : 'N/A',
-    duration: data[8] ? data[8][1] || 'N/A' : 'N/A',
-    audio: data[9] ? data[9][1] || 'N/A' : 'N/A',
+    agency: data[2] ? data[2][1] || 'N/A' : 'N/A',      // Row 3 (index 2): Agency
+    client: data[3] ? data[3][1] || 'N/A' : 'N/A',      // Row 4 (index 3): Client  
+    product: data[4] ? data[4][1] || 'N/A' : 'N/A',     // Row 5 (index 4): Product
+    title: data[6] ? data[6][1] || 'N/A' : 'N/A',       // Row 7 (index 6): Title
+    isci: data[7] ? data[7][1] || 'N/A' : 'N/A',        // Row 8 (index 7): ISCI
+    duration: data[8] ? data[8][1] || 'N/A' : 'N/A',    // Row 9 (index 8): Duration
+    audio: data[9] ? data[9][1] || 'N/A' : 'N/A',       // Row 10 (index 9): Audio
     date: new Date().toLocaleDateString('en-US'),
-    copyright: data[11] ? data[11][1] || 'N/A' : 'N/A'
+    copyright: data[10] ? data[10][1] || 'N/A' : 'N/A'  // Row 11 (index 10): Copyright
   };
 
   // Parse deliverables starting from row 13 (index 12)
@@ -230,7 +239,7 @@ export const parseDeliverableSheetWithMode = (csvData, slatedOnly = false) => {
         client: headerInfo.client,
         product: headerInfo.product,
         isci: spec.isciAdId || 'N/A',
-        audio: headerInfo.audio,
+        audio: spec.audioMix || 'N/A',
         copyright: headerInfo.copyright
       });
 
