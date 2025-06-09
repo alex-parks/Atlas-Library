@@ -2,6 +2,26 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 
+function createSplashWindow() {
+  const splash = new BrowserWindow({
+    width: 800,
+    height: 600,
+    frame: false,
+    alwaysOnTop: true,
+    transparent: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  // Load the splash HTML file
+  splash.loadFile(path.join(__dirname, 'splash.html'));
+  splash.show();
+
+  return splash;
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -9,7 +29,9 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false
     },
     titleBarStyle: 'default',
     show: false
@@ -21,7 +43,7 @@ function createWindow() {
 
   win.loadURL(url);
 
-  // Show when ready
+  // Show when ready (splash will be closed by main logic)
   win.once('ready-to-show', () => {
     win.show();
     console.log('Window ready and shown');
@@ -36,18 +58,27 @@ function createWindow() {
     }, 3000);
   });
 
-  // Open DevTools in development
-  if (process.env.NODE_ENV !== 'production') {
-    win.webContents.openDevTools();
-  }
+  // DevTools can be opened manually with Cmd+Option+I if needed
+  // Removed automatic opening to avoid security warnings
 
   return win;
 }
 
 // App event handlers
 app.whenReady().then(() => {
-  console.log('Electron app ready, creating window...');
-  createWindow();
+  console.log('Electron app ready, showing splash screen...');
+  
+  // Show splash screen first
+  const splash = createSplashWindow();
+  
+  // Create main window after a short delay
+  setTimeout(() => {
+    const mainWin = createWindow();
+    mainWin.once('ready-to-show', () => {
+      console.log('Main window ready - closing splash');
+      splash.close();
+    });
+  }, 1500); // Show loading for 1.5 seconds minimum
 });
 
 app.on('window-all-closed', () => {

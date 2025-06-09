@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    }
+    /* VIDEO CODE - DISABLED FOR NOW
+    video {
+      width: 100vw;
+      height: 100vh;
+      object-fit: contain;
+    }
+    */
+    .loading-container {
+      text-align: center;
+      color: white;
+    }
+    .loading-text {
+      font-size: 24px;
+      font-weight: 300;
+      margin-bottom: 30px;
+      opacity: 0.9;
+    }
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.2);
+      border-top: 3px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <!-- VIDEO CODE - DISABLED FOR NOW
+  <video id="logoVideo" autoplay muted loop>
+    <source src="./assets/logo-video.mp4" type="video/mp4">
+    <source src="./assets/logo-video.webm" type="video/webm">
+  </video>
+  -->
+  
+  <div class="loading-container">
+    <div class="loading-text">Loading Blacksmith Atlas</div>
+    <div class="loading-spinner"></div>
+  </div>
+
+  <script>
+    const video = document.getElementById('logoVideo');
+    let videoCompleted = false;
+    
+    video.addEventListener('loadstart', () => {
+      console.log('Video loading started...');
+    });
+    
+    video.addEventListener('canplay', () => {
+      console.log('Video ready to play!');
+    });
+    
+    // Listen for when video completes one full loop
+    video.addEventListener('ended', () => {
+      console.log('Video completed one loop!');
+      videoCompleted = true;
+      // Tell main process that video is done
+      if (window.electronAPI) {
+        window.electronAPI.videoCompleted();
+      }
+    });
+    
+    video.addEventListener('error', (e) => {
+      console.error('Video failed to load:', e);
+      video.style.display = 'none';
+      document.querySelector('.fallback').style.display = 'block';
+    });
+    
+    // Expose completion status
+    window.isVideoCompleted = () => videoCompleted;
+  </script>
+</body>
+</html>
