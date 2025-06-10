@@ -11,6 +11,9 @@ dist/
 *.tgz
 *.tar.gz
 
+# Add this line to your .gitignore file
+training/
+
 # Runtime data
 pids
 *.pid
