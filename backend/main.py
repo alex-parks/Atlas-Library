@@ -1,5 +1,5 @@
-# backend/main.py - Simplified for JSON Database
-from fastapi import FastAPI
+# backend/main.py - Complete file with working thumbnail endpoint
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -32,77 +32,96 @@ app.add_middleware(
 )
 
 
+@app.get("/test-thumbnail")
+async def test_thumbnail():
+    """Direct test - no JSON, no database, just serve the file"""
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+
+    # Direct path to your PigHead thumbnail
+    path = r"C:\Users\alexh\Desktop\BlacksmithAtlas_Files\AssetLibrary\3D\5a337cb9_PigHead\Thumbnail\PigHead_thumbnail.png"
+
+    file = Path(path)
+    if file.exists():
+        return FileResponse(path)
+    else:
+        return {"error": "File not found", "path": path, "exists": file.exists()}
+
+
+# IMPORTANT: Define specific routes BEFORE including routers
 # Serve thumbnail images
 @app.get("/thumbnails/{asset_id}")
 async def get_thumbnail(asset_id: str):
     """Serve thumbnail images for assets"""
-    from fastapi import HTTPException
-
-    # First, try to get the exact path from JSON database
     from api.assets import load_json_database
+
+    print(f"📸 Thumbnail requested for asset: {asset_id}")
+
     try:
+        # Load assets from JSON database
         assets = load_json_database()
-        for asset in assets:
-            if asset.get('id') == asset_id and 'paths' in asset and 'thumbnail' in asset['paths']:
-                thumbnail_path = Path(asset['paths']['thumbnail'])
-                print(f"🔍 Checking JSON path: {thumbnail_path}")
-                if thumbnail_path.exists():
-                    print(f"✅ Found thumbnail at JSON path: {thumbnail_path}")
-                    return FileResponse(thumbnail_path)
-                else:
-                    print(f"❌ JSON path doesn't exist: {thumbnail_path}")
+
+        # Find the asset by ID
+        asset = None
+        for a in assets:
+            if a.get('id') == asset_id:
+                asset = a
+                break
+
+        if not asset:
+            print(f"❌ Asset not found: {asset_id}")
+            raise HTTPException(status_code=404, detail=f"Asset not found: {asset_id}")
+
+        # Get thumbnail path from asset data
+        thumbnail_path = None
+        if 'paths' in asset and 'thumbnail' in asset['paths']:
+            thumbnail_path = asset['paths']['thumbnail']
+            print(f"📸 Found thumbnail path in JSON: {thumbnail_path}")
+
+        if not thumbnail_path:
+            print(f"❌ No thumbnail path for asset: {asset_id}")
+            raise HTTPException(status_code=404, detail=f"No thumbnail path for asset: {asset_id}")
+
+        # Convert to Path object and check if file exists
+        thumb_file = Path(thumbnail_path)
+
+        if not thumb_file.exists():
+            print(f"❌ Thumbnail file doesn't exist: {thumbnail_path}")
+            raise HTTPException(status_code=404, detail=f"Thumbnail file not found: {thumbnail_path}")
+
+        print(f"✅ Serving thumbnail: {thumb_file}")
+        return FileResponse(
+            path=str(thumb_file),
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=3600"}
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"⚠️ Error reading JSON database: {e}")
-
-    # Extract asset name from asset_id (format: id_assetname)
-    asset_name = asset_id.split('_', 1)[-1] if '_' in asset_id else asset_id
-
-    # Try multiple common thumbnail path patterns
-    thumbnail_patterns = [
-        # Your actual structure
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail/{asset_name}_thumbnail.png",
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail/{asset_name}_thumbnail.jpg",
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail/{asset_id}_thumbnail.png",
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail/thumbnail.png",
-        # Alternative structures
-        f"C:/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail/{asset_name}_thumbnail.png",
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/USD/{asset_id}/Thumbnail/{asset_name}_thumbnail.png",
-    ]
-
-    print(f"🔍 Looking for thumbnails for asset_id: {asset_id}")
-    print(f"🔍 Asset name extracted: {asset_name}")
-
-    for i, thumbnail_path in enumerate(thumbnail_patterns):
-        path_obj = Path(thumbnail_path)
-        print(f"🔍 Pattern {i + 1}: {thumbnail_path}")
-        if path_obj.exists():
-            print(f"✅ Found thumbnail at pattern {i + 1}: {thumbnail_path}")
-            return FileResponse(path_obj)
-        else:
-            print(f"❌ Pattern {i + 1} doesn't exist: {thumbnail_path}")
-
-    # If still not found, try to find any PNG/JPG in the thumbnail folder
-    folder_pattern = f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail"
-    thumbnail_folder = Path(folder_pattern)
-
-    if thumbnail_folder.exists():
-        print(f"📁 Thumbnail folder exists: {thumbnail_folder}")
-        # Find any image file in the folder
-        for ext in ['.png', '.jpg', '.jpeg']:
-            for thumb_file in thumbnail_folder.glob(f"*{ext}"):
-                print(f"✅ Found thumbnail file: {thumb_file}")
-                return FileResponse(thumb_file)
-        print(f"❌ No image files found in: {thumbnail_folder}")
-    else:
-        print(f"❌ Thumbnail folder doesn't exist: {thumbnail_folder}")
-
-    # Return 404 if not found
-    print(f"❌ No thumbnail found for asset_id: {asset_id}")
-    raise HTTPException(status_code=404, detail=f"Thumbnail not found for asset: {asset_id}")
+        print(f"❌ Error serving thumbnail: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error serving thumbnail: {str(e)}")
 
 
-# Include routers
+# Include routers AFTER defining specific routes
 app.include_router(assets_router)
+
+
+# Debug: List all routes
+@app.get("/debug/routes")
+async def list_routes():
+    """List all registered routes for debugging"""
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'path'):
+            routes.append({
+                "path": route.path,
+                "methods": route.methods if hasattr(route, 'methods') else None,
+                "name": route.name if hasattr(route, 'name') else None
+            })
+    return {"routes": routes}
 
 
 @app.get("/")

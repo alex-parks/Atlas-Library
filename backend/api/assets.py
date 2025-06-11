@@ -1,11 +1,11 @@
-# backend/api/assets.py - Updated for JSON Database
+# backend/api/assets.py - SIMPLE DIRECT SOLUTION
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 from pydantic import BaseModel
 from pathlib import Path
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/api/v1", tags=["assets"])
 
@@ -41,7 +41,6 @@ def load_json_database() -> List[dict]:
     try:
         with open(JSON_DATABASE_PATH, 'r') as f:
             data = json.load(f)
-            # Handle both list format and dict format
             if isinstance(data, list):
                 return data
             elif isinstance(data, dict) and 'assets' in data:
@@ -53,21 +52,59 @@ def load_json_database() -> List[dict]:
         return []
 
 
+def find_actual_thumbnail(asset_data: dict) -> Optional[str]:
+    """Find the actual thumbnail file on disk and return API URL"""
+    asset_id = asset_data.get('id', '')
+    asset_name = asset_data.get('name', '')
+
+    if not asset_id:
+        return None
+
+    # Try the exact path from JSON first
+    if 'paths' in asset_data and 'thumbnail' in asset_data['paths']:
+        json_thumbnail_path = asset_data['paths']['thumbnail']
+        if json_thumbnail_path and Path(json_thumbnail_path).exists():
+            print(f"✅ Found thumbnail from JSON path: {json_thumbnail_path}")
+            return f"http://localhost:8000/thumbnails/{asset_id}"
+
+    # Search for thumbnail files in expected locations
+    search_patterns = [
+        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail/{asset_name}_thumbnail.png",
+        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail/{asset_name}_thumbnail.jpg",
+        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}_{asset_name}/Thumbnail/{asset_name}_thumbnail.png",
+        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}_{asset_name}/Thumbnail/{asset_name}_thumbnail.jpg",
+    ]
+
+    for pattern in search_patterns:
+        if Path(pattern).exists():
+            print(f"✅ Found thumbnail at: {pattern}")
+            return f"http://localhost:8000/thumbnails/{asset_id}"
+
+    # Try to find any image file in thumbnail folders
+    folder_patterns = [
+        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail",
+        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}_{asset_name}/Thumbnail",
+    ]
+
+    for folder_pattern in folder_patterns:
+        folder = Path(folder_pattern)
+        if folder.exists() and folder.is_dir():
+            for ext in ['.png', '.jpg', '.jpeg']:
+                for img_file in folder.glob(f"*{ext}"):
+                    print(f"✅ Found thumbnail in folder: {img_file}")
+                    return f"http://localhost:8000/thumbnails/{asset_id}"
+
+    print(f"❌ No thumbnail found for asset: {asset_name} (ID: {asset_id})")
+    return None
+
+
 def convert_asset_to_response(asset_data: dict) -> AssetResponse:
     """Convert raw asset data to API response format"""
-    # Handle both old and new formats
-    thumbnail_path = None
-    if 'paths' in asset_data and 'thumbnail' in asset_data['paths']:
-        # Convert absolute path to API endpoint
-        asset_id = asset_data.get('id', '')
-        if asset_id:
-            thumbnail_path = f"http://localhost:8000/thumbnails/{asset_id}"
-    elif 'thumbnail_path' in asset_data:
-        asset_id = asset_data.get('id', '')
-        if asset_id:
-            thumbnail_path = f"http://localhost:8000/thumbnails/{asset_id}"
 
-    # Extract artist from metadata if available
+    # Find the actual thumbnail file
+    thumbnail_path = find_actual_thumbnail(asset_data)
+
+    # Extract artist from metadata
     artist = "Unknown"
     if 'metadata' in asset_data:
         metadata = asset_data['metadata']
@@ -83,6 +120,13 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
         if 'notes' in hda_params:
             description = hda_params.get('notes', '')
 
+    if not description:
+        if 'metadata' in asset_data:
+            description = asset_data['metadata'].get('description', '')
+
+    if not description:
+        description = f"{asset_data.get('category', 'General')} asset created in Houdini"
+
     return AssetResponse(
         id=asset_data.get('id', ''),
         name=asset_data.get('name', ''),
@@ -93,7 +137,7 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
         tags=asset_data.get('tags', []),
         metadata=asset_data.get('metadata', {}),
         created_at=asset_data.get('created_at', datetime.now().isoformat()),
-        thumbnail_path=thumbnail_path,
+        thumbnail_path=thumbnail_path,  # Will be API URL if found, None if not
         artist=artist,
         file_format="USD",
         description=description
@@ -106,18 +150,19 @@ async def list_assets(
         category: Optional[str] = Query(None, description="Filter by category"),
         limit: int = Query(100, description="Maximum number of results")
 ):
-    """Get all assets with optional filtering"""
+    """Get all assets with thumbnail detection"""
     try:
         raw_assets = load_json_database()
+        print(f"📚 Loaded {len(raw_assets)} assets from JSON")
 
-        # Convert to response format
+        # Convert to response format with thumbnail detection
         assets = []
         for asset_data in raw_assets:
             try:
                 asset_response = convert_asset_to_response(asset_data)
                 assets.append(asset_response)
             except Exception as e:
-                print(f"Error converting asset {asset_data.get('id', 'unknown')}: {e}")
+                print(f"❌ Error converting asset {asset_data.get('id', 'unknown')}: {e}")
                 continue
 
         # Apply filters
@@ -133,9 +178,19 @@ async def list_assets(
         # Apply limit
         assets = assets[:limit]
 
+        print(f"📤 Returning {len(assets)} assets")
+
+        # Debug info
+        for asset in assets:
+            if asset.thumbnail_path:
+                print(f"✅ {asset.name}: {asset.thumbnail_path}")
+            else:
+                print(f"❌ {asset.name}: No thumbnail found")
+
         return assets
 
     except Exception as e:
+        print(f"❌ Error in list_assets: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error loading assets: {str(e)}")
 
 
@@ -145,7 +200,6 @@ async def get_asset(asset_id: str):
     try:
         raw_assets = load_json_database()
 
-        # Find asset by ID
         asset_data = None
         for asset in raw_assets:
             if asset.get('id') == asset_id:
@@ -163,22 +217,52 @@ async def get_asset(asset_id: str):
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
+@router.get("/test")
+async def test_database():
+    """Test endpoint to check everything"""
+    try:
+        raw_assets = load_json_database()
+
+        # Test thumbnail detection for each asset
+        thumbnail_status = []
+        for asset in raw_assets:
+            thumbnail_url = find_actual_thumbnail(asset)
+            thumbnail_status.append({
+                "id": asset.get('id'),
+                "name": asset.get('name'),
+                "has_thumbnail": thumbnail_url is not None,
+                "thumbnail_url": thumbnail_url
+            })
+
+        return {
+            "status": "JSON database connected successfully",
+            "database_path": str(JSON_DATABASE_PATH),
+            "total_assets": len(raw_assets),
+            "thumbnail_detection": thumbnail_status,
+            "connection": "healthy"
+        }
+
+    except Exception as e:
+        return {
+            "status": "Failed",
+            "error": str(e),
+            "connection": "unhealthy"
+        }
+
+
+# Keep the other endpoints for compatibility
 @router.get("/assets/stats/summary")
 async def get_asset_stats():
     """Get asset library statistics"""
     try:
         raw_assets = load_json_database()
-
-        # Calculate statistics
         total_assets = len(raw_assets)
 
-        # Group by category
         categories = {}
         for asset in raw_assets:
             category = asset.get('category', 'General')
             categories[category] = categories.get(category, 0) + 1
 
-        # Calculate total size
         total_size = 0
         for asset in raw_assets:
             file_sizes = asset.get('file_sizes', {})
@@ -186,7 +270,6 @@ async def get_asset_stats():
                 if isinstance(size, (int, float)):
                     total_size += size
 
-        # Count recent assets (this week)
         recent_count = 0
         one_week_ago = (datetime.now() - timedelta(days=7)).isoformat()
         for asset in raw_assets:
@@ -197,7 +280,7 @@ async def get_asset_stats():
         return {
             "total_assets": total_assets,
             "by_category": categories,
-            "by_type": {"3D": total_assets},  # All assets are 3D for now
+            "by_type": {"3D": total_assets},
             "total_size_gb": round(total_size / (1024 ** 3), 2),
             "assets_this_week": recent_count
         }
@@ -212,12 +295,10 @@ async def get_recent_assets(limit: int = 10):
     try:
         raw_assets = load_json_database()
 
-        # Sort by created_at (most recent first)
         sorted_assets = sorted(raw_assets,
                                key=lambda x: x.get('created_at', ''),
                                reverse=True)
 
-        # Convert to response format and limit
         recent_assets = []
         for asset_data in sorted_assets[:limit]:
             try:
@@ -231,30 +312,3 @@ async def get_recent_assets(limit: int = 10):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-
-@router.get("/test")
-async def test_database():
-    """Test endpoint to check if JSON database is working"""
-    try:
-        raw_assets = load_json_database()
-
-        return {
-            "status": "JSON database connected successfully",
-            "database_path": str(JSON_DATABASE_PATH),
-            "total_assets": len(raw_assets),
-            "database_exists": JSON_DATABASE_PATH.exists(),
-            "connection": "healthy"
-        }
-
-    except Exception as e:
-        return {
-            "status": "JSON database connection failed",
-            "error": str(e),
-            "database_path": str(JSON_DATABASE_PATH),
-            "connection": "unhealthy"
-        }
-
-
-# Add missing datetime import
-from datetime import timedelta
