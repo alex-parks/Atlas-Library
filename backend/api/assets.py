@@ -1,100 +1,78 @@
-# backend/api/assets.py - REPLACE ENTIRE FILE
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+# backend/api/assets.py - Updated for ArangoDB
+from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 from pydantic import BaseModel
-import yaml
 from pathlib import Path
+import sys
+
+# Add parent directory to path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from assetlibrary.database.arango_queries import AssetQueries
 
 router = APIRouter(prefix="/api/v1", tags=["assets"])
 
-# Path to your YAML database
-YAML_PATH = Path(__file__).parent.parent / "assetlibrary/database/3DAssets.yaml"
+# Configuration
+ARANGO_CONFIG = {
+    'hosts': ['http://localhost:8529'],
+    'database': 'blacksmith_atlas',
+    'username': 'root',
+    'password': ''
+}
+
+# Initialize queries
+queries = AssetQueries(ARANGO_CONFIG)
 
 
-# Pydantic models
+# Response models
 class AssetResponse(BaseModel):
     id: str
     name: str
-    folder: str
-    usd_path: str
-    thumbnail_path: str
-    textures_path: str
-    # Adding fields to match frontend expectations
-    asset_type: str = "geometry"
-    file_size: int = 0
-    file_format: str = "USD"
-    status: str = "active"
+    category: str
+    asset_type: str = "3D"
+    paths: dict
+    file_sizes: dict
     tags: List[str] = []
-    description: str = ""
-    artist: str = "Unknown"
-    created_at: str = "2025-01-01T00:00:00Z"
+    metadata: dict = {}
+    created_at: str
+    thumbnail_path: Optional[str] = None
 
-
-def load_yaml_assets() -> List[dict]:
-    """Load assets from YAML file"""
-    try:
-        if YAML_PATH.exists():
-            with open(YAML_PATH, 'r') as f:
-                data = yaml.safe_load(f)
-                return data if isinstance(data, list) else []
-        return []
-    except Exception as e:
-        print(f"Error loading YAML: {e}")
-        return []
-
-
-def convert_yaml_to_asset_response(yaml_asset: dict) -> AssetResponse:
-    """Convert YAML asset to AssetResponse format"""
-    return AssetResponse(
-        id=yaml_asset.get('id', ''),
-        name=yaml_asset.get('name', ''),
-        folder=yaml_asset.get('folder', ''),
-        usd_path=yaml_asset.get('usd_path', ''),
-        thumbnail_path=yaml_asset.get('thumbnail_path', ''),
-        textures_path=yaml_asset.get('textures_path', ''),
-        asset_type="geometry",  # Since these are 3D assets
-        file_size=1024000,  # Placeholder size
-        file_format="USD",
-        status="active",
-        tags=["3D", "Houdini"],
-        description=f"3D asset: {yaml_asset.get('name', '')}",
-        artist="Houdini Artist",
-        created_at="2025-01-01T00:00:00Z"
-    )
+    class Config:
+        populate_by_name = True
 
 
 @router.get("/assets", response_model=List[AssetResponse])
 async def list_assets(
-        search: Optional[str] = None,
-        asset_type: Optional[str] = None
+        search: Optional[str] = Query(None, description="Search term"),
+        category: Optional[str] = Query(None, description="Filter by category"),
+        tags: Optional[List[str]] = Query(None, description="Filter by tags"),
+        limit: int = Query(100, description="Maximum number of results")
 ):
     """Get all assets with optional filtering"""
     try:
-        yaml_assets = load_yaml_assets()
+        # Use ArangoDB query
+        results = queries.search_assets(
+            search_term=search or "",
+            category=category,
+            tags=tags
+        )
 
-        # Convert YAML assets to response format
+        # Convert to response format
         assets = []
-        for yaml_asset in yaml_assets:
-            asset = convert_yaml_to_asset_response(yaml_asset)
+        for doc in results[:limit]:
+            asset = AssetResponse(
+                id=doc.get('_key', doc.get('id', '')),
+                name=doc.get('name', ''),
+                category=doc.get('category', 'General'),
+                asset_type=doc.get('asset_type', '3D'),
+                paths=doc.get('paths', {}),
+                file_sizes=doc.get('file_sizes', {}),
+                tags=doc.get('tags', []),
+                metadata=doc.get('metadata', {}),
+                created_at=doc.get('created_at', ''),
+                thumbnail_path=doc.get('paths', {}).get('thumbnail')
+            )
             assets.append(asset)
-
-        # Apply search filter
-        if search:
-            assets = [
-                asset for asset in assets
-                if search.lower() in asset.name.lower() or
-                   search.lower() in asset.description.lower()
-            ]
-
-        # Apply type filter
-        if asset_type and asset_type != 'all':
-            if asset_type == '2d':
-                assets = [asset for asset in assets if asset.asset_type in ['texture', 'image', 'reference']]
-            elif asset_type == '3d':
-                assets = [asset for asset in assets if asset.asset_type in ['geometry', 'material', 'light_rig']]
-            else:
-                assets = [asset for asset in assets if asset.asset_type == asset_type]
 
         return assets
 
@@ -106,103 +84,83 @@ async def list_assets(
 async def get_asset(asset_id: str):
     """Get a specific asset by ID"""
     try:
-        yaml_assets = load_yaml_assets()
+        result = queries.get_asset_with_dependencies(asset_id)
+        if not result or not result.get('asset'):
+            raise HTTPException(status_code=404, detail="Asset not found")
 
-        for yaml_asset in yaml_assets:
-            if yaml_asset.get('id') == asset_id:
-                return convert_yaml_to_asset_response(yaml_asset)
+        doc = result['asset']
+        return AssetResponse(
+            id=doc.get('_key', doc.get('id', '')),
+            name=doc.get('name', ''),
+            category=doc.get('category', 'General'),
+            asset_type=doc.get('asset_type', '3D'),
+            paths=doc.get('paths', {}),
+            file_sizes=doc.get('file_sizes', {}),
+            tags=doc.get('tags', []),
+            metadata=doc.get('metadata', {}),
+            created_at=doc.get('created_at', ''),
+            thumbnail_path=doc.get('paths', {}).get('thumbnail')
+        )
 
-        raise HTTPException(status_code=404, detail="Asset not found")
-
+    except HTTPException:
+        raise
     except Exception as e:
-        if "Asset not found" in str(e):
-            raise e
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-
-@router.get("/assets/types")
-async def get_asset_types():
-    """Get available asset types"""
-    return [
-        {"value": "geometry", "name": "Geometry", "category": "3D"},
-        {"value": "material", "name": "Material", "category": "3D"},
-        {"value": "light_rig", "name": "Light Rig", "category": "3D"},
-        {"value": "texture", "name": "Texture", "category": "2D"},
-        {"value": "image", "name": "Image", "category": "2D"},
-        {"value": "reference", "name": "Reference", "category": "2D"}
-    ]
 
 
 @router.get("/assets/stats/summary")
 async def get_asset_stats():
     """Get asset library statistics"""
     try:
-        yaml_assets = load_yaml_assets()
-        assets = [convert_yaml_to_asset_response(asset) for asset in yaml_assets]
-
-        # Calculate stats
-        total_assets = len(assets)
-        asset_types = {}
-        total_size = 0
-        artists = set()
-        all_tags = set()
-
-        for asset in assets:
-            # Count by type
-            asset_types[asset.asset_type] = asset_types.get(asset.asset_type, 0) + 1
-            # Sum sizes
-            total_size += asset.file_size
-            # Collect artists
-            if asset.artist:
-                artists.add(asset.artist)
-            # Collect tags
-            all_tags.update(asset.tags)
-
+        stats = queries.get_asset_statistics()
         return {
-            "total_assets": total_assets,
-            "asset_types": asset_types,
-            "total_size": total_size,
-            "artists": list(artists),
-            "tags": list(all_tags)
+            "total_assets": stats.get('total_assets', 0),
+            "by_category": {item['category']: item['count'] for item in stats.get('by_category', [])},
+            "by_type": {item['type']: item['count'] for item in stats.get('by_type', [])},
+            "total_size_gb": round(stats.get('total_size_gb', 0), 2),
+            "assets_this_week": stats.get('assets_this_week', 0)
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-@router.get("/assets/{asset_id}/thumbnail")
-async def get_asset_thumbnail(asset_id: str):
-    """Get asset thumbnail image"""
+@router.get("/assets/recent/{limit}")
+async def get_recent_assets(limit: int = 10):
+    """Get most recent assets"""
     try:
-        yaml_assets = load_yaml_assets()
-
-        for yaml_asset in yaml_assets:
-            if yaml_asset.get('id') == asset_id:
-                thumbnail_path = yaml_asset.get('thumbnail_path')
-                if thumbnail_path and Path(thumbnail_path).exists():
-                    return FileResponse(thumbnail_path)
-                else:
-                    raise HTTPException(status_code=404, detail="Thumbnail not found")
-
-        raise HTTPException(status_code=404, detail="Asset not found")
-
+        results = queries.get_recent_assets(limit)
+        return results
     except Exception as e:
-        if "not found" in str(e):
-            raise e
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.put("/assets/{asset_id}/tags")
+async def update_asset_tags(asset_id: str, tags: List[str]):
+    """Update tags for an asset"""
+    try:
+        success = queries.update_asset_tags(asset_id, tags)
+        if success:
+            return {"message": "Tags updated successfully"}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to update tags")
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
 @router.get("/test")
 async def test_database():
-    """Test endpoint to check if YAML database is working"""
+    """Test endpoint to check if ArangoDB is working"""
     try:
-        yaml_assets = load_yaml_assets()
-
+        stats = queries.get_asset_statistics()
         return {
-            "status": "YAML database connected successfully",
-            "assets_count": len(yaml_assets),
-            "database_path": str(YAML_PATH.absolute()),
-            "database_exists": YAML_PATH.exists()
+            "status": "ArangoDB connected successfully",
+            "database": "blacksmith_atlas",
+            "total_assets": stats.get('total_assets', 0),
+            "connection": "healthy"
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"YAML database connection failed: {str(e)}")
+        return {
+            "status": "ArangoDB connection failed",
+            "error": str(e),
+            "connection": "unhealthy"
+        }

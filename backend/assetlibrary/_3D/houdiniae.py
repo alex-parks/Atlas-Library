@@ -124,6 +124,118 @@ class JSONDatabaseHandler(DatabaseHandler):
         return []
 
 
+# Add this to your houdiniae.py file after the JSONDatabaseHandler class
+
+class ArangoDBHandler(DatabaseHandler):
+    def __init__(self, config: Dict):
+        try:
+            from arango import ArangoClient
+            self.client = ArangoClient(hosts=config['hosts'])
+            self.db = self.client.db(
+                config['database'],
+                username=config['username'],
+                password=config['password']
+            )
+            self.collection = self.db.collection('assets')
+            self.edges = self.db.collection('asset_relationships')
+            print("✅ Connected to ArangoDB")
+        except ImportError:
+            raise ImportError("python-arango not installed. Run: pip install python-arango")
+        except Exception as e:
+            print(f"❌ ArangoDB connection failed: {e}")
+            raise
+
+    def save_asset(self, asset_data: Dict) -> bool:
+        try:
+            # Prepare document for ArangoDB
+            arango_doc = {
+                '_key': asset_data['id'],
+                'name': asset_data['name'],
+                'category': asset_data['category'],
+                'asset_type': '3D',
+                'folder': asset_data.get('folder', ''),
+                'paths': asset_data.get('paths', {}),
+                'metadata': asset_data.get('metadata', {}),
+                'file_sizes': asset_data.get('file_sizes', {}),
+                'dependencies': asset_data.get('dependencies', {}),
+                'tags': asset_data.get('tags', []),
+                'created_at': asset_data.get('created_at', datetime.now().isoformat()),
+                'updated_at': datetime.now().isoformat(),
+                'copied_files': asset_data.get('copied_files', [])
+            }
+
+            # Insert or update
+            result = self.collection.insert(arango_doc, overwrite=True)
+            print(f"✅ Asset saved to ArangoDB with key: {result['_key']}")
+
+            # Also save to JSON as backup
+            self._save_to_json_backup(asset_data)
+
+            return True
+        except Exception as e:
+            print(f"❌ Failed to save to ArangoDB: {e}")
+            return False
+
+    def load_assets(self) -> List[Dict]:
+        try:
+            # AQL query to get all assets
+            query = """
+                FOR asset IN assets
+                    SORT asset.created_at DESC
+                    RETURN asset
+            """
+            cursor = self.db.aql.execute(query)
+            return list(cursor)
+        except Exception as e:
+            print(f"⚠️ Failed to load from ArangoDB: {e}")
+            return []
+
+    def _save_to_json_backup(self, asset_data: Dict):
+        """Save to JSON as backup"""
+        try:
+            json_path = Path(__file__).parent.parent.parent / "assetlibrary/database/3DAssets.json"
+
+            # Load existing data
+            if json_path.exists():
+                with open(json_path, 'r') as f:
+                    data = json.load(f)
+            else:
+                data = []
+
+            # Update or append
+            found = False
+            for i, existing in enumerate(data):
+                if existing.get('id') == asset_data['id']:
+                    data[i] = asset_data
+                    found = True
+                    break
+
+            if not found:
+                data.append(asset_data)
+
+            # Save back
+            with open(json_path, 'w') as f:
+                json.dump(data, f, indent=2)
+
+        except Exception as e:
+            print(f"⚠️ JSON backup failed: {e}")
+
+
+# Then update the _create_db_handler method in HoudiniAssetExporter:
+def _create_db_handler(self) -> DatabaseHandler:
+    """Create appropriate database handler based on config"""
+    db_type = self.config.DATABASE['type']
+
+    if db_type == 'yaml':
+        return YAMLDatabaseHandler(self.config.YAML_FILE)
+    elif db_type == 'json':
+        return JSONDatabaseHandler(self.config.JSON_FILE)
+    elif db_type == 'arango':
+        return ArangoDBHandler(self.config.DATABASE['arango'])
+    else:
+        raise ValueError(f"Unknown database type: {db_type}")
+
+
 class HoudiniAssetExporter:
     def __init__(self, name: str, category: str = "General"):
         self.config = BlacksmithAtlasConfig()
@@ -337,7 +449,42 @@ class HoudiniAssetExporter:
             print("⚠️ No FBX export node found")
 
     def render_thumbnail(self, node):
-        """Render thumbnail for the asset"""
+        """Render thumbnail for the asset or use custom thumbnail"""
+        # Make sure thumbnail folder exists
+        self.thumbnail_folder.mkdir(parents=True, exist_ok=True)
+
+        # Check if custom thumbnail is enabled
+        custom_toggle = node.parm("customthumbtoggle")
+        custom_path_parm = node.parm("customthumbnail")
+
+        # Debug prints
+        print(f"🔍 Custom toggle value: {custom_toggle.eval() if custom_toggle else 'No toggle param'}")
+        print(f"🔍 Custom path value: {custom_path_parm.eval() if custom_path_parm else 'No path param'}")
+
+        if custom_toggle and custom_path_parm and custom_toggle.eval() == 1:
+            # Use custom thumbnail
+            custom_path = custom_path_parm.eval()
+
+            if custom_path and os.path.exists(custom_path):
+                print(f"📸 Using custom thumbnail: {custom_path}")
+
+                # Copy the custom thumbnail to our thumbnail folder
+                import shutil
+                try:
+                    shutil.copy2(custom_path, self.thumbnail_path)
+                    print(f"✅ Copied custom thumbnail to: {self.thumbnail_path}")
+                    # IMPORTANT: Return here to skip rendering
+                    return
+                except Exception as e:
+                    print(f"⚠️ Failed to copy custom thumbnail: {e}")
+                    print("   Falling back to render...")
+            else:
+                print(f"⚠️ Custom thumbnail path invalid or doesn't exist: {custom_path}")
+                print("   Falling back to render...")
+        else:
+            print("📸 Custom thumbnail not enabled, will render normally")
+
+        # If we get here, either custom is disabled or failed, so render normally
         # Get both nodes - settings and ROP
         rop = node.node("Thumbnail_BTY_ROP")
         karma_settings = node.node("Thumbnail_BTY")
@@ -350,12 +497,9 @@ class HoudiniAssetExporter:
             return
 
         try:
-            # Make sure thumbnail folder exists
-            self.thumbnail_folder.mkdir(parents=True, exist_ok=True)
-
             # Simple direct set - just like the test that worked
             karma_settings.parm("picture").set(str(self.thumbnail_path))
-            print(f"📸 Set thumbnail path to: {self.thumbnail_path}")
+            print(f"📸 Set thumbnail render path to: {self.thumbnail_path}")
 
             # Execute render
             execute_parm = rop.parm("execute")
