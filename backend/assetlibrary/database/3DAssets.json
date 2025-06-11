@@ -1,0 +1,59 @@
+[
+  {
+    "id": "5a337cb9",
+    "name": "PigHead",
+    "category": "Characters",
+    "folder": "5a337cb9_PigHead",
+    "paths": {
+      "usd": "C:\\Users\\alexh\\Desktop\\BlacksmithAtlas_Files\\AssetLibrary\\3D\\5a337cb9_PigHead\\USD\\PigHead.usd",
+      "thumbnail": "C:\\Users\\alexh\\Desktop\\BlacksmithAtlas_Files\\AssetLibrary\\3D\\5a337cb9_PigHead\\Thumbnail\\PigHead_thumbnail.png",
+      "textures": "C:\\Users\\alexh\\Desktop\\BlacksmithAtlas_Files\\AssetLibrary\\3D\\5a337cb9_PigHead\\Linked_Textures",
+      "fbx": null
+    },
+    "metadata": {
+      "houdini_version": "20.5.613",
+      "hip_file": "C:/Users/alexh/Desktop/BlacksmithAtlas_Files/Houdini/HDAs_v001.hiplc",
+      "node_path": "/obj/HDA/bl_save_asset",
+      "node_type": "bl_save_asset::1.0",
+      "export_time": "2025-06-11T10:21:18.640946",
+      "created_by": "alexh",
+      "hda_parameters": {
+        "nameinput": "PigHead",
+        "category": 0
+      },
+      "dependencies": {
+        "textures": [],
+        "materials": [
+          {
+            "node": "/obj/HDA/bl_save_asset/Temp_Item/assignmaterial",
+            "type": "assignmaterial"
+          },
+          {
+            "node": "/obj/HDA/bl_save_asset/Temp_Item/materiallibrary",
+            "type": "materiallibrary"
+          }
+        ],
+        "geometry": []
+      }
+    },
+    "file_sizes": {
+      "usd": 34704
+    },
+    "dependencies": {
+      "textures": [],
+      "materials": [
+        {
+          "node": "/obj/HDA/bl_save_asset/Temp_Item/assignmaterial",
+          "type": "assignmaterial"
+        },
+        {
+          "node": "/obj/HDA/bl_save_asset/Temp_Item/materiallibrary",
+          "type": "materiallibrary"
+        }
+      ],
+      "geometry": []
+    },
+    "created_at": "2025-06-11T10:21:19.982735",
+    "copied_files": []
+  }
+]

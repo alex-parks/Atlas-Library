@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Grid3X3, List, Filter, Upload, Download, Eye, X } from 'lucide-react';
+import { Search, Grid3X3, List, Filter, Upload, Download, Eye, X, Settings, Save, FolderOpen } from 'lucide-react';
 
 const AssetLibrary = () => {
   const [assets, setAssets] = useState([]);
@@ -7,31 +7,54 @@ const AssetLibrary = () => {
   const [viewMode, setViewMode] = useState('grid');
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [selectedFilters, setSelectedFilters] = useState({
     type: 'all', // 'all', '2d', '3d'
     format: 'all'
   });
 
+  // Settings state
+  const [settings, setSettings] = useState({
+    rootFolder: 'C:\\Users\\alexh\\Desktop\\BlacksmithAtlas_Files\\AssetLibrary\\3D',
+    jsonFilePath: 'C:\\Users\\alexh\\Desktop\\BlacksmithAtlas\\backend\\assetlibrary\\database\\3DAssets.json',
+    apiEndpoint: 'http://localhost:8000/api/v1/assets'
+  });
+
+  const [tempSettings, setTempSettings] = useState(settings);
+
   useEffect(() => {
-    fetch('http://localhost:8000/api/v1/assets')
-      .then(res => res.json())
+    loadAssets();
+  }, [settings.apiEndpoint]);
+
+  const loadAssets = () => {
+    setLoading(true);
+    fetch(settings.apiEndpoint)
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+      })
       .then(data => {
+        console.log('Loaded assets:', data);
         setAssets(data);
         setLoading(false);
       })
       .catch(err => {
         console.error('Failed to load assets:', err);
         setLoading(false);
+        // Show user-friendly error
+        setAssets([]);
       });
-  }, []);
+  };
 
   const filteredAssets = assets.filter(asset => {
     const matchesSearch = asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         asset.description.toLowerCase().includes(searchTerm.toLowerCase());
+                         (asset.description && asset.description.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesType = selectedFilters.type === 'all' ||
                        (selectedFilters.type === '2d' && ['texture', 'image', 'reference'].includes(asset.asset_type)) ||
-                       (selectedFilters.type === '3d' && ['geometry', 'material', 'light_rig'].includes(asset.asset_type));
+                       (selectedFilters.type === '3d' && ['3D', 'geometry', 'material', 'light_rig'].includes(asset.asset_type));
 
     return matchesSearch && matchesType;
   });
@@ -50,6 +73,37 @@ const AssetLibrary = () => {
     });
   };
 
+  const saveSettings = () => {
+    setSettings(tempSettings);
+    setShowSettingsPanel(false);
+    // Optionally save to localStorage
+    localStorage.setItem('blacksmith-atlas-settings', JSON.stringify(tempSettings));
+    console.log('Settings saved:', tempSettings);
+  };
+
+  const resetSettings = () => {
+    const defaultSettings = {
+      rootFolder: 'C:\\Users\\alexh\\Desktop\\BlacksmithAtlas_Files\\AssetLibrary\\3D',
+      jsonFilePath: 'C:\\Users\\alexh\\Desktop\\BlacksmithAtlas\\backend\\assetlibrary\\database\\3DAssets.json',
+      apiEndpoint: 'http://localhost:8000/api/v1/assets'
+    };
+    setTempSettings(defaultSettings);
+  };
+
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    const savedSettings = localStorage.getItem('blacksmith-atlas-settings');
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings);
+        setSettings(parsed);
+        setTempSettings(parsed);
+      } catch (e) {
+        console.error('Error loading saved settings:', e);
+      }
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-neutral-900 text-white">
       {/* Header */}
@@ -62,6 +116,13 @@ const AssetLibrary = () => {
             <button className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
               <Upload size={20} />
               Upload Asset
+            </button>
+            <button
+              onClick={() => setShowSettingsPanel(true)}
+              className="bg-neutral-700 hover:bg-neutral-600 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            >
+              <Settings size={20} />
+              Settings
             </button>
           </div>
         </div>
@@ -161,6 +222,169 @@ const AssetLibrary = () => {
         </div>
       </div>
 
+      {/* Settings Panel */}
+      {showSettingsPanel && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-white">Asset Library Settings</h2>
+              <button
+                onClick={() => setShowSettingsPanel(false)}
+                className="text-neutral-400 hover:text-white"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Root Folder Setting */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  Asset Library Root Folder
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={tempSettings.rootFolder}
+                    onChange={(e) => setTempSettings(prev => ({ ...prev, rootFolder: e.target.value }))}
+                    className="flex-1 bg-neutral-700 border border-neutral-600 rounded-lg px-3 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                    placeholder="C:\Path\To\Your\AssetLibrary"
+                  />
+                  <button className="bg-neutral-700 hover:bg-neutral-600 px-3 py-2 rounded-lg transition-colors">
+                    <FolderOpen size={18} />
+                  </button>
+                </div>
+                <p className="text-xs text-neutral-500 mt-1">
+                  Root directory where your 3D assets are stored
+                </p>
+              </div>
+
+              {/* JSON File Path Setting */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  JSON Database File Path
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={tempSettings.jsonFilePath}
+                    onChange={(e) => setTempSettings(prev => ({ ...prev, jsonFilePath: e.target.value }))}
+                    className="flex-1 bg-neutral-700 border border-neutral-600 rounded-lg px-3 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                    placeholder="C:\Users\alexh\Desktop\BlacksmithAtlas\backend\assetlibrary\database\3DAssets.json"
+                  />
+                  <button className="bg-neutral-700 hover:bg-neutral-600 px-3 py-2 rounded-lg transition-colors">
+                    <FolderOpen size={18} />
+                  </button>
+                </div>
+                <p className="text-xs text-neutral-500 mt-1">
+                  Path to the JSON file containing asset metadata
+                </p>
+              </div>
+
+              {/* API Endpoint Setting */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  API Endpoint
+                </label>
+                <input
+                  type="text"
+                  value={tempSettings.apiEndpoint}
+                  onChange={(e) => setTempSettings(prev => ({ ...prev, apiEndpoint: e.target.value }))}
+                  className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-3 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                  placeholder="http://localhost:8000/api/v1/assets"
+                />
+                <p className="text-xs text-neutral-500 mt-1">
+                  Backend API endpoint for loading assets
+                </p>
+              </div>
+
+              {/* Current Status */}
+              <div className="bg-neutral-700 rounded-lg p-4">
+                <h3 className="text-white font-medium mb-3">Current Configuration</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Assets Loaded:</span>
+                    <span className="text-green-400">{assets.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">API Status:</span>
+                    <span className={loading ? "text-yellow-400" : assets.length > 0 ? "text-green-400" : "text-red-400"}>
+                      {loading ? "Loading..." : assets.length > 0 ? "Connected" : "Disconnected"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">JSON Database:</span>
+                    <span className="text-blue-400 text-xs truncate max-w-48">{settings.jsonFilePath}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Thumbnails with URLs:</span>
+                    <span className="text-cyan-400">{assets.filter(a => a.thumbnail_path && a.thumbnail_path !== 'null').length}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Debug Info */}
+              <div className="bg-neutral-700 rounded-lg p-4">
+                <h3 className="text-white font-medium mb-3">Debug Info</h3>
+                <div className="space-y-2 text-xs">
+                  {assets.slice(0, 3).map((asset, idx) => (
+                    <div key={idx} className="border-b border-neutral-600 pb-2">
+                      <div className="text-yellow-400">Asset {idx + 1}: {asset.name}</div>
+                      <div className="text-neutral-400">ID: {asset.id}</div>
+                      <div className="text-neutral-400">Thumbnail: {asset.thumbnail_path || 'No thumbnail path'}</div>
+                      <div className="text-neutral-400">Category: {asset.category}</div>
+                    </div>
+                  ))}
+                  {assets.length > 3 && (
+                    <div className="text-neutral-500">... and {assets.length - 3} more assets</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={saveSettings}
+                  className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-white font-medium"
+                >
+                  <Save size={18} />
+                  Save Settings
+                </button>
+                <button
+                  onClick={resetSettings}
+                  className="bg-neutral-600 hover:bg-neutral-500 px-4 py-2 rounded-lg transition-colors text-white"
+                >
+                  Reset to Default
+                </button>
+                <button
+                  onClick={loadAssets}
+                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors text-white"
+                >
+                  Reload Assets
+                </button>
+                <button
+                  onClick={() => {
+                    // Force refresh thumbnails by clearing cache
+                    const images = document.querySelectorAll('img[src*="/thumbnails/"]');
+                    images.forEach(img => {
+                      const originalSrc = img.src;
+                      img.src = '';
+                      setTimeout(() => {
+                        img.src = originalSrc + '?t=' + Date.now();
+                      }, 100);
+                    });
+                    loadAssets();
+                  }}
+                  className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg transition-colors text-white"
+                >
+                  Refresh Thumbnails
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       <div className="p-6">
         {loading ? (
@@ -173,8 +397,11 @@ const AssetLibrary = () => {
             <div className="bg-neutral-800 rounded-lg p-4 mb-6">
               <div className="flex items-center gap-8 text-sm text-neutral-400">
                 <span>{filteredAssets.length} assets found</span>
-                <span>Total size: {Math.round(filteredAssets.reduce((sum, asset) => sum + asset.file_size, 0) / 1024 / 1024)} MB</span>
-                <span>Last updated: Today</span>
+                <span>Total size: {Math.round(filteredAssets.reduce((sum, asset) => {
+                  const sizes = Object.values(asset.file_sizes || {});
+                  return sum + sizes.reduce((total, size) => total + (typeof size === 'number' ? size : 0), 0);
+                }, 0) / 1024 / 1024)} MB</span>
+                <span>Categories: {[...new Set(filteredAssets.map(asset => asset.category))].join(', ')}</span>
                 {selectedFilters.type !== 'all' && (
                   <span className="text-blue-400">Filtered by: {selectedFilters.type.toUpperCase()}</span>
                 )}
@@ -190,30 +417,41 @@ const AssetLibrary = () => {
                     <div className="bg-neutral-800 rounded-lg overflow-hidden border border-neutral-700 hover:border-blue-500 transition-all duration-200 hover:shadow-lg hover:shadow-blue-500/10 cursor-pointer">
                       {/* Image/Thumbnail */}
                       <div className="aspect-square bg-neutral-700 flex items-center justify-center relative overflow-hidden">
-                        {asset.thumbnail_path ? (
+                        {asset.thumbnail_path && asset.thumbnail_path !== 'null' ? (
                           <img
                             src={asset.thumbnail_path}
                             alt={asset.name}
                             className="w-full h-full object-cover"
+                            onLoad={() => console.log('✅ Thumbnail loaded:', asset.thumbnail_path)}
+                            onError={(e) => {
+                              console.log('❌ Thumbnail failed to load:', asset.thumbnail_path);
+                              console.log('Asset ID:', asset.id);
+                              console.log('Asset name:', asset.name);
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
                           />
                         ) : (
-                          <div className="text-neutral-500 text-3xl">
-                            {asset.asset_type === 'geometry' ? '🎭' :
-                             asset.asset_type === 'material' ? '🎨' :
-                             asset.asset_type === 'texture' ? '🖼️' :
-                             asset.asset_type === 'light_rig' ? '💡' :
-                             asset.asset_type === 'reference' ? '📸' : '📦'}
+                          <div className="text-xs text-red-400 p-2 text-center">
+                            No thumbnail<br/>
+                            ID: {asset.id}<br/>
+                            Path: {asset.thumbnail_path || 'null'}
                           </div>
                         )}
+                        <div className="text-neutral-500 text-3xl flex items-center justify-center w-full h-full"
+                             style={{ display: (asset.thumbnail_path && asset.thumbnail_path !== 'null') ? 'none' : 'flex' }}>
+                          {asset.category === 'Characters' ? '🎭' :
+                           asset.category === 'Props' ? '📦' :
+                           asset.category === 'Environments' ? '🏞️' :
+                           asset.category === 'Vehicles' ? '🚗' :
+                           asset.category === 'Effects' ? '✨' :
+                           '🎨'}
+                        </div>
 
                         {/* Asset Type Badge */}
                         <div className="absolute top-2 right-2">
-                          <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                            ['geometry', 'material', 'light_rig'].includes(asset.asset_type)
-                              ? 'bg-blue-600/80 text-blue-100' 
-                              : 'bg-green-600/80 text-green-100'
-                          }`}>
-                            {['geometry', 'material', 'light_rig'].includes(asset.asset_type) ? '3D' : '2D'}
+                          <span className="px-2 py-1 text-xs rounded-full font-medium bg-blue-600/80 text-blue-100">
+                            3D
                           </span>
                         </div>
 
@@ -234,20 +472,22 @@ const AssetLibrary = () => {
                     {/* Hover Details */}
                     <div className="absolute top-full left-0 right-0 mt-2 bg-neutral-800 border border-neutral-700 rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 shadow-lg">
                       <h3 className="text-white font-semibold text-sm mb-1 truncate">{asset.name}</h3>
-                      <p className="text-neutral-400 text-xs mb-2 line-clamp-2">{asset.description}</p>
+                      <p className="text-neutral-400 text-xs mb-2 line-clamp-2">{asset.description || 'No description available'}</p>
 
                       <div className="grid grid-cols-2 gap-2 text-xs text-neutral-500">
                         <div>
-                          <span className="text-neutral-400">Type:</span>
-                          <div className="text-blue-400 font-medium">{asset.asset_type}</div>
+                          <span className="text-neutral-400">Category:</span>
+                          <div className="text-blue-400 font-medium">{asset.category}</div>
                         </div>
                         <div>
                           <span className="text-neutral-400">Size:</span>
-                          <div className="text-neutral-300">{Math.round(asset.file_size / 1024)} KB</div>
+                          <div className="text-neutral-300">
+                            {Math.round(Object.values(asset.file_sizes || {}).reduce((sum, size) => sum + (typeof size === 'number' ? size : 0), 0) / 1024)} KB
+                          </div>
                         </div>
                         <div>
                           <span className="text-neutral-400">Artist:</span>
-                          <div className="text-green-400 font-medium truncate">{asset.artist}</div>
+                          <div className="text-green-400 font-medium truncate">{asset.artist || 'Unknown'}</div>
                         </div>
                         <div>
                           <span className="text-neutral-400">Format:</span>
@@ -259,11 +499,11 @@ const AssetLibrary = () => {
                 ))}
               </div>
             ) : (
-              // List View (unchanged for now)
+              // List View
               <div className="bg-neutral-800 rounded-lg overflow-hidden">
                 <div className="grid grid-cols-12 gap-4 p-4 border-b border-neutral-700 text-sm font-medium text-neutral-400">
                   <div className="col-span-4">Name</div>
-                  <div className="col-span-2">Type</div>
+                  <div className="col-span-2">Category</div>
                   <div className="col-span-2">Artist</div>
                   <div className="col-span-2">Size</div>
                   <div className="col-span-2">Actions</div>
@@ -272,11 +512,13 @@ const AssetLibrary = () => {
                   <div key={asset.id} className="grid grid-cols-12 gap-4 p-4 border-b border-neutral-700 hover:bg-neutral-750 transition-colors">
                     <div className="col-span-4">
                       <div className="font-medium text-white">{asset.name}</div>
-                      <div className="text-sm text-neutral-400 truncate">{asset.description}</div>
+                      <div className="text-sm text-neutral-400 truncate">{asset.description || 'No description'}</div>
                     </div>
-                    <div className="col-span-2 text-blue-400">{asset.asset_type}</div>
-                    <div className="col-span-2 text-green-400">{asset.artist}</div>
-                    <div className="col-span-2 text-neutral-300">{Math.round(asset.file_size / 1024)} KB</div>
+                    <div className="col-span-2 text-blue-400">{asset.category}</div>
+                    <div className="col-span-2 text-green-400">{asset.artist || 'Unknown'}</div>
+                    <div className="col-span-2 text-neutral-300">
+                      {Math.round(Object.values(asset.file_sizes || {}).reduce((sum, size) => sum + (typeof size === 'number' ? size : 0), 0) / 1024)} KB
+                    </div>
                     <div className="col-span-2 flex gap-2">
                       <button className="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-sm transition-colors">
                         Preview
@@ -301,6 +543,37 @@ const AssetLibrary = () => {
                 </div>
               </div>
             )}
+
+            {/* Summary Footer */}
+            <div className="mt-8 pt-4 border-t border-neutral-700">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-neutral-400">
+                <div>
+                  <span className="block">Total Files:</span>
+                  <span className="text-white font-medium">{filteredAssets.length}</span>
+                </div>
+                <div>
+                  <span className="block">Total Size:</span>
+                  <span className="text-white font-medium">
+                    {Math.round(filteredAssets.reduce((sum, asset) => {
+                      const sizes = Object.values(asset.file_sizes || {});
+                      return sum + sizes.reduce((total, size) => total + (typeof size === 'number' ? size : 0), 0);
+                    }, 0) / 1024 / 1024)} MB
+                  </span>
+                </div>
+                <div>
+                  <span className="block">Categories:</span>
+                  <span className="text-white font-medium">
+                    {[...new Set(filteredAssets.map(f => f.category))].length}
+                  </span>
+                </div>
+                <div>
+                  <span className="block">By Artist:</span>
+                  <span className="text-white font-medium">
+                    {[...new Set(filteredAssets.map(f => f.artist || 'Unknown'))].length}
+                  </span>
+                </div>
+              </div>
+            </div>
           </>
         )}
       </div>
