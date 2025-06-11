@@ -1,4 +1,4 @@
-# backend/api/assets.py - SIMPLE DIRECT SOLUTION
+# backend/api/assets.py - FIXED VERSION WITHOUT UNICODE
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 from pydantic import BaseModel
@@ -11,6 +11,9 @@ router = APIRouter(prefix="/api/v1", tags=["assets"])
 
 # Path to your JSON database file
 JSON_DATABASE_PATH = Path(__file__).parent.parent / "assetlibrary" / "database" / "3DAssets.json"
+
+# Base path for assets
+ASSET_LIBRARY_BASE = Path("C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D")
 
 
 # Response models
@@ -36,10 +39,11 @@ class AssetResponse(BaseModel):
 def load_json_database() -> List[dict]:
     """Load assets from JSON database file"""
     if not JSON_DATABASE_PATH.exists():
+        print(f"[ERROR] JSON database not found at: {JSON_DATABASE_PATH}")
         return []
 
     try:
-        with open(JSON_DATABASE_PATH, 'r') as f:
+        with open(JSON_DATABASE_PATH, 'r', encoding='utf-8') as f:
             data = json.load(f)
             if isinstance(data, list):
                 return data
@@ -58,43 +62,35 @@ def find_actual_thumbnail(asset_data: dict) -> Optional[str]:
     asset_name = asset_data.get('name', '')
 
     if not asset_id:
+        print(f"[ERROR] No asset ID found")
         return None
 
     # Try the exact path from JSON first
     if 'paths' in asset_data and 'thumbnail' in asset_data['paths']:
         json_thumbnail_path = asset_data['paths']['thumbnail']
         if json_thumbnail_path and Path(json_thumbnail_path).exists():
-            print(f"✅ Found thumbnail from JSON path: {json_thumbnail_path}")
+            print(f"[OK] Found thumbnail from JSON path: {json_thumbnail_path}")
+            # Return the API URL, not the file path
             return f"http://localhost:8000/thumbnails/{asset_id}"
 
-    # Search for thumbnail files in expected locations
-    search_patterns = [
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail/{asset_name}_thumbnail.png",
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail/{asset_name}_thumbnail.jpg",
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}_{asset_name}/Thumbnail/{asset_name}_thumbnail.png",
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}_{asset_name}/Thumbnail/{asset_name}_thumbnail.jpg",
-    ]
-
-    for pattern in search_patterns:
-        if Path(pattern).exists():
-            print(f"✅ Found thumbnail at: {pattern}")
-            return f"http://localhost:8000/thumbnails/{asset_id}"
-
-    # Try to find any image file in thumbnail folders
+    # Try common folder structures
     folder_patterns = [
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}/Thumbnail",
-        f"C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D/{asset_id}_{asset_name}/Thumbnail",
+        ASSET_LIBRARY_BASE / f"{asset_id}_{asset_name}" / "Thumbnail",
+        ASSET_LIBRARY_BASE / asset_id / "Thumbnail",
+        ASSET_LIBRARY_BASE / asset_name / "Thumbnail",
     ]
 
-    for folder_pattern in folder_patterns:
-        folder = Path(folder_pattern)
+    for folder in folder_patterns:
         if folder.exists() and folder.is_dir():
+            # Look for any image file in the thumbnail folder
             for ext in ['.png', '.jpg', '.jpeg']:
                 for img_file in folder.glob(f"*{ext}"):
-                    print(f"✅ Found thumbnail in folder: {img_file}")
+                    print(f"[OK] Found thumbnail at: {img_file}")
+                    # Store the actual path for later retrieval
+                    asset_data['_thumbnail_file_path'] = str(img_file)
                     return f"http://localhost:8000/thumbnails/{asset_id}"
 
-    print(f"❌ No thumbnail found for asset: {asset_name} (ID: {asset_id})")
+    print(f"[ERROR] No thumbnail found for asset: {asset_name} (ID: {asset_id})")
     return None
 
 
@@ -102,7 +98,7 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
     """Convert raw asset data to API response format"""
 
     # Find the actual thumbnail file
-    thumbnail_path = find_actual_thumbnail(asset_data)
+    thumbnail_url = find_actual_thumbnail(asset_data)
 
     # Extract artist from metadata
     artist = "Unknown"
@@ -137,7 +133,7 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
         tags=asset_data.get('tags', []),
         metadata=asset_data.get('metadata', {}),
         created_at=asset_data.get('created_at', datetime.now().isoformat()),
-        thumbnail_path=thumbnail_path,  # Will be API URL if found, None if not
+        thumbnail_path=thumbnail_url,  # This is now the API URL
         artist=artist,
         file_format="USD",
         description=description
@@ -153,7 +149,7 @@ async def list_assets(
     """Get all assets with thumbnail detection"""
     try:
         raw_assets = load_json_database()
-        print(f"📚 Loaded {len(raw_assets)} assets from JSON")
+        print(f"[INFO] Loaded {len(raw_assets)} assets from JSON")
 
         # Convert to response format with thumbnail detection
         assets = []
@@ -162,7 +158,7 @@ async def list_assets(
                 asset_response = convert_asset_to_response(asset_data)
                 assets.append(asset_response)
             except Exception as e:
-                print(f"❌ Error converting asset {asset_data.get('id', 'unknown')}: {e}")
+                print(f"[ERROR] Error converting asset {asset_data.get('id', 'unknown')}: {e}")
                 continue
 
         # Apply filters
@@ -178,19 +174,19 @@ async def list_assets(
         # Apply limit
         assets = assets[:limit]
 
-        print(f"📤 Returning {len(assets)} assets")
+        print(f"[INFO] Returning {len(assets)} assets")
 
         # Debug info
         for asset in assets:
             if asset.thumbnail_path:
-                print(f"✅ {asset.name}: {asset.thumbnail_path}")
+                print(f"[OK] {asset.name}: {asset.thumbnail_path}")
             else:
-                print(f"❌ {asset.name}: No thumbnail found")
+                print(f"[ERROR] {asset.name}: No thumbnail found")
 
         return assets
 
     except Exception as e:
-        print(f"❌ Error in list_assets: {str(e)}")
+        print(f"[ERROR] Error in list_assets: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error loading assets: {str(e)}")
 
 
@@ -231,12 +227,14 @@ async def test_database():
                 "id": asset.get('id'),
                 "name": asset.get('name'),
                 "has_thumbnail": thumbnail_url is not None,
-                "thumbnail_url": thumbnail_url
+                "thumbnail_url": thumbnail_url,
+                "json_path": asset.get('paths', {}).get('thumbnail', 'No path in JSON')
             })
 
         return {
             "status": "JSON database connected successfully",
             "database_path": str(JSON_DATABASE_PATH),
+            "asset_library_base": str(ASSET_LIBRARY_BASE),
             "total_assets": len(raw_assets),
             "thumbnail_detection": thumbnail_status,
             "connection": "healthy"

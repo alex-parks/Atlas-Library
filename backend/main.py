@@ -1,4 +1,4 @@
-# backend/main.py - Complete file with working thumbnail endpoint
+# backend/main.py - Complete file with working thumbnail endpoint (NO UNICODE)
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -53,9 +53,9 @@ async def test_thumbnail():
 @app.get("/thumbnails/{asset_id}")
 async def get_thumbnail(asset_id: str):
     """Serve thumbnail images for assets"""
-    from api.assets import load_json_database
+    from api.assets import load_json_database, ASSET_LIBRARY_BASE
 
-    print(f"📸 Thumbnail requested for asset: {asset_id}")
+    print(f"[THUMBNAIL] Requested for asset: {asset_id}")
 
     try:
         # Load assets from JSON database
@@ -69,37 +69,58 @@ async def get_thumbnail(asset_id: str):
                 break
 
         if not asset:
-            print(f"❌ Asset not found: {asset_id}")
+            print(f"[ERROR] Asset not found: {asset_id}")
             raise HTTPException(status_code=404, detail=f"Asset not found: {asset_id}")
 
         # Get thumbnail path from asset data
         thumbnail_path = None
+
+        # First try the exact path from JSON
         if 'paths' in asset and 'thumbnail' in asset['paths']:
             thumbnail_path = asset['paths']['thumbnail']
-            print(f"📸 Found thumbnail path in JSON: {thumbnail_path}")
+            print(f"[THUMBNAIL] Found path in JSON: {thumbnail_path}")
 
-        if not thumbnail_path:
-            print(f"❌ No thumbnail path for asset: {asset_id}")
-            raise HTTPException(status_code=404, detail=f"No thumbnail path for asset: {asset_id}")
+        # Verify the file exists
+        if thumbnail_path:
+            thumb_file = Path(thumbnail_path)
+            if thumb_file.exists():
+                print(f"[OK] Serving thumbnail: {thumb_file}")
+                return FileResponse(
+                    path=str(thumb_file),
+                    media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"}
+                )
+            else:
+                print(f"[WARNING] Thumbnail path from JSON doesn't exist: {thumbnail_path}")
 
-        # Convert to Path object and check if file exists
-        thumb_file = Path(thumbnail_path)
+        # If not found, try to find it using folder patterns
+        asset_name = asset.get('name', '')
+        folder_patterns = [
+            ASSET_LIBRARY_BASE / f"{asset_id}_{asset_name}" / "Thumbnail",
+            ASSET_LIBRARY_BASE / asset_id / "Thumbnail",
+            ASSET_LIBRARY_BASE / asset_name / "Thumbnail",
+        ]
 
-        if not thumb_file.exists():
-            print(f"❌ Thumbnail file doesn't exist: {thumbnail_path}")
-            raise HTTPException(status_code=404, detail=f"Thumbnail file not found: {thumbnail_path}")
+        for folder in folder_patterns:
+            if folder.exists() and folder.is_dir():
+                # Look for any image file in the thumbnail folder
+                for ext in ['.png', '.jpg', '.jpeg']:
+                    for img_file in folder.glob(f"*{ext}"):
+                        print(f"[OK] Found thumbnail at: {img_file}")
+                        return FileResponse(
+                            path=str(img_file),
+                            media_type="image/png" if ext == '.png' else "image/jpeg",
+                            headers={"Cache-Control": "public, max-age=3600"}
+                        )
 
-        print(f"✅ Serving thumbnail: {thumb_file}")
-        return FileResponse(
-            path=str(thumb_file),
-            media_type="image/png",
-            headers={"Cache-Control": "public, max-age=3600"}
-        )
+        # If still not found, raise 404
+        print(f"[ERROR] No thumbnail found for asset: {asset_id}")
+        raise HTTPException(status_code=404, detail=f"No thumbnail found for asset: {asset_id}")
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error serving thumbnail: {str(e)}")
+        print(f"[ERROR] Error serving thumbnail: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error serving thumbnail: {str(e)}")
