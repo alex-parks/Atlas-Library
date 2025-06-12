@@ -14,7 +14,7 @@ dist/
 # Add this line to your .gitignore file
 training/
 
-
+backend/assetlibrary/database/3DAssets.json
 # Runtime data
 pids
 *.pid
