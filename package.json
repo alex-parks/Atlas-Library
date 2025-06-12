@@ -3,12 +3,15 @@
   "version": "1.0.0",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "npm run kill-ports && concurrently --kill-others-on-fail --names \"BACKEND,FRONTEND,ELECTRON\" --prefix-colors \"blue,green,yellow\" \"npm run backend\" \"npm run frontend\" \"npm run electron\"",
+    "dev": "npm run kill-ports && npm run setup-database && concurrently --kill-others-on-fail --names \"BACKEND,FRONTEND,ELECTRON\" --prefix-colors \"blue,green,yellow\" \"npm run backend\" \"npm run frontend\" \"npm run electron\"",
+    "setup-database": "cd backend && python start_database.py",
     "backend": "cd backend && (python -m uvicorn main:app --reload --port 8000 --host 0.0.0.0 || python3 -m uvicorn main:app --reload --port 8000 --host 0.0.0.0)",
     "frontend": "cd frontend && npm run dev -- --port 3011 --host --strictPort",
     "electron": "wait-on http://localhost:3011 && electron .",
     "kill-ports": "npx kill-port 3011 8000 || true",
-    "install:all": "npm install && cd frontend && npm install"
+    "install:all": "npm install && cd frontend && npm install",
+    "db:status": "cd backend && python start_database.py status",
+    "db:sync": "cd backend && python start_database.py"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

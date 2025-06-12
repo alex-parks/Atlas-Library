@@ -1,15 +1,20 @@
-# backend/main.py - Complete file with working thumbnail endpoint (NO UNICODE)
+# backend/main.py - Updated with SQLite integration
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from api.assets import router as assets_router
+from database.sqlite_manager import SQLiteAssetManager
 from pathlib import Path
 import os
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Blacksmith Atlas API",
-    description="Asset Library Management System (JSON Database)",
+    description="Asset Library Management System (SQLite Database)",
     version="1.0.0"
 )
 
@@ -32,13 +37,39 @@ app.add_middleware(
 )
 
 
+# Initialize SQLite database on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    try:
+        logger.info("🚀 Starting Blacksmith Atlas API...")
+
+        # Initialize SQLite manager and import JSON data
+        sqlite_manager = SQLiteAssetManager()
+
+        # Check if we need to import JSON data
+        assets = sqlite_manager.get_all_assets()
+        if not assets:
+            logger.info("📦 No assets found in SQLite, importing from JSON...")
+            success = sqlite_manager.json_to_sqlite()
+            if success:
+                logger.info("✅ JSON data imported successfully")
+            else:
+                logger.warning("⚠️ Failed to import JSON data")
+        else:
+            logger.info(f"✅ Found {len(assets)} assets in SQLite database")
+
+        # Get statistics
+        stats = sqlite_manager.get_statistics()
+        logger.info(f"📊 Database stats: {stats}")
+
+    except Exception as e:
+        logger.error(f"❌ Startup failed: {e}")
+
+
 @app.get("/test-thumbnail")
 async def test_thumbnail():
-    """Direct test - no JSON, no database, just serve the file"""
-    from fastapi.responses import FileResponse
-    from pathlib import Path
-
-    # Direct path to your PigHead thumbnail
+    """Direct test - serve the PigHead thumbnail"""
     path = r"C:\Users\alexh\Desktop\BlacksmithAtlas_Files\AssetLibrary\3D\5a337cb9_PigHead\Thumbnail\PigHead_thumbnail.png"
 
     file = Path(path)
@@ -48,89 +79,77 @@ async def test_thumbnail():
         return {"error": "File not found", "path": path, "exists": file.exists()}
 
 
-# IMPORTANT: Define specific routes BEFORE including routers
-# Serve thumbnail images
 @app.get("/thumbnails/{asset_id}")
 async def get_thumbnail(asset_id: str):
-    """Serve thumbnail images for assets"""
-    from api.assets import load_json_database, ASSET_LIBRARY_BASE
-
-    print(f"[THUMBNAIL] Requested for asset: {asset_id}")
+    """Serve thumbnail images for assets using SQLite database"""
+    logger.info(f"[THUMBNAIL] Requested for asset: {asset_id}")
 
     try:
-        # Load assets from JSON database
-        assets = load_json_database()
+        # Initialize SQLite manager
+        sqlite_manager = SQLiteAssetManager()
 
-        # Find the asset by ID
-        asset = None
-        for a in assets:
-            if a.get('id') == asset_id:
-                asset = a
-                break
+        # Get asset from SQLite
+        asset = sqlite_manager.get_asset_by_id(asset_id)
 
         if not asset:
-            print(f"[ERROR] Asset not found: {asset_id}")
+            logger.error(f"[ERROR] Asset not found: {asset_id}")
             raise HTTPException(status_code=404, detail=f"Asset not found: {asset_id}")
 
-        # Get thumbnail path from asset data
-        thumbnail_path = None
+        # Try multiple thumbnail path sources
+        thumbnail_paths = []
 
-        # First try the exact path from JSON
-        if 'paths' in asset and 'thumbnail' in asset['paths']:
-            thumbnail_path = asset['paths']['thumbnail']
-            print(f"[THUMBNAIL] Found path in JSON: {thumbnail_path}")
+        # 1. From paths object
+        if 'paths' in asset and asset['paths'].get('thumbnail'):
+            thumbnail_paths.append(asset['paths']['thumbnail'])
 
-        # Verify the file exists
-        if thumbnail_path:
-            thumb_file = Path(thumbnail_path)
-            if thumb_file.exists():
-                print(f"[OK] Serving thumbnail: {thumb_file}")
+        # 2. From direct thumbnail_path field
+        if asset.get('thumbnail_path'):
+            thumbnail_paths.append(asset['thumbnail_path'])
+
+        # 3. From reconstructed folder structure
+        asset_name = asset.get('name', '')
+        if asset_name:
+            base_path = Path("C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D")
+            folder_patterns = [
+                base_path / f"{asset_id}_{asset_name}" / "Thumbnail",
+                base_path / asset_id / "Thumbnail",
+                base_path / asset_name / "Thumbnail",
+            ]
+
+            for folder in folder_patterns:
+                if folder.exists() and folder.is_dir():
+                    for ext in ['.png', '.jpg', '.jpeg']:
+                        for img_file in folder.glob(f"*{ext}"):
+                            thumbnail_paths.append(str(img_file))
+
+        # Try each path until we find one that exists
+        for thumbnail_path in thumbnail_paths:
+            if thumbnail_path and Path(thumbnail_path).exists():
+                logger.info(f"[OK] Serving thumbnail: {thumbnail_path}")
                 return FileResponse(
-                    path=str(thumb_file),
+                    path=str(thumbnail_path),
                     media_type="image/png",
                     headers={"Cache-Control": "public, max-age=3600"}
                 )
-            else:
-                print(f"[WARNING] Thumbnail path from JSON doesn't exist: {thumbnail_path}")
 
-        # If not found, try to find it using folder patterns
-        asset_name = asset.get('name', '')
-        folder_patterns = [
-            ASSET_LIBRARY_BASE / f"{asset_id}_{asset_name}" / "Thumbnail",
-            ASSET_LIBRARY_BASE / asset_id / "Thumbnail",
-            ASSET_LIBRARY_BASE / asset_name / "Thumbnail",
-        ]
-
-        for folder in folder_patterns:
-            if folder.exists() and folder.is_dir():
-                # Look for any image file in the thumbnail folder
-                for ext in ['.png', '.jpg', '.jpeg']:
-                    for img_file in folder.glob(f"*{ext}"):
-                        print(f"[OK] Found thumbnail at: {img_file}")
-                        return FileResponse(
-                            path=str(img_file),
-                            media_type="image/png" if ext == '.png' else "image/jpeg",
-                            headers={"Cache-Control": "public, max-age=3600"}
-                        )
-
-        # If still not found, raise 404
-        print(f"[ERROR] No thumbnail found for asset: {asset_id}")
+        # If no thumbnail found
+        logger.error(f"[ERROR] No thumbnail found for asset: {asset_id}")
+        logger.debug(f"[DEBUG] Tried paths: {thumbnail_paths}")
         raise HTTPException(status_code=404, detail=f"No thumbnail found for asset: {asset_id}")
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[ERROR] Error serving thumbnail: {str(e)}")
+        logger.error(f"[ERROR] Error serving thumbnail: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error serving thumbnail: {str(e)}")
 
 
-# Include routers AFTER defining specific routes
+# Include the assets router
 app.include_router(assets_router)
 
 
-# Debug: List all routes
 @app.get("/debug/routes")
 async def list_routes():
     """List all registered routes for debugging"""
@@ -147,27 +166,111 @@ async def list_routes():
 
 @app.get("/")
 async def root():
-    return {
-        "message": "Blacksmith Atlas API (JSON Mode)",
-        "version": "1.0.0",
-        "database": "JSON",
-        "docs": "/docs",
-        "status": "running"
-    }
+    """Root endpoint with system information"""
+    try:
+        sqlite_manager = SQLiteAssetManager()
+        stats = sqlite_manager.get_statistics()
+
+        return {
+            "message": "Blacksmith Atlas API (SQLite Mode)",
+            "version": "1.0.0",
+            "database": "SQLite",
+            "docs": "/docs",
+            "status": "running",
+            "assets_count": stats.get('total_assets', 0),
+            "categories": list(stats.get('by_category', {}).keys())
+        }
+    except Exception as e:
+        return {
+            "message": "Blacksmith Atlas API (SQLite Mode)",
+            "version": "1.0.0",
+            "database": "SQLite",
+            "status": "running",
+            "error": str(e)
+        }
 
 
 @app.get("/health")
 async def health_check():
-    # Check if JSON database file exists
-    json_db_path = Path(__file__).parent / "assetlibrary" / "database" / "3DAssets.json"
+    """Health check endpoint"""
+    try:
+        # Test SQLite connection
+        sqlite_manager = SQLiteAssetManager()
+        assets = sqlite_manager.get_all_assets()
+        stats = sqlite_manager.get_statistics()
 
-    return {
-        "status": "healthy",
-        "service": "Blacksmith Atlas Backend",
-        "database": "JSON",
-        "database_exists": json_db_path.exists(),
-        "database_path": str(json_db_path)
-    }
+        # Check JSON source file
+        json_path = Path(r"C:\Users\alexh\Desktop\BlacksmithAtlas\backend\assetlibrary\database\3DAssets.json")
+
+        return {
+            "status": "healthy",
+            "service": "Blacksmith Atlas Backend",
+            "database": "SQLite",
+            "database_assets": len(assets),
+            "json_source_exists": json_path.exists(),
+            "json_source_path": str(json_path),
+            "statistics": stats
+        }
+
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "service": "Blacksmith Atlas Backend",
+            "database": "SQLite",
+            "error": str(e)
+        }
+
+
+@app.post("/admin/sync")
+async def sync_database():
+    """Admin endpoint to sync SQLite with JSON"""
+    try:
+        sqlite_manager = SQLiteAssetManager()
+        success = sqlite_manager.sync_with_json()
+
+        if success:
+            stats = sqlite_manager.get_statistics()
+            return {
+                "status": "success",
+                "message": "Database synced successfully",
+                "statistics": stats
+            }
+        else:
+            return {
+                "status": "failed",
+                "message": "Database sync failed"
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+
+@app.post("/admin/save-config")
+async def save_config(config_data: dict):
+    """Save Asset Library configuration for database startup"""
+    try:
+        # Ensure config directory exists
+        config_dir = Path("config")
+        config_dir.mkdir(exist_ok=True)
+
+        # Save config to file that the database startup script can read
+        config_file = config_dir / "asset_library_config.json"
+
+        import json
+        with open(config_file, 'w') as f:
+            json.dump(config_data, f, indent=2)
+
+        logger.info(f"💾 Configuration saved to {config_file}")
+
+        return {
+            "status": "success",
+            "message": "Configuration saved successfully",
+            "config_file": str(config_file)
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Failed to save config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
 
 
 if __name__ == "__main__":

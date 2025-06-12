@@ -1,16 +1,20 @@
-# backend/api/assets.py - FIXED VERSION WITHOUT UNICODE
-from fastapi import APIRouter, HTTPException, Query
+# backend/api/assets.py - Updated to use SQLite
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from typing import List, Optional
 from pydantic import BaseModel
 from pathlib import Path
-import json
 import os
 from datetime import datetime, timedelta
+import sys
+
+# Add the database module to path
+sys.path.append(str(Path(__file__).parent.parent))
+from database.sqlite_manager import SQLiteAssetManager
 
 router = APIRouter(prefix="/api/v1", tags=["assets"])
 
-# Path to your JSON database file
-JSON_DATABASE_PATH = Path(__file__).parent.parent / "assetlibrary" / "database" / "3DAssets.json"
+# Initialize SQLite manager
+sqlite_manager = SQLiteAssetManager()
 
 # Base path for assets
 ASSET_LIBRARY_BASE = Path("C:/Users/alexh/Desktop/BlacksmithAtlas_Files/AssetLibrary/3D")
@@ -36,24 +40,12 @@ class AssetResponse(BaseModel):
         populate_by_name = True
 
 
-def load_json_database() -> List[dict]:
-    """Load assets from JSON database file"""
-    if not JSON_DATABASE_PATH.exists():
-        print(f"[ERROR] JSON database not found at: {JSON_DATABASE_PATH}")
-        return []
-
-    try:
-        with open(JSON_DATABASE_PATH, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if isinstance(data, list):
-                return data
-            elif isinstance(data, dict) and 'assets' in data:
-                return data['assets']
-            else:
-                return []
-    except Exception as e:
-        print(f"Error loading JSON database: {e}")
-        return []
+class AssetCreateRequest(BaseModel):
+    name: str
+    category: str
+    paths: dict
+    metadata: dict = {}
+    file_sizes: dict = {}
 
 
 def find_actual_thumbnail(asset_data: dict) -> Optional[str]:
@@ -65,13 +57,18 @@ def find_actual_thumbnail(asset_data: dict) -> Optional[str]:
         print(f"[ERROR] No asset ID found")
         return None
 
-    # Try the exact path from JSON first
+    # Try the exact path from database first
     if 'paths' in asset_data and 'thumbnail' in asset_data['paths']:
-        json_thumbnail_path = asset_data['paths']['thumbnail']
-        if json_thumbnail_path and Path(json_thumbnail_path).exists():
-            print(f"[OK] Found thumbnail from JSON path: {json_thumbnail_path}")
-            # Return the API URL, not the file path
+        db_thumbnail_path = asset_data['paths']['thumbnail']
+        if db_thumbnail_path and Path(db_thumbnail_path).exists():
+            print(f"[OK] Found thumbnail from DB path: {db_thumbnail_path}")
             return f"http://localhost:8000/thumbnails/{asset_id}"
+
+    # Try direct path fields from SQLite
+    thumbnail_path = asset_data.get('thumbnail_path')
+    if thumbnail_path and Path(thumbnail_path).exists():
+        print(f"[OK] Found thumbnail from direct path: {thumbnail_path}")
+        return f"http://localhost:8000/thumbnails/{asset_id}"
 
     # Try common folder structures
     folder_patterns = [
@@ -82,12 +79,9 @@ def find_actual_thumbnail(asset_data: dict) -> Optional[str]:
 
     for folder in folder_patterns:
         if folder.exists() and folder.is_dir():
-            # Look for any image file in the thumbnail folder
             for ext in ['.png', '.jpg', '.jpeg']:
                 for img_file in folder.glob(f"*{ext}"):
                     print(f"[OK] Found thumbnail at: {img_file}")
-                    # Store the actual path for later retrieval
-                    asset_data['_thumbnail_file_path'] = str(img_file)
                     return f"http://localhost:8000/thumbnails/{asset_id}"
 
     print(f"[ERROR] No thumbnail found for asset: {asset_name} (ID: {asset_id})")
@@ -106,15 +100,19 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
         metadata = asset_data['metadata']
         if 'created_by' in metadata:
             artist = metadata['created_by']
-        elif 'hda_parameters' in metadata and 'created_by' in metadata['hda_parameters']:
-            artist = metadata['hda_parameters']['created_by']
+
+    # Also check direct field from SQLite
+    if asset_data.get('created_by'):
+        artist = asset_data['created_by']
 
     # Generate description from metadata
     description = ""
-    if 'metadata' in asset_data and 'hda_parameters' in asset_data['metadata']:
-        hda_params = asset_data['metadata']['hda_parameters']
-        if 'notes' in hda_params:
-            description = hda_params.get('notes', '')
+    if 'metadata' in asset_data and isinstance(asset_data['metadata'], dict):
+        metadata = asset_data['metadata']
+        if 'hda_parameters' in metadata and isinstance(metadata['hda_parameters'], dict):
+            hda_params = metadata['hda_parameters']
+            if 'notes' in hda_params:
+                description = hda_params.get('notes', '')
 
     if not description:
         if 'metadata' in asset_data:
@@ -123,17 +121,28 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
     if not description:
         description = f"{asset_data.get('category', 'General')} asset created in Houdini"
 
+    # Handle paths - prioritize the reconstructed paths object
+    paths = asset_data.get('paths', {})
+    if not paths or all(v is None for v in paths.values()):
+        # Fallback to individual path fields
+        paths = {
+            'usd': asset_data.get('usd_path'),
+            'thumbnail': asset_data.get('thumbnail_path'),
+            'textures': asset_data.get('textures_path'),
+            'fbx': asset_data.get('fbx_path')
+        }
+
     return AssetResponse(
         id=asset_data.get('id', ''),
         name=asset_data.get('name', ''),
         category=asset_data.get('category', 'General'),
         asset_type="3D",
-        paths=asset_data.get('paths', {}),
+        paths=paths,
         file_sizes=asset_data.get('file_sizes', {}),
         tags=asset_data.get('tags', []),
         metadata=asset_data.get('metadata', {}),
         created_at=asset_data.get('created_at', datetime.now().isoformat()),
-        thumbnail_path=thumbnail_url,  # This is now the API URL
+        thumbnail_path=thumbnail_url,
         artist=artist,
         file_format="USD",
         description=description
@@ -144,12 +153,19 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
 async def list_assets(
         search: Optional[str] = Query(None, description="Search term"),
         category: Optional[str] = Query(None, description="Filter by category"),
+        created_by: Optional[str] = Query(None, description="Filter by creator"),
         limit: int = Query(100, description="Maximum number of results")
 ):
-    """Get all assets with thumbnail detection"""
+    """Get all assets from SQLite database"""
     try:
-        raw_assets = load_json_database()
-        print(f"[INFO] Loaded {len(raw_assets)} assets from JSON")
+        # Use SQLite search functionality
+        raw_assets = sqlite_manager.search_assets(
+            search_term=search or "",
+            category=category or "",
+            created_by=created_by or ""
+        )
+
+        print(f"[INFO] Loaded {len(raw_assets)} assets from SQLite")
 
         # Convert to response format with thumbnail detection
         assets = []
@@ -160,16 +176,6 @@ async def list_assets(
             except Exception as e:
                 print(f"[ERROR] Error converting asset {asset_data.get('id', 'unknown')}: {e}")
                 continue
-
-        # Apply filters
-        if search:
-            search_lower = search.lower()
-            assets = [asset for asset in assets if
-                      search_lower in asset.name.lower() or
-                      search_lower in asset.description.lower()]
-
-        if category:
-            assets = [asset for asset in assets if asset.category.lower() == category.lower()]
 
         # Apply limit
         assets = assets[:limit]
@@ -194,13 +200,7 @@ async def list_assets(
 async def get_asset(asset_id: str):
     """Get a specific asset by ID"""
     try:
-        raw_assets = load_json_database()
-
-        asset_data = None
-        for asset in raw_assets:
-            if asset.get('id') == asset_id:
-                asset_data = asset
-                break
+        asset_data = sqlite_manager.get_asset_by_id(asset_id)
 
         if not asset_data:
             raise HTTPException(status_code=404, detail="Asset not found")
@@ -213,29 +213,87 @@ async def get_asset(asset_id: str):
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
+@router.post("/assets", response_model=AssetResponse)
+async def create_asset(asset_request: AssetCreateRequest):
+    """Create a new asset"""
+    try:
+        # Generate ID
+        import uuid
+        asset_id = uuid.uuid4().hex[:8]
+
+        # Prepare asset data
+        asset_data = {
+            'id': asset_id,
+            'name': asset_request.name,
+            'category': asset_request.category,
+            'paths': asset_request.paths,
+            'metadata': asset_request.metadata,
+            'file_sizes': asset_request.file_sizes,
+            'created_at': datetime.now().isoformat(),
+            'dependencies': {},
+            'copied_files': []
+        }
+
+        # Add to database
+        success = sqlite_manager.add_asset(asset_data)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to create asset")
+
+        return convert_asset_to_response(asset_data)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating asset: {str(e)}")
+
+
+@router.delete("/assets/{asset_id}")
+async def delete_asset(asset_id: str):
+    """Delete an asset (not implemented in basic SQLite manager)"""
+    raise HTTPException(status_code=501, detail="Delete functionality not implemented")
+
+
+@router.post("/sync")
+async def sync_database(background_tasks: BackgroundTasks):
+    """Sync SQLite database with JSON file"""
+    try:
+        # Run sync in background
+        background_tasks.add_task(sqlite_manager.sync_with_json)
+
+        return {
+            "message": "Database sync started",
+            "status": "processing"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+
 @router.get("/test")
 async def test_database():
-    """Test endpoint to check everything"""
+    """Test endpoint to check SQLite database"""
     try:
-        raw_assets = load_json_database()
+        # Test database connection
+        assets = sqlite_manager.get_all_assets()
+        stats = sqlite_manager.get_statistics()
 
         # Test thumbnail detection for each asset
         thumbnail_status = []
-        for asset in raw_assets:
+        for asset in assets[:5]:  # Test first 5 assets
             thumbnail_url = find_actual_thumbnail(asset)
             thumbnail_status.append({
                 "id": asset.get('id'),
                 "name": asset.get('name'),
                 "has_thumbnail": thumbnail_url is not None,
                 "thumbnail_url": thumbnail_url,
-                "json_path": asset.get('paths', {}).get('thumbnail', 'No path in JSON')
+                "db_thumbnail_path": asset.get('thumbnail_path', 'No path in DB')
             })
 
         return {
-            "status": "JSON database connected successfully",
-            "database_path": str(JSON_DATABASE_PATH),
+            "status": "SQLite database connected successfully",
+            "database_type": "SQLite",
             "asset_library_base": str(ASSET_LIBRARY_BASE),
-            "total_assets": len(raw_assets),
+            "total_assets": len(assets),
+            "statistics": stats,
             "thumbnail_detection": thumbnail_status,
             "connection": "healthy"
         }
@@ -248,39 +306,30 @@ async def test_database():
         }
 
 
-# Keep the other endpoints for compatibility
 @router.get("/assets/stats/summary")
 async def get_asset_stats():
-    """Get asset library statistics"""
+    """Get asset library statistics from SQLite"""
     try:
-        raw_assets = load_json_database()
-        total_assets = len(raw_assets)
+        stats = sqlite_manager.get_statistics()
 
-        categories = {}
-        for asset in raw_assets:
-            category = asset.get('category', 'General')
-            categories[category] = categories.get(category, 0) + 1
-
+        # Calculate total size from all assets
+        assets = sqlite_manager.get_all_assets()
         total_size = 0
-        for asset in raw_assets:
-            file_sizes = asset.get('file_sizes', {})
-            for size in file_sizes.values():
-                if isinstance(size, (int, float)):
-                    total_size += size
 
-        recent_count = 0
-        one_week_ago = (datetime.now() - timedelta(days=7)).isoformat()
-        for asset in raw_assets:
-            created_at = asset.get('created_at', '')
-            if created_at and created_at > one_week_ago:
-                recent_count += 1
+        for asset in assets:
+            file_sizes = asset.get('file_sizes', {})
+            if isinstance(file_sizes, dict):
+                for size in file_sizes.values():
+                    if isinstance(size, (int, float)):
+                        total_size += size
 
         return {
-            "total_assets": total_assets,
-            "by_category": categories,
-            "by_type": {"3D": total_assets},
+            "total_assets": stats.get('total_assets', 0),
+            "by_category": stats.get('by_category', {}),
+            "by_type": {"3D": stats.get('total_assets', 0)},
             "total_size_gb": round(total_size / (1024 ** 3), 2),
-            "assets_this_week": recent_count
+            "assets_this_week": stats.get('recent_assets', 0),
+            "by_creator": stats.get('by_creator', {})
         }
 
     except Exception as e:
@@ -291,14 +340,11 @@ async def get_asset_stats():
 async def get_recent_assets(limit: int = 10):
     """Get most recent assets"""
     try:
-        raw_assets = load_json_database()
-
-        sorted_assets = sorted(raw_assets,
-                               key=lambda x: x.get('created_at', ''),
-                               reverse=True)
+        # SQLite returns assets ordered by created_at DESC by default
+        raw_assets = sqlite_manager.get_all_assets()
 
         recent_assets = []
-        for asset_data in sorted_assets[:limit]:
+        for asset_data in raw_assets[:limit]:
             try:
                 asset_response = convert_asset_to_response(asset_data)
                 recent_assets.append(asset_response)
@@ -307,6 +353,38 @@ async def get_recent_assets(limit: int = 10):
                 continue
 
         return recent_assets
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/categories")
+async def get_categories():
+    """Get all available categories"""
+    try:
+        stats = sqlite_manager.get_statistics()
+        categories = list(stats.get('by_category', {}).keys())
+
+        return {
+            "categories": categories,
+            "count": len(categories)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/creators")
+async def get_creators():
+    """Get all asset creators"""
+    try:
+        stats = sqlite_manager.get_statistics()
+        creators = list(stats.get('by_creator', {}).keys())
+
+        return {
+            "creators": creators,
+            "count": len(creators)
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
