@@ -1,5 +1,5 @@
 {
-  "database_startup_time": "2025-06-11T23:08:44.411112",
+  "database_startup_time": "2025-06-11T23:45:04.633052",
   "json_source": "C:\\Users\\alexh\\Desktop\\BlacksmithAtlas\\backend\\assetlibrary\\database\\3DAssets.json",
   "root_folder": "C:\\Users\\alexh\\Desktop\\BlacksmithAtlas_Files\\AssetLibrary\\3D",
   "api_endpoint": "http://localhost:8000/api/v1/assets",

@@ -60,8 +60,18 @@ const App = () => {
         {/* Logo/Header */}
         <div className="p-4 border-b border-neutral-700">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">BA</span>
+            <div className="w-8 h-8 flex items-center justify-center overflow-hidden">
+              <img
+                src="/Blacksmith_TopLeft.png"
+                alt="Blacksmith"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // Fallback to the original "BA" text if image fails to load
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
+              />
+              <span className="text-white font-bold text-sm hidden">BA</span>
             </div>
             {sidebarExpanded && (
               <div>

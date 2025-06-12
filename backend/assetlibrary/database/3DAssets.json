@@ -4738,5 +4738,62 @@
     },
     "created_at": "2025-06-11T19:40:14.590075",
     "copied_files": []
+  },
+  {
+    "id": "05806d81",
+    "name": "BlacksmithLogo",
+    "category": "Vehicles",
+    "folder": "05806d81_BlacksmithLogo",
+    "paths": {
+      "usd": "C:\\Users\\alexh\\Desktop\\BlacksmithAtlas_Files\\AssetLibrary\\3D\\05806d81_BlacksmithLogo\\USD\\BlacksmithLogo.usd",
+      "thumbnail": "C:\\Users\\alexh\\Desktop\\BlacksmithAtlas_Files\\AssetLibrary\\3D\\05806d81_BlacksmithLogo\\Thumbnail\\BlacksmithLogo_thumbnail.png",
+      "textures": "C:\\Users\\alexh\\Desktop\\BlacksmithAtlas_Files\\AssetLibrary\\3D\\05806d81_BlacksmithLogo\\Linked_Textures",
+      "fbx": null
+    },
+    "metadata": {
+      "houdini_version": "20.5.613",
+      "hip_file": "C:/Users/alexh/Desktop/BlacksmithAtlas_Files/Houdini/HDAs_v001.hiplc",
+      "node_path": "/obj/Blacksmith_Logo/BL_Save_Asset",
+      "node_type": "bl_save_asset::1.0",
+      "export_time": "2025-06-11T23:18:01.520365",
+      "created_by": "alexh",
+      "hda_parameters": {
+        "nameinput": "BlacksmithLogo",
+        "category": 3
+      },
+      "dependencies": {
+        "textures": [],
+        "materials": [
+          {
+            "node": "/obj/Blacksmith_Logo/BL_Save_Asset/Temp_Item/assignmaterial",
+            "type": "assignmaterial"
+          },
+          {
+            "node": "/obj/Blacksmith_Logo/BL_Save_Asset/Temp_Item/materiallibrary",
+            "type": "materiallibrary"
+          }
+        ],
+        "geometry": []
+      }
+    },
+    "file_sizes": {
+      "usd": 24534
+    },
+    "dependencies": {
+      "textures": [],
+      "materials": [
+        {
+          "node": "/obj/Blacksmith_Logo/BL_Save_Asset/Temp_Item/assignmaterial",
+          "type": "assignmaterial"
+        },
+        {
+          "node": "/obj/Blacksmith_Logo/BL_Save_Asset/Temp_Item/materiallibrary",
+          "type": "materiallibrary"
+        }
+      ],
+      "geometry": []
+    },
+    "created_at": "2025-06-11T23:18:02.785131",
+    "copied_files": []
   }
 ]
