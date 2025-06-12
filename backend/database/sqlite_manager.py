@@ -1,22 +1,72 @@
-# backend/database/sqlite_manager.py
+# backend/database/sqlite_manager.py - Fixed version with proper connection handling
 import sqlite3
 import json
+import os
+import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 import logging
+import tempfile
+import atexit
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class SQLiteAssetManager:
-    """SQLite database manager for 3D assets"""
+    """SQLite database manager for 3D assets with proper connection handling"""
 
     def __init__(self, db_path: str = None, json_path: str = None):
         self.db_path = db_path or "backend/database/assets.db"
         self.json_path = json_path or r"C:\Users\alexh\Desktop\BlacksmithAtlas\backend\assetlibrary\database\3DAssets.json"
+        self._connection_pool = {}
         self.init_database()
+
+        # Register cleanup on exit
+        atexit.register(self.cleanup_connections)
+
+    def get_connection(self):
+        """Get a database connection with proper error handling"""
+        max_retries = 3
+        retry_delay = 0.1
+
+        for attempt in range(max_retries):
+            try:
+                # Use WAL mode for better concurrent access
+                conn = sqlite3.connect(
+                    self.db_path,
+                    timeout=30.0,  # 30 second timeout
+                    check_same_thread=False
+                )
+
+                # Enable WAL mode for better concurrency
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute("PRAGMA cache_size=10000")
+                conn.execute("PRAGMA temp_store=MEMORY")
+
+                return conn
+
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e) and attempt < max_retries - 1:
+                    logger.warning(f"Database locked, retrying in {retry_delay}s (attempt {attempt + 1})")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    raise
+
+        raise sqlite3.OperationalError("Could not acquire database lock after multiple attempts")
+
+    def cleanup_connections(self):
+        """Clean up database connections"""
+        for conn in self._connection_pool.values():
+            try:
+                conn.close()
+            except:
+                pass
+        self._connection_pool.clear()
 
     def init_database(self):
         """Initialize SQLite database with proper schema"""
@@ -24,7 +74,7 @@ class SQLiteAssetManager:
             # Ensure directory exists
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 conn.execute("""
                              CREATE TABLE IF NOT EXISTS assets
                              (
@@ -112,7 +162,7 @@ class SQLiteAssetManager:
                 logger.warning("No data to import")
                 return False
 
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 # Clear existing data
                 conn.execute("DELETE FROM assets")
 
@@ -166,7 +216,7 @@ class SQLiteAssetManager:
     def get_all_assets(self) -> List[Dict]:
         """Get all assets from SQLite database"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 conn.row_factory = sqlite3.Row  # Enable dict-like access
                 cursor = conn.execute("SELECT * FROM assets ORDER BY created_at DESC")
 
@@ -203,7 +253,7 @@ class SQLiteAssetManager:
     def search_assets(self, search_term: str = "", category: str = "", created_by: str = "") -> List[Dict]:
         """Search assets with filters"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
 
                 query = "SELECT * FROM assets WHERE 1=1"
@@ -258,7 +308,7 @@ class SQLiteAssetManager:
     def get_asset_by_id(self, asset_id: str) -> Optional[Dict]:
         """Get a specific asset by ID"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,))
                 row = cursor.fetchone()
@@ -294,7 +344,7 @@ class SQLiteAssetManager:
     def add_asset(self, asset_data: Dict) -> bool:
         """Add a new asset to the database"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 paths = asset_data.get('paths', {})
                 metadata = asset_data.get('metadata', {})
                 hda_params = metadata.get('hda_parameters', {})
@@ -342,7 +392,7 @@ class SQLiteAssetManager:
     def get_statistics(self) -> Dict:
         """Get database statistics"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # Total assets
@@ -379,21 +429,17 @@ class SQLiteAssetManager:
         return self.json_to_sqlite()
 
 
-# Utility functions
-def setup_sqlite_database(json_path: str = None, db_path: str = None) -> SQLiteAssetManager:
-    """Setup and initialize SQLite database"""
-    manager = SQLiteAssetManager(db_path, json_path)
-    manager.json_to_sqlite()
-    return manager
+# Test function with proper cleanup
+def test_sqlite_setup_safe():
+    """Test the SQLite setup with proper cleanup"""
+    print("🧪 Testing SQLite Asset Database Setup (Safe Version)...")
 
-
-def test_sqlite_setup():
-    """Test the SQLite setup"""
-    print("🧪 Testing SQLite Asset Database Setup...")
+    # Use a unique test database file
+    test_db_path = f"test_assets_{int(time.time())}.db"
 
     try:
-        # Initialize manager
-        manager = SQLiteAssetManager()
+        # Initialize manager with test database
+        manager = SQLiteAssetManager(db_path=test_db_path)
 
         # Test JSON import
         success = manager.json_to_sqlite()
@@ -401,7 +447,7 @@ def test_sqlite_setup():
             print("✅ JSON import successful")
         else:
             print("❌ JSON import failed")
-            return
+            return False
 
         # Test retrieval
         assets = manager.get_all_assets()
@@ -417,10 +463,28 @@ def test_sqlite_setup():
         print(f"✅ Statistics: {stats}")
 
         print("🎉 All tests passed!")
+        return True
 
     except Exception as e:
         print(f"❌ Test failed: {e}")
+        return False
+
+    finally:
+        # Clean up test database file
+        try:
+            if Path(test_db_path).exists():
+                # Close any remaining connections
+                manager.cleanup_connections()
+
+                # Wait a bit for file handles to be released
+                time.sleep(0.5)
+
+                # Remove test database
+                os.remove(test_db_path)
+                print(f"🧹 Cleaned up test database: {test_db_path}")
+        except Exception as e:
+            print(f"⚠️ Could not clean up test database: {e}")
 
 
 if __name__ == "__main__":
-    test_sqlite_setup()
+    test_sqlite_setup_safe()

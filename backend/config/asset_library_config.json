@@ -1,0 +1,6 @@
+{
+  "rootFolder": "C:\\Users\\alexh\\Desktop\\BlacksmithAtlas\\BlacksmithAtlas_Files\\AssetLibrary\\3D",
+  "jsonFilePath": "C:\\Users\\alexh\\Desktop\\BlacksmithAtlas\\backend\\assetlibrary\\database\\3DAssets.json",
+  "apiEndpoint": "http://localhost:8000/api/v1/assets",
+  "autoRebuildOnChange": true
+}
