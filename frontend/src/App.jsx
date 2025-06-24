@@ -1,15 +1,44 @@
 // frontend/src/App.jsx - SIMPLE VERSION
 import React, { useState, useEffect } from 'react';
-import { Library, Briefcase, Bot, Package } from 'lucide-react';
+import { Library, Briefcase, Bot, Package, Settings } from 'lucide-react';
 import AssetLibrary from './components/AssetLibrary';
 import ProducerTools from './components/ProducerTools';
 import AITools from './components/AITools';
 import DeliveryTool from './components/DeliveryTool/DeliveryTool.jsx';
+import SettingsComponent from './components/Settings';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('delivery-tool'); // Start with delivery tool
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [apiStatus, setApiStatus] = useState('connected'); // Assume it's working
+
+  // Initialize theme and settings on app startup
+  useEffect(() => {
+    // Always start with dark mode
+    document.documentElement.classList.add('dark');
+    document.documentElement.classList.remove('light');
+    
+    // Load saved accent color
+    const savedAccentColor = localStorage.getItem('accentColor');
+    
+    // Apply accent color
+    if (savedAccentColor) {
+      const colors = {
+        blue: { primary: '#3b82f6', hover: '#2563eb' },
+        purple: { primary: '#8b5cf6', hover: '#7c3aed' },
+        green: { primary: '#10b981', hover: '#059669' },
+        orange: { primary: '#f59e0b', hover: '#d97706' },
+        red: { primary: '#ef4444', hover: '#dc2626' },
+        white: { primary: '#ffffff', hover: '#f3f4f6' },
+        lightgray: { primary: '#9ca3af', hover: '#6b7280' },
+        darkgray: { primary: '#4b5563', hover: '#374151' }
+      };
+      
+      const root = document.documentElement;
+      root.style.setProperty('--accent-primary', colors[savedAccentColor].primary);
+      root.style.setProperty('--accent-hover', colors[savedAccentColor].hover);
+    }
+  }, []);
 
   // Simple API check - just once
   useEffect(() => {
@@ -42,6 +71,12 @@ const App = () => {
       name: 'AI Tools',
       icon: Bot,
       component: AITools
+    },
+    {
+      id: 'settings',
+      name: 'Settings',
+      icon: Settings,
+      component: SettingsComponent
     }
   ];
 

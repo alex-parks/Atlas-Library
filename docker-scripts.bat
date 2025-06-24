@@ -14,10 +14,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Check if docker compose is available
-docker compose version >nul 2>&1
+REM Check if docker-compose is available
+docker-compose --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] docker compose is not available. Please ensure Docker Desktop is installed and running.
+    echo [ERROR] docker-compose is not installed. Please install it and try again.
     exit /b 1
 )
 
@@ -42,14 +42,14 @@ goto :usage
 :start_atlas
 echo [INFO] Building and starting Blacksmith Atlas...
 echo [INFO] Building Docker images...
-docker compose build --no-cache
+docker-compose build --no-cache
 if errorlevel 1 (
     echo [ERROR] Build failed
     exit /b 1
 )
 
 echo [INFO] Starting services...
-docker compose up -d
+docker-compose up -d
 if errorlevel 1 (
     echo [ERROR] Failed to start services
     exit /b 1
@@ -82,7 +82,7 @@ goto :end
 
 :start_backend
 echo [INFO] Starting backend only...
-docker compose up -d backend arangodb
+docker-compose up -d backend arangodb
 if errorlevel 1 (
     echo [ERROR] Failed to start backend
     exit /b 1
@@ -94,7 +94,7 @@ goto :end
 
 :start_frontend
 echo [INFO] Starting frontend only...
-docker compose up -d frontend
+docker-compose up -d frontend
 if errorlevel 1 (
     echo [ERROR] Failed to start frontend
     exit /b 1
@@ -105,30 +105,30 @@ goto :end
 
 :stop_atlas
 echo [INFO] Stopping all Blacksmith Atlas containers...
-docker compose down --remove-orphans
+docker-compose down --remove-orphans
 echo [SUCCESS] All containers stopped
 goto :end
 
 :restart_atlas
 echo [INFO] Restarting Blacksmith Atlas...
-docker compose restart
+docker-compose restart
 echo [SUCCESS] Services restarted
 goto :end
 
 :view_logs
 if "%2"=="" (
     echo [INFO] Showing logs for all services...
-    docker compose logs -f
+    docker-compose logs -f
 ) else (
     echo [INFO] Showing logs for %2...
-    docker compose logs -f %2
+    docker-compose logs -f %2
 )
 goto :end
 
 :show_status
 echo [INFO] Blacksmith Atlas Status:
 echo.
-docker compose ps
+docker-compose ps
 echo.
 echo [INFO] Service URLs:
 echo   Backend API: http://localhost:8000
@@ -139,26 +139,26 @@ goto :end
 
 :setup_database
 echo [INFO] Setting up database...
-docker compose exec backend python -m backend.assetlibrary.database.setup_arango_database
+docker-compose exec backend python -m backend.assetlibrary.database.setup_arango_database
 echo [SUCCESS] Database setup complete
 goto :end
 
 :run_tests
 echo [INFO] Running tests...
-docker compose exec backend python -m pytest
+docker-compose exec backend python -m pytest
 echo [SUCCESS] Tests complete
 goto :end
 
 :cleanup
 echo [INFO] Cleaning up Blacksmith Atlas...
-docker compose down --volumes --remove-orphans
+docker-compose down --volumes --remove-orphans
 docker system prune -f
 echo [SUCCESS] Cleanup complete
 goto :end
 
 :build_images
 echo [INFO] Building Docker images...
-docker compose build --no-cache
+docker-compose build --no-cache
 echo [SUCCESS] Build complete
 goto :end
 

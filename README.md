@@ -150,7 +150,7 @@ ASSET_LIBRARY_PATH=/app/assets # Asset library location
 ### Adding Dependencies
 - **Backend**: Edit `backend/requirements.txt`
 - **Frontend**: Edit `frontend/package.json`
-- **Rebuild**: `docker-compose build`
+- **Rebuild**: `docker compose build`
 
 ## 🐛 Troubleshooting
 

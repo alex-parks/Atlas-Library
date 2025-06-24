@@ -1,1 +1,113 @@
 @import "tailwindcss";
+
+/* CSS Variables for Theme System */
+:root {
+  /* Default accent colors */
+  --accent-primary: #3b82f6;
+  --accent-hover: #2563eb;
+  
+  /* Light theme variables */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --border-color: #e2e8f0;
+}
+
+/* Dark theme variables */
+.dark {
+  --bg-primary: #2a2a2a;
+  --bg-secondary: #3a3a3a;
+  --bg-tertiary: #4a4a4a;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --border-color: #5a5a5a;
+}
+
+/* Light theme variables */
+.light {
+  --bg-primary: #a1a5aa;
+  --bg-secondary: #b8bcc1;
+  --bg-tertiary: #d1d5db;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --border-color: #9ca3af;
+}
+
+/* Apply theme colors to main elements */
+.dark .bg-neutral-900 {
+  background-color: #2a2a2a !important;
+}
+
+.light .bg-neutral-900 {
+  background-color: #a1a5aa !important;
+}
+
+.dark .bg-neutral-800 {
+  background-color: #3a3a3a !important;
+}
+
+.light .bg-neutral-800 {
+  background-color: #b8bcc1 !important;
+}
+
+.dark .bg-neutral-700 {
+  background-color: #4a4a4a !important;
+}
+
+.light .bg-neutral-700 {
+  background-color: #d1d5db !important;
+}
+
+/* Text colors for themes */
+.dark .text-white {
+  color: #f8fafc !important;
+}
+
+.light .text-white {
+  color: #0f172a !important;
+}
+
+.dark .text-neutral-400 {
+  color: #cbd5e1 !important;
+}
+
+.light .text-neutral-400 {
+  color: #334155 !important;
+}
+
+/* Border colors for themes */
+.dark .border-neutral-700 {
+  border-color: #5a5a5a !important;
+}
+
+.light .border-neutral-700 {
+  border-color: #9ca3af !important;
+}
+
+/* Apply accent colors to interactive elements */
+.bg-blue-600 {
+  background-color: var(--accent-primary) !important;
+}
+
+.hover\:bg-blue-700:hover {
+  background-color: var(--accent-hover) !important;
+}
+
+.text-blue-500 {
+  color: var(--accent-primary) !important;
+}
+
+.border-blue-500 {
+  border-color: var(--accent-primary) !important;
+}
+
+.focus\:ring-blue-500:focus {
+  --tw-ring-color: var(--accent-primary) !important;
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}

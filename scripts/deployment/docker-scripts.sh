@@ -37,10 +37,10 @@ check_docker() {
     fi
 }
 
-# Function to check if docker-compose is available
+# Function to check if docker compose is available
 check_docker_compose() {
-    if ! command -v docker-compose &> /dev/null; then
-        print_error "docker-compose is not installed. Please install it and try again."
+    if ! docker compose version > /dev/null 2>&1; then
+        print_error "docker compose is not available. Please ensure Docker Desktop is installed and running."
         exit 1
     fi
 }
@@ -48,7 +48,7 @@ check_docker_compose() {
 # Function to stop all Atlas containers
 stop_atlas() {
     print_status "Stopping all Blacksmith Atlas containers..."
-    docker-compose down --remove-orphans
+    docker compose down --remove-orphans
     print_success "All containers stopped"
 }
 
@@ -58,11 +58,11 @@ start_atlas() {
     
     # Build images
     print_status "Building Docker images..."
-    docker-compose build --no-cache
+    docker compose build --no-cache
     
     # Start services
     print_status "Starting services..."
-    docker-compose up -d
+    docker compose up -d
     
     # Wait for services to be ready
     print_status "Waiting for services to be ready..."
@@ -92,7 +92,7 @@ start_atlas() {
 # Function to start only backend
 start_backend() {
     print_status "Starting backend only..."
-    docker-compose up -d backend arangodb
+    docker compose up -d backend arangodb
     print_success "Backend started"
     print_status "API: http://localhost:8000"
     print_status "Docs: http://localhost:8000/docs"
@@ -101,7 +101,7 @@ start_backend() {
 # Function to start only frontend
 start_frontend() {
     print_status "Starting frontend only..."
-    docker-compose up -d frontend
+    docker compose up -d frontend
     print_success "Frontend started"
     print_status "Frontend: http://localhost:3011"
 }
@@ -111,24 +111,24 @@ view_logs() {
     local service=${1:-""}
     if [ -z "$service" ]; then
         print_status "Showing logs for all services..."
-        docker-compose logs -f
+        docker compose logs -f
     else
         print_status "Showing logs for $service..."
-        docker-compose logs -f "$service"
+        docker compose logs -f "$service"
     fi
 }
 
 # Function to restart services
 restart_atlas() {
     print_status "Restarting Blacksmith Atlas..."
-    docker-compose restart
+    docker compose restart
     print_success "Services restarted"
 }
 
 # Function to clean up everything
 cleanup() {
     print_status "Cleaning up Blacksmith Atlas..."
-    docker-compose down --volumes --remove-orphans
+    docker compose down --volumes --remove-orphans
     docker system prune -f
     print_success "Cleanup complete"
 }
@@ -137,7 +137,7 @@ cleanup() {
 show_status() {
     print_status "Blacksmith Atlas Status:"
     echo ""
-    docker-compose ps
+    docker compose ps
     echo ""
     print_status "Service URLs:"
     echo "  Backend API: http://localhost:8000"
@@ -149,14 +149,14 @@ show_status() {
 # Function to setup database
 setup_database() {
     print_status "Setting up database..."
-    docker-compose exec backend python -m backend.assetlibrary.database.setup_arango_database
+    docker compose exec backend python -m backend.assetlibrary.database.setup_arango_database
     print_success "Database setup complete"
 }
 
 # Function to run tests
 run_tests() {
     print_status "Running tests..."
-    docker-compose exec backend python -m pytest
+    docker compose exec backend python -m pytest
     print_success "Tests complete"
 }
 
@@ -202,38 +202,36 @@ case "${1:-}" in
         check_docker_compose
         run_tests
         ;;
-    "cleanup"|"clean")
+    "cleanup")
         check_docker_compose
         cleanup
         ;;
-    "build")
-        check_docker
-        check_docker_compose
-        print_status "Building Docker images..."
-        docker-compose build --no-cache
-        print_success "Build complete"
-        ;;
-    *)
+    "help"|"--help"|"-h"|"")
         echo "Blacksmith Atlas Docker Scripts"
         echo ""
-        echo "Usage: $0 {command}"
+        echo "Usage: $0 [command]"
         echo ""
         echo "Commands:"
-        echo "  start, dev     - Start all services (backend, frontend, database)"
-        echo "  backend        - Start backend and database only"
+        echo "  start, dev     - Start all services"
+        echo "  backend        - Start backend only"
         echo "  frontend       - Start frontend only"
         echo "  stop, kill     - Stop all services"
         echo "  restart        - Restart all services"
-        echo "  logs [service] - View logs (all services or specific service)"
-        echo "  status         - Show service status and URLs"
-        echo "  setup-db       - Setup database schema and initial data"
+        echo "  logs [service] - Show logs (all or specific service)"
+        echo "  status         - Show service status"
+        echo "  setup-db       - Setup database"
         echo "  test           - Run tests"
-        echo "  cleanup        - Stop services and clean up volumes/images"
-        echo "  build          - Build Docker images"
+        echo "  cleanup        - Clean up everything"
+        echo "  help           - Show this help"
         echo ""
         echo "Examples:"
         echo "  $0 start       # Start everything"
-        echo "  $0 logs backend # View backend logs"
-        echo "  $0 status      # Check service status"
+        echo "  $0 logs        # Show all logs"
+        echo "  $0 logs backend # Show backend logs only"
+        ;;
+    *)
+        print_error "Unknown command: $1"
+        echo "Use '$0 help' for usage information"
+        exit 1
         ;;
 esac 
