@@ -1,14 +1,10 @@
-# backend/requirements.txt - Updated with SQLite support
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-python-multipart>=0.0.6
-pydantic>=2.4.0
-python-json-logger>=2.0.7
-aiofiles>=23.2.0
-pillow>=10.0.0
-pyyaml>=6.0.1
-
-# SQLite is built into Python, no additional package needed
-# But you might want these for advanced database operations:
-sqlalchemy>=2.0.0  # Optional: For more advanced ORM features
-alembic>=1.12.0    # Optional: For database migrations
+# backend/requirements.txt - All dependencies are cross-platform (no Windows-only packages)
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+python-arango==7.5.8
+requests==2.31.0
+aiofiles==23.2.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+# ArangoDB is the primary database

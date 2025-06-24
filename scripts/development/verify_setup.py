@@ -1,6 +1,6 @@
 # verify_setup.py - Run this to verify your setup before running npm run dev
 """
-Verification script for Blacksmith Atlas SQLite setup
+Verification script for Blacksmith Atlas ArangoDB setup
 Run this before starting your application to ensure everything is configured correctly
 """
 
@@ -14,7 +14,7 @@ def check_file_structure():
     print("🔍 Checking file structure...")
 
     required_files = [
-        "backend/database/sqlite_manager.py",
+        "backend/assetlibrary/database/setup_arango_database.py",
         "backend/start_database.py",
         "backend/api/assets.py",
         "backend/main.py",
@@ -86,8 +86,8 @@ def check_package_json():
 
         scripts = package_data.get('scripts', {})
         required_scripts = {
-            'dev': 'npm run kill-ports && npm run setup-database && concurrently',
-            'setup-database': 'cd backend && python start_database.py'
+            'dev': 'npm run kill-atlas && npm run setup-database && concurrently',
+            'setup-database': 'cd backend && node ../scripts/py-launcher.js start_database.py'
         }
 
         for script_name, expected_content in required_scripts.items():
@@ -116,17 +116,15 @@ def check_python_dependencies():
     required_modules = [
         'fastapi',
         'uvicorn',
-        'pydantic',
-        'sqlite3'  # Built into Python
+        'arango',
+        'requests',
+        'aiofiles'
     ]
 
     missing_modules = []
     for module in required_modules:
         try:
-            if module == 'sqlite3':
-                import sqlite3
-            else:
-                __import__(module)
+            __import__(module)
             print(f"  ✅ {module}")
         except ImportError:
             missing_modules.append(module)
@@ -140,38 +138,23 @@ def check_python_dependencies():
     return True
 
 
-def test_database_creation():
-    """Test if database can be created"""
-    print("\n🗄️ Testing database creation...")
+def test_arangodb_connection():
+    """Test if ArangoDB connection works"""
+    print("\n🗄️ Testing ArangoDB connection...")
 
     try:
         # Add current directory to path
         sys.path.append(str(Path("backend")))
 
-        from database.sqlite_manager import SQLiteAssetManager
+        from assetlibrary.database.setup_arango_database import test_connection
 
-        # Test with a temporary database
-        test_json_path = r"C:\Users\alexh\Desktop\BlacksmithAtlas\backend\assetlibrary\database\3DAssets.json"
-        test_db_path = "test_assets.db"
-
-        manager = SQLiteAssetManager(db_path=test_db_path, json_path=test_json_path)
-
-        # Try importing data
-        success = manager.json_to_sqlite()
-
-        if success:
-            assets = manager.get_all_assets()
-            print(f"  ✅ Database test successful: {len(assets)} assets imported")
-
-            # Clean up test database
-            Path(test_db_path).unlink(missing_ok=True)
-            return True
-        else:
-            print("  ❌ Database import failed")
-            return False
+        # Test connection
+        test_connection()
+        return True
 
     except Exception as e:
-        print(f"  ❌ Database test failed: {e}")
+        print(f"  ❌ ArangoDB connection test failed: {e}")
+        print("     Make sure ArangoDB is running on http://localhost:8529")
         return False
 
 
@@ -193,29 +176,18 @@ def display_startup_instructions():
     """Display instructions for starting the application"""
     print("\n🚀 Startup Instructions:")
     print("=" * 50)
-    print("1. Make sure your JSON file exists and contains assets:")
+    print("1. Make sure ArangoDB is running:")
+    print("   - Install ArangoDB if not already installed")
+    print("   - Start ArangoDB service on http://localhost:8529")
+    print()
+    print("2. Make sure your JSON file exists and contains assets:")
     print("   C:\\Users\\alexh\\Desktop\\BlacksmithAtlas\\backend\\assetlibrary\\database\\3DAssets.json")
     print()
-    print("2. Start the application:")
+    print("3. Start the application:")
     print("   npm run dev")
     print()
-    print("3. The startup sequence will be:")
-    print("   📄 Kill any existing ports")
-    print("   🗄️ Initialize SQLite database from JSON")
-    print("   🐍 Start Python backend (port 8000)")
-    print("   ⚛️ Start React frontend (port 3011)")
-    print("   🖥️ Start Electron app")
-    print()
-    print("4. Access your application:")
-    print("   - Frontend: http://localhost:3011")
-    print("   - API Docs: http://localhost:8000/docs")
-    print("   - Health Check: http://localhost:8000/health")
-    print()
-    print("5. In the Asset Library, you can:")
-    print("   - View all your assets from the database")
-    print("   - Use the 'Sync DB' button to update from JSON")
-    print("   - Configure paths in Settings")
-    print("   - Search and filter assets")
+    print("4. Or test the database manually:")
+    print("   cd backend && python assetlibrary/database/setup_arango_database.py test")
 
 
 def main():
@@ -226,10 +198,10 @@ def main():
     checks = [
         ("File Structure", check_file_structure),
         ("JSON Source File", check_json_file),
-        ("Package.json Scripts", check_package_json),
+        ("Package.json scripts", check_package_json),
         ("Python Dependencies", check_python_dependencies),
         ("Frontend Dependencies", check_frontend_dependencies),
-        ("Database Creation", test_database_creation)
+        ("ArangoDB Connection", test_arangodb_connection)
     ]
 
     passed_checks = 0

@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  # ArangoDB Database (Optional - comment out if not needed)
+  # arangodb:
+  #   image: arangodb:latest
+  #   container_name: blacksmith-atlas-db
+  #   environment:
+  #     - ARANGO_ROOT_PASSWORD=atlas_password
+  #     - ARANGO_DB_NAME=blacksmith_atlas
+  #   ports:
+  #     - "8529:8529"
+  #   volumes:
+  #     - arango_data:/var/lib/arangodb3
+  #     - arango_apps:/var/lib/arangodb3-apps
+  #   networks:
+  #     - atlas-network
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blacksmith-atlas-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ATLAS_ENV=development
+      - ARANGO_HOST=localhost
+      - ARANGO_PORT=8529
+      - ARANGO_USER=root
+      - ARANGO_PASSWORD=
+      - ARANGO_DATABASE=blacksmith_atlas
+    volumes:
+      - ./assets:/app/assets
+      - ./logs:/app/logs
+    networks:
+      - atlas-network
+    restart: unless-stopped
+
+  # Frontend (Development)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: blacksmith-atlas-frontend
+    ports:
+      - "3011:3011"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - atlas-network
+    restart: unless-stopped
+
+  # Electron (Disabled - GUI apps don't work well in containers)
+  # electron:
+  #   build:
+  #     context: ./electron
+  #     dockerfile: Dockerfile
+  #   container_name: blacksmith-atlas-electron
+  #   environment:
+  #     - DISPLAY=${DISPLAY}
+  #   volumes:
+  #     - /tmp/.X11-unix:/tmp/.X11-unix
+  #     - ./assets:/app/assets
+  #   depends_on:
+  #     - frontend
+  #     - backend
+  #   networks:
+  #     - atlas-network
+  #   restart: unless-stopped
+
+volumes:
+  arango_data:
+  arango_apps:
+
+networks:
+  atlas-network:
+    driver: bridge 

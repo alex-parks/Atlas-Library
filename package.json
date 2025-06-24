@@ -1,24 +1,56 @@
 {
   "name": "blacksmith-atlas",
   "version": "1.0.0",
+  "description": "Professional Asset Management System for VFX Studios - Dockerized for cross-platform deployment",
   "main": "electron/main.js",
+  "keywords": ["vfx", "asset-management", "docker", "fastapi", "react"],
+  "author": "Blacksmith VFX",
+  "license": "UNLICENSED",
   "scripts": {
-    "dev": "npm run kill-atlas && npm run setup-database && concurrently --kill-others-on-fail --names \"BACKEND,FRONTEND,ELECTRON\" --prefix-colors \"blue,green,yellow\" \"npm run backend\" \"npm run frontend\" \"npm run electron\"",
-    "setup-database": "cd backend && python start_database.py",
-    "backend": "cd backend && (python -m uvicorn main:app --reload --port 8000 --host 0.0.0.0 || python3 -m uvicorn main:app --reload --port 8000 --host 0.0.0.0)",
-    "frontend": "cd frontend && npm run dev -- --port 3011 --host --strictPort",
-    "electron": "wait-on http://localhost:3011 && electron .",
-    "kill-atlas": "npm run kill-ports && npm run kill-atlas-backend",
+    "start": "npm run docker:dev",
+    "stop": "npm run docker:stop",
+    "restart": "npm run docker:restart",
+    "logs": "npm run docker:logs",
+    "status": "npm run docker:status",
+    
+    "docker:dev": "docker-compose up -d && echo '🚀 Blacksmith Atlas started with Docker!' && echo 'Frontend: http://localhost:3011' && echo 'Backend: http://localhost:8000' && echo 'API Docs: http://localhost:8000/docs'",
+    "docker:start": "docker-compose up -d",
+    "docker:stop": "docker-compose down",
+    "docker:restart": "docker-compose restart",
+    "docker:logs": "docker-compose logs -f",
+    "docker:status": "docker-compose ps",
+    "docker:build": "docker-compose build --no-cache",
+    "docker:cleanup": "docker-compose down --volumes --remove-orphans && docker system prune -f",
+    "docker:setup-db": "docker-compose exec backend python -m backend.assetlibrary.database.setup_arango_database",
+    
+    "dev:legacy": "npm run kill-atlas && npm run setup-database && concurrently --kill-others-on-fail --names \"BACKEND,FRONTEND,ELECTRON\" --prefix-colors \"blue,green,yellow\" \"npm run backend\" \"npm run frontend\" \"npm run electron\"",
+    "backend:legacy": "cd backend && node ../scripts/py-launcher.js -m uvicorn main:app --reload --port 8000 --host 0.0.0.0",
+    "frontend:legacy": "cd frontend && npm run dev -- --port 3011 --host --strictPort",
+    "electron:legacy": "wait-on http://localhost:3011 && electron .",
+    "setup-database": "cd backend && node ../scripts/py-launcher.js start_database.py",
+    "kill-atlas": "npm run kill-atlas-precise",
+    "kill-atlas-precise": "node scripts/cleanup-atlas.js",
     "kill-ports": "npx kill-port 3011 8000 || true",
-    "kill-atlas-backend": "taskkill /F /FI \"COMMANDLINE eq *uvicorn*main:app*8000*\" 2>nul & exit /b 0",
     "install:all": "npm install && cd frontend && npm install",
-    "db:status": "cd backend && python start_database.py status",
-    "db:sync": "cd backend && python start_database.py",
-    "cleanup": "npm run kill-atlas && echo 'Atlas processes cleaned up'"
+    "db:status": "cd backend && node ../scripts/py-launcher.js start_database.py status",
+    "db:sync": "cd backend && node ../scripts/py-launcher.js start_database.py",
+    "cleanup": "npm run kill-atlas-precise && echo 'Atlas processes cleaned up precisely'",
+    
+    "scripts:windows": "scripts/deployment/docker-scripts.bat",
+    "scripts:unix": "scripts/deployment/docker-scripts.sh"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
     "electron": "^36.3.2",
     "wait-on": "^8.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "internal"
   }
 }

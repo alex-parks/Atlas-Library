@@ -1,20 +1,32 @@
 # backend/assetlibrary/database/setup_arango_database.py
-from arango import ArangoClient
+from arango.client import ArangoClient
 import json
 from pathlib import Path
+import sys
+import os
+
+# Add the assetlibrary directory to the path
+current_dir = Path(__file__).parent
+assetlibrary_dir = current_dir.parent
+sys.path.insert(0, str(assetlibrary_dir))
+
+from config import BlacksmithAtlasConfig
 
 
-def setup_database():
+def setup_database(environment: str = 'development'):
     """Set up ArangoDB with all required collections and initial data"""
 
+    # Get database configuration
+    db_config = BlacksmithAtlasConfig.get_database_config(environment)
+    
     # Connect to ArangoDB
-    client = ArangoClient(hosts='http://localhost:8529')
+    client = ArangoClient(hosts=db_config['hosts'])
 
     # Connect to system database
-    sys_db = client.db('_system', username='root', password='')  # Update password if needed
+    sys_db = client.db('_system', username=db_config['username'], password=db_config['password'])
 
     # Create database if it doesn't exist
-    db_name = 'blacksmith_atlas'
+    db_name = db_config['database']
     if not sys_db.has_database(db_name):
         sys_db.create_database(db_name)
         print(f"✅ Created database: {db_name}")
@@ -22,7 +34,7 @@ def setup_database():
         print(f"ℹ️ Database '{db_name}' already exists")
 
     # Connect to our database
-    db = client.db(db_name, username='root', password='')
+    db = client.db(db_name, username=db_config['username'], password=db_config['password'])
 
     # Create collections
     collections = {
@@ -184,13 +196,19 @@ def migrate_json_to_arango():
     print(f"   📄 Total in ArangoDB: {assets_collection.count()}")
 
 
-def test_connection():
+def test_connection(environment: str = 'development'):
     """Test ArangoDB connection and show stats"""
     try:
-        client = ArangoClient(hosts='http://localhost:8529')
-        db = client.db('blacksmith_atlas', username='root', password='')
+        # Get database configuration
+        db_config = BlacksmithAtlasConfig.get_database_config(environment)
+        
+        client = ArangoClient(hosts=db_config['hosts'])
+        db = client.db(db_config['database'], username=db_config['username'], password=db_config['password'])
 
         print("✅ Connected to ArangoDB!")
+        print(f"   Environment: {environment}")
+        print(f"   Host: {db_config['hosts'][0]}")
+        print(f"   Database: {db_config['database']}")
         print(f"\n📊 Database Statistics:")
 
         for coll_name in ['assets', 'projects', 'tags', 'users']:
@@ -206,7 +224,9 @@ def test_connection():
 
     except Exception as e:
         print(f"❌ Connection failed: {e}")
-        print("   Make sure ArangoDB is running on http://localhost:8529")
+        print(f"   Environment: {environment}")
+        print(f"   Host: {db_config['hosts'][0]}")
+        print("   Make sure ArangoDB is running and accessible")
 
 
 if __name__ == "__main__":

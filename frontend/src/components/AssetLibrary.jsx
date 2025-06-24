@@ -1,4 +1,4 @@
-// Enhanced AssetLibrary.jsx with Preview Modal
+// Enhanced AssetLibrary.jsx with Fixed Settings Panel
 import React, { useState, useEffect } from 'react';
 import { Search, Grid3X3, List, Filter, Upload, Download, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw } from 'lucide-react';
 
@@ -11,7 +11,7 @@ const AssetLibrary = () => {
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [dbStatus, setDbStatus] = useState({ status: 'unknown', assets_count: 0 });
 
-  // NEW: Preview modal state
+  // Preview modal state
   const [previewAsset, setPreviewAsset] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
 
@@ -99,7 +99,7 @@ const AssetLibrary = () => {
     }
   };
 
-  // NEW: Preview functions
+  // Preview functions
   const openPreview = (asset) => {
     setPreviewAsset(asset);
     setShowPreview(true);
@@ -141,27 +141,41 @@ const AssetLibrary = () => {
   };
 
   const saveSettings = async () => {
-    setSettings(tempSettings);
-    setShowSettingsPanel(false);
-    localStorage.setItem('blacksmith-atlas-settings', JSON.stringify(tempSettings));
-
     try {
-      const response = await fetch('http://localhost:8000/admin/save-config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(tempSettings)
-      });
+      // Update local settings
+      setSettings(tempSettings);
+      setShowSettingsPanel(false);
 
-      if (response.ok) {
-        console.log('Settings saved to backend config');
+      // Save to localStorage
+      localStorage.setItem('blacksmith-atlas-settings', JSON.stringify(tempSettings));
+      console.log('Settings saved to localStorage');
+
+      // Save to backend config
+      try {
+        const response = await fetch('http://localhost:8000/admin/save-config', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(tempSettings)
+        });
+
+        if (response.ok) {
+          console.log('Settings saved to backend config');
+          alert('Settings saved successfully! Restart the application to apply changes.');
+        } else {
+          console.log('Backend config save failed, but localStorage saved');
+          alert('Settings saved locally. Backend save failed - this is normal if backend is not running.');
+        }
+      } catch (error) {
+        console.log('Could not save to backend config (normal if backend not running)');
+        alert('Settings saved locally. To apply fully, restart the application.');
       }
-    } catch (error) {
-      console.log('Could not save to backend config (normal if backend not running)');
-    }
 
-    console.log('Settings saved:', tempSettings);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      alert('Failed to save settings. Please try again.');
+    }
   };
 
   const resetSettings = () => {
@@ -173,6 +187,37 @@ const AssetLibrary = () => {
       autoSync: true
     };
     setTempSettings(defaultSettings);
+    alert('Settings reset to defaults. Click "Save Settings" to apply.');
+  };
+
+  const browseFolder = (fieldName) => {
+    // Since we're in Electron, we could use the file dialog here
+    // For now, just prompt for manual entry
+    const newPath = prompt(`Enter new path for ${fieldName}:`, tempSettings[fieldName]);
+    if (newPath !== null) {
+      setTempSettings(prev => ({
+        ...prev,
+        [fieldName]: newPath
+      }));
+    }
+  };
+
+  const testConnection = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(tempSettings.apiEndpoint);
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(`Connection successful! Found ${data.length || 0} assets.`);
+      } else {
+        alert(`Connection failed: ${response.status} ${response.statusText}`);
+      }
+    } catch (error) {
+      alert(`Connection failed: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -182,6 +227,7 @@ const AssetLibrary = () => {
         const parsed = JSON.parse(savedSettings);
         setSettings(parsed);
         setTempSettings(parsed);
+        console.log('Loaded settings from localStorage:', parsed);
       } catch (e) {
         console.error('Error loading saved settings:', e);
       }
@@ -206,7 +252,7 @@ const AssetLibrary = () => {
                 dbStatus.status === 'error' ? 'text-red-400 border-red-500' :
                 'text-yellow-400 border-yellow-500'
               }`}>
-                {dbStatus.status === 'healthy' ? 'SQLite Ready' :
+                {dbStatus.status === 'healthy' ? 'ArangoDB Ready' :
                  dbStatus.status === 'error' ? 'DB Error' :
                  'DB Unknown'}
               </span>
@@ -358,7 +404,188 @@ const AssetLibrary = () => {
         </div>
       </div>
 
-      {/* NEW: Preview Modal */}
+      {/* Settings Panel */}
+      {showSettingsPanel && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-white">Asset Library Settings</h2>
+              <button
+                onClick={() => setShowSettingsPanel(false)}
+                className="text-neutral-400 hover:text-white"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Root Folder Setting */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  Asset Library Root Folder
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={tempSettings.rootFolder}
+                    onChange={(e) => setTempSettings(prev => ({ ...prev, rootFolder: e.target.value }))}
+                    className="flex-1 bg-neutral-700 border border-neutral-600 rounded-lg px-3 py-2 text-white"
+                    placeholder="C:\Path\To\AssetLibrary\3D"
+                  />
+                  <button
+                    onClick={() => browseFolder('rootFolder')}
+                    className="bg-neutral-700 hover:bg-neutral-600 px-3 py-2 rounded-lg flex items-center gap-2"
+                  >
+                    <FolderOpen size={16} />
+                    Browse
+                  </button>
+                </div>
+                <p className="text-xs text-neutral-400 mt-1">
+                  The main folder containing your 3D assets
+                </p>
+              </div>
+
+              {/* JSON File Path Setting */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  JSON Database File
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={tempSettings.jsonFilePath}
+                    onChange={(e) => setTempSettings(prev => ({ ...prev, jsonFilePath: e.target.value }))}
+                    className="flex-1 bg-neutral-700 border border-neutral-600 rounded-lg px-3 py-2 text-white"
+                    placeholder="C:\Path\To\3DAssets.json"
+                  />
+                  <button
+                    onClick={() => browseFolder('jsonFilePath')}
+                    className="bg-neutral-700 hover:bg-neutral-600 px-3 py-2 rounded-lg flex items-center gap-2"
+                  >
+                    <FolderOpen size={16} />
+                    Browse
+                  </button>
+                </div>
+                <p className="text-xs text-neutral-400 mt-1">
+                  The JSON file containing asset metadata
+                </p>
+              </div>
+
+              {/* API Endpoint Setting */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  API Endpoint
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={tempSettings.apiEndpoint}
+                    onChange={(e) => setTempSettings(prev => ({ ...prev, apiEndpoint: e.target.value }))}
+                    className="flex-1 bg-neutral-700 border border-neutral-600 rounded-lg px-3 py-2 text-white"
+                    placeholder="http://localhost:8000/api/v1/assets"
+                  />
+                  <button
+                    onClick={testConnection}
+                    disabled={loading}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-600 px-3 py-2 rounded-lg flex items-center gap-2"
+                  >
+                    {loading ? (
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
+                    ) : (
+                      <Database size={16} />
+                    )}
+                    Test
+                  </button>
+                </div>
+                <p className="text-xs text-neutral-400 mt-1">
+                  The backend API endpoint for asset data
+                </p>
+              </div>
+
+              {/* Database Options */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-3">
+                  Database Options
+                </label>
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={tempSettings.databaseEnabled}
+                      onChange={(e) => setTempSettings(prev => ({ ...prev, databaseEnabled: e.target.checked }))}
+                      className="text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-neutral-300 text-sm">Enable Database Connection</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={tempSettings.autoSync}
+                      onChange={(e) => setTempSettings(prev => ({ ...prev, autoSync: e.target.checked }))}
+                      className="text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-neutral-300 text-sm">Auto-sync on startup</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Current Status */}
+              <div className="bg-neutral-700 rounded-lg p-4">
+                <h3 className="text-white font-medium mb-3">Current Status</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-neutral-400">Database:</span>
+                    <div className={`font-medium ${
+                      dbStatus.status === 'healthy' ? 'text-green-400' : 'text-red-400'
+                    }`}>
+                      {dbStatus.status === 'healthy' ? 'Connected' : 'Disconnected'}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-neutral-400">Assets:</span>
+                    <div className="text-blue-400 font-medium">{dbStatus.assets_count}</div>
+                  </div>
+                  <div>
+                    <span className="text-neutral-400">Type:</span>
+                    <div className="text-purple-400 font-medium">{dbStatus.database_type || 'Unknown'}</div>
+                  </div>
+                  <div>
+                    <span className="text-neutral-400">API:</span>
+                    <div className="text-green-400 font-medium">
+                      {settings.apiEndpoint.includes('localhost') ? 'Local' : 'Remote'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-6 pt-6 border-t border-neutral-700">
+              <button
+                onClick={saveSettings}
+                className="bg-green-600 hover:bg-green-700 text-white py-2 px-6 rounded-lg flex items-center gap-2 transition-colors"
+              >
+                <Save size={16} />
+                Save Settings
+              </button>
+              <button
+                onClick={resetSettings}
+                className="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded-lg transition-colors"
+              >
+                Reset to Defaults
+              </button>
+              <button
+                onClick={() => setShowSettingsPanel(false)}
+                className="bg-neutral-700 hover:bg-neutral-600 text-white py-2 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal */}
       {showPreview && previewAsset && (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4">
           <div className="bg-neutral-800 border border-neutral-700 rounded-lg max-w-4xl max-h-[90vh] overflow-auto">
@@ -484,25 +711,7 @@ const AssetLibrary = () => {
         </div>
       )}
 
-      {/* Settings Panel (existing code - unchanged) */}
-      {showSettingsPanel && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-white">Asset Library Settings</h2>
-              <button
-                onClick={() => setShowSettingsPanel(false)}
-                className="text-neutral-400 hover:text-white"
-              >
-                <X size={24} />
-              </button>
-            </div>
-            {/* Settings content remains the same... */}
-          </div>
-        </div>
-      )}
-
-      {/* Content */}
+      {/* Content (Asset Grid/List) */}
       <div className="p-6">
         {loading ? (
           <div className="flex items-center justify-center h-64">

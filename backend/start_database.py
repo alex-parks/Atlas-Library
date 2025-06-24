@@ -1,7 +1,7 @@
-# backend/start_database.py - Fixed version with proper path handling
+# backend/start_database.py - ArangoDB version
 """
 Database startup script for npm run dev
-Initializes SQLite database and syncs with JSON from Asset Library settings
+Initializes ArangoDB database and syncs with JSON from Asset Library settings
 """
 
 import sys
@@ -25,10 +25,11 @@ os.chdir(current_dir)  # Ensure we're in the backend directory
 sys.path.append(str(current_dir))
 
 try:
-    from database.sqlite_manager import SQLiteAssetManager
-except ImportError:
-    logger.error("❌ Could not import SQLiteAssetManager")
-    logger.error("   Make sure database/sqlite_manager.py exists")
+    from assetlibrary.database.setup_arango_database import setup_database, migrate_json_to_arango, test_connection
+    from arango.client import ArangoClient
+except ImportError as e:
+    logger.error(f"❌ Could not import ArangoDB modules: {e}")
+    logger.error("   Make sure arango package is installed: pip install python-arango")
     sys.exit(1)
 
 
@@ -157,8 +158,8 @@ def validate_json_file(json_path):
         return False, f"Error reading JSON: {e}"
 
 
-def initialize_database(settings):
-    """Initialize SQLite database with settings"""
+def initialize_arangodb_database(settings):
+    """Initialize ArangoDB database with settings"""
     try:
         json_path = settings["jsonFilePath"]
 
@@ -166,11 +167,8 @@ def initialize_database(settings):
         if not Path(json_path).is_absolute():
             json_path = str(current_dir / json_path)
 
-        db_path = str(current_dir / "database" / "assets.db")
-
-        logger.info(f"🗃️ Initializing SQLite database...")
+        logger.info(f"🗃️ Initializing ArangoDB database...")
         logger.info(f"📄 JSON source: {json_path}")
-        logger.info(f"💾 Database: {db_path}")
 
         # Validate JSON file first
         valid, message = validate_json_file(json_path)
@@ -178,53 +176,103 @@ def initialize_database(settings):
             logger.error(f"❌ JSON validation failed: {message}")
             return None, f"JSON validation failed: {message}"
 
-        # Initialize SQLite manager with absolute paths
-        manager = SQLiteAssetManager(db_path=db_path, json_path=json_path)
+        # Set up ArangoDB database and collections
+        logger.info("🔧 Setting up ArangoDB database and collections...")
+        db = setup_database()
 
         # Check if database needs initialization
-        existing_assets = manager.get_all_assets()
+        assets_collection = db.collection('assets')
+        
+        try:
+            existing_assets_count = assets_collection.count()
+        except Exception as e:
+            logger.warning(f"⚠️ Could not get asset count: {e}")
+            existing_assets_count = 0
 
-        if not existing_assets:
+        if existing_assets_count == 0:
             logger.info("📦 Empty database, importing JSON data...")
-            success = manager.json_to_sqlite()
-
+            
+            # Create a temporary migration function with our JSON path
+            def migrate_with_custom_path():
+                json_file = Path(json_path)
+                if not json_file.exists():
+                    logger.error(f"❌ JSON file not found for migration: {json_file}")
+                    return False
+                
+                with open(json_file, 'r') as f:
+                    json_assets = json.load(f)
+                
+                logger.info(f"📦 Migrating {len(json_assets)} assets from JSON to ArangoDB...")
+                
+                migrated = 0
+                skipped = 0
+                
+                for asset in json_assets:
+                    try:
+                        # Prepare document for ArangoDB
+                        arango_doc = {
+                            '_key': asset['id'],  # Use existing ID as key
+                            'name': asset['name'],
+                            'category': asset['category'],
+                            'asset_type': '3D',  # All your current assets are 3D
+                            'folder': asset.get('folder', ''),
+                            'paths': asset.get('paths', {}),
+                            'metadata': asset.get('metadata', {}),
+                            'file_sizes': asset.get('file_sizes', {}),
+                            'dependencies': asset.get('dependencies', {}),
+                            'tags': [],  # Start with empty tags
+                            'created_at': asset.get('created_at', ''),
+                            'updated_at': asset.get('created_at', ''),  # Use created_at if no updated_at
+                            'legacy_json': True  # Mark as migrated from JSON
+                        }
+                        
+                        # Insert into ArangoDB
+                        assets_collection.insert(arango_doc)
+                        migrated += 1
+                        logger.info(f"✅ Migrated: {asset['name']} (ID: {asset['id']})")
+                        
+                    except Exception as e:
+                        if 'unique constraint violated' in str(e).lower():
+                            skipped += 1
+                            logger.info(f"⏭️ Skipped (already exists): {asset['name']}")
+                        else:
+                            logger.error(f"❌ Failed to migrate {asset['name']}: {e}")
+                
+                logger.info(f"📊 Migration complete!")
+                logger.info(f"   ✅ Migrated: {migrated}")
+                logger.info(f"   ⏭️ Skipped: {skipped}")
+                return True
+            
+            success = migrate_with_custom_path()
+            
             if success:
-                new_assets = manager.get_all_assets()
-                logger.info(f"✅ Imported {len(new_assets)} assets from JSON")
+                try:
+                    new_assets_count = assets_collection.count()
+                    logger.info(f"✅ Imported {new_assets_count} assets from JSON")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not get final count: {e}")
+                    logger.info("✅ Import completed")
             else:
                 logger.error("❌ Failed to import JSON data")
                 return None, "Failed to import JSON data"
         else:
-            logger.info(f"✅ Database already contains {len(existing_assets)} assets")
+            logger.info(f"✅ Database already contains {existing_assets_count} assets")
 
             # Check if JSON is newer and offer to sync
             json_file = Path(json_path)
             if json_file.exists():
                 json_modified = datetime.fromtimestamp(json_file.stat().st_mtime)
-
-                # Get latest asset creation time from database
-                if existing_assets:
-                    latest_asset = max(existing_assets, key=lambda x: x.get('created_at', ''))
-                    if latest_asset.get('created_at'):
-                        try:
-                            latest_db_time = datetime.fromisoformat(latest_asset['created_at'].replace('Z', '+00:00'))
-
-                            if json_modified > latest_db_time:
-                                logger.info("🔄 JSON file is newer, syncing database...")
-                                success = manager.json_to_sqlite()
-                                if success:
-                                    synced_assets = manager.get_all_assets()
-                                    logger.info(f"✅ Synced {len(synced_assets)} assets")
-                                else:
-                                    logger.warning("⚠️ Sync failed, using existing data")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Could not compare timestamps: {e}")
+                logger.info("🔄 JSON file found, database sync may be needed")
 
         # Get final statistics
-        stats = manager.get_statistics()
-        logger.info(f"📊 Database ready: {stats}")
+        try:
+            final_count = assets_collection.count()
+            logger.info(f"📊 Database ready: {final_count} assets")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not get final count: {e}")
+            logger.info("📊 Database ready")
 
-        return manager, "Database initialized successfully"
+        return db, "Database initialized successfully"
 
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}")
@@ -237,6 +285,7 @@ def create_health_check_endpoint_info(settings):
     """Create info for health check"""
     return {
         "database_startup_time": datetime.now().isoformat(),
+        "database_type": "ArangoDB",
         "json_source": settings["jsonFilePath"],
         "root_folder": settings["rootFolder"],
         "api_endpoint": settings["apiEndpoint"],
@@ -246,7 +295,7 @@ def create_health_check_endpoint_info(settings):
 
 def main():
     """Main database startup function"""
-    print("🚀 Blacksmith Atlas - Database Startup (Fixed Version)")
+    print("🚀 Blacksmith Atlas - ArangoDB Database Startup")
     print("=" * 60)
 
     try:
@@ -268,10 +317,10 @@ def main():
         save_settings_to_config(settings)
 
         # Initialize database
-        logger.info("🗄️ Starting database initialization...")
-        manager, message = initialize_database(settings)
+        logger.info("🗄️ Starting ArangoDB database initialization...")
+        db, message = initialize_arangodb_database(settings)
 
-        if manager is None:
+        if db is None:
             logger.error(f"❌ Database startup failed: {message}")
             sys.exit(1)
 
@@ -283,8 +332,8 @@ def main():
         with open(health_file, 'w') as f:
             json.dump(health_info, f, indent=2)
 
-        logger.info("✅ Database startup completed successfully!")
-        logger.info("🔗 Backend can now connect to SQLite database")
+        logger.info("✅ ArangoDB database startup completed successfully!")
+        logger.info("🔗 Backend can now connect to ArangoDB database")
         logger.info(f"📊 Final settings: {settings['jsonFilePath']}")
 
         # Success indicator for npm script
@@ -305,21 +354,7 @@ def main():
 def quick_status():
     """Quick status check for the database"""
     try:
-        settings = load_asset_library_settings()
-        json_path = settings["jsonFilePath"]
-
-        # Ensure absolute path
-        if not Path(json_path).is_absolute():
-            json_path = str(current_dir / json_path)
-
-        manager = SQLiteAssetManager(json_path=json_path)
-        assets = manager.get_all_assets()
-        stats = manager.get_statistics()
-
-        print(f"Database Status: ✅ Ready")
-        print(f"Assets: {len(assets)}")
-        print(f"Categories: {list(stats.get('by_category', {}).keys())}")
-        print(f"JSON Source: {json_path}")
+        test_connection()
         print(f"Working Directory: {current_dir}")
 
     except Exception as e:

@@ -129,7 +129,7 @@ class JSONDatabaseHandler(DatabaseHandler):
 class ArangoDBHandler(DatabaseHandler):
     def __init__(self, config: Dict):
         try:
-            from arango import ArangoClient
+            from arango.client import ArangoClient
             self.client = ArangoClient(hosts=config['hosts'])
             self.db = self.client.db(
                 config['database'],
@@ -166,7 +166,10 @@ class ArangoDBHandler(DatabaseHandler):
 
             # Insert or update
             result = self.collection.insert(arango_doc, overwrite=True)
-            print(f"✅ Asset saved to ArangoDB with key: {result['_key']}")
+            if result and isinstance(result, dict) and '_key' in result:
+                print(f"✅ Asset saved to ArangoDB with key: {result['_key']}")
+            else:
+                print(f"✅ Asset saved to ArangoDB (no key returned)")
 
             # Also save to JSON as backup
             self._save_to_json_backup(asset_data)
@@ -185,7 +188,10 @@ class ArangoDBHandler(DatabaseHandler):
                     RETURN asset
             """
             cursor = self.db.aql.execute(query)
-            return list(cursor)
+            if hasattr(cursor, '__iter__'):
+                return list(cursor)
+            else:
+                return []
         except Exception as e:
             print(f"⚠️ Failed to load from ArangoDB: {e}")
             return []
@@ -265,22 +271,15 @@ class HoudiniAssetExporter:
         self.thumbnail_filename = f"{self.name}_thumbnail.png"
         self.thumbnail_path = self.thumbnail_folder / self.thumbnail_filename
 
-        # Initialize database handler
-        self.db_handler = self._create_db_handler()
+        # Always use ArangoDBHandler
+        self.db_handler = ArangoDBHandler(self.config.DATABASE['arango'])
 
         # Track copied files
         self.copied_files = []
 
     def _create_db_handler(self) -> DatabaseHandler:
-        """Create appropriate database handler based on config"""
-        db_type = self.config.DATABASE['type']
-
-        if db_type == 'yaml':
-            return YAMLDatabaseHandler(self.config.YAML_FILE)
-        elif db_type == 'json':
-            return JSONDatabaseHandler(self.config.JSON_FILE)
-        else:
-            raise ValueError(f"Unknown database type: {db_type}")
+        """Always return ArangoDBHandler for saving assets"""
+        return ArangoDBHandler(self.config.DATABASE['arango'])
 
     def generate_id(self) -> str:
         return uuid.uuid4().hex[:8]

@@ -1,22 +1,23 @@
 # backend/assetlibrary/config.py
 from pathlib import Path
 from typing import Dict, List, Any
+import os
 
 
 class BlacksmithAtlasConfig:
     """Central configuration for Blacksmith Atlas asset management"""
 
-    # Base paths
-    BASE_LIBRARY_PATH = Path(r"C:\Users\alexh\Desktop\BlacksmithAtlas_Files\BlacksmithLibrary")
+    # Base paths - Docker-friendly with environment variables
+    BASE_LIBRARY_PATH = Path(os.getenv('ASSET_LIBRARY_PATH', '/app/assets'))
     USD_LIBRARY_PATH = BASE_LIBRARY_PATH / "3D" / "USD"
     TEXTURE_LIBRARY_PATH = BASE_LIBRARY_PATH / "2D" / "Textures"
     HDRI_LIBRARY_PATH = BASE_LIBRARY_PATH / "2D" / "HDRI"
 
-    # Project paths
-    PROJECT_ROOT = Path(r"C:\Users\alexh\Desktop\BlacksmithAtlas")
+    # Project paths - Docker-friendly
+    PROJECT_ROOT = Path(os.getenv('PROJECT_ROOT', '/app'))
     BACKEND_PATH = PROJECT_ROOT / "backend"
     DATABASE_PATH = BACKEND_PATH / "assetlibrary" / "database"
-    LOG_PATH = PROJECT_ROOT / "logs"
+    LOG_PATH = Path(os.getenv('LOG_PATH', '/app/logs'))
 
     # Database configuration
     DATABASE = {
@@ -24,16 +25,33 @@ class BlacksmithAtlasConfig:
         'yaml_file': DATABASE_PATH / '3DAssets.yaml',
         'json_file': DATABASE_PATH / '3DAssets.json',
         'arango': {
-            'hosts': ['http://localhost:8529'],
-            'database': 'blacksmith_atlas',
-            'username': 'root',
-            'password': '',
-            'collections': {
-                'assets': 'assets',
-                'relationships': 'asset_relationships',
-                'projects': 'projects',
-                'tags': 'tags',
-                'users': 'users'
+            # Development (local) configuration
+            'development': {
+                'hosts': [os.getenv('ARANGO_HOST', 'http://localhost:8529')],
+                'database': os.getenv('ARANGO_DATABASE', 'blacksmith_atlas'),
+                'username': os.getenv('ARANGO_USER', 'root'),
+                'password': os.getenv('ARANGO_PASSWORD', ''),
+                'collections': {
+                    'assets': 'assets',
+                    'relationships': 'asset_relationships',
+                    'projects': 'projects',
+                    'tags': 'tags',
+                    'users': 'users'
+                }
+            },
+            # Production (shared) configuration
+            'production': {
+                'hosts': [os.getenv('ARANGO_HOST', 'http://arangodb:8529')],
+                'database': os.getenv('ARANGO_DATABASE', 'blacksmith_atlas'),
+                'username': os.getenv('ARANGO_USER', 'root'),
+                'password': os.getenv('ARANGO_PASSWORD', 'atlas_password'),
+                'collections': {
+                    'assets': 'assets',
+                    'relationships': 'asset_relationships',
+                    'projects': 'projects',
+                    'tags': 'tags',
+                    'users': 'users'
+                }
             }
         }
     }
@@ -256,3 +274,14 @@ class BlacksmithAtlasConfig:
             'valid': len(issues) == 0,
             'issues': issues
         }
+
+    @classmethod
+    def get_database_config(cls, environment: str = 'development') -> dict:
+        """Get database configuration for specified environment"""
+        # Check for environment variable override
+        env = os.getenv('ATLAS_ENV', environment)
+        
+        if env == 'production':
+            return cls.DATABASE['arango']['production']
+        else:
+            return cls.DATABASE['arango']['development']
