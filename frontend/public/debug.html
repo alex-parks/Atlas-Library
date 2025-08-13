@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blacksmith Atlas - Asset Debug</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            margin: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .section {
+            background: #2a2a2a;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            border: 1px solid #444;
+        }
+        .asset-card {
+            background: #333;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border: 1px solid #555;
+        }
+        .asset-name {
+            font-size: 18px;
+            font-weight: bold;
+            color: #4a9eff;
+            margin-bottom: 10px;
+        }
+        .asset-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            font-size: 14px;
+        }
+        .detail-item {
+            padding: 5px;
+            background: #444;
+            border-radius: 4px;
+        }
+        .detail-label {
+            font-weight: bold;
+            color: #aaa;
+        }
+        .detail-value {
+            color: #fff;
+        }
+        .navigation-demo {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .nav-button {
+            padding: 10px 20px;
+            background: #4a9eff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .nav-button:hover {
+            background: #3a8eff;
+        }
+        .nav-button.active {
+            background: #5aa5ff;
+            box-shadow: 0 0 10px rgba(74, 158, 255, 0.5);
+        }
+        .stats {
+            background: #1a4a1a;
+            color: #4afa4a;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .error {
+            background: #4a1a1a;
+            color: #fa4a4a;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Blacksmith Atlas - Asset Debug Tool</h1>
+        <p>This page tests the connection between your ArangoDB database and the frontend display.</p>
+
+        <div class="section">
+            <h2>📊 Database Connection Test</h2>
+            <div id="connection-status">Testing connection...</div>
+        </div>
+
+        <div class="section">
+            <h2>📋 Raw Asset Data from API</h2>
+            <div id="asset-count" class="stats">Loading assets...</div>
+            <div id="raw-assets"></div>
+        </div>
+
+        <div class="section">
+            <h2>🎯 Navigation Simulation</h2>
+            <p>This simulates the navigation flow: 3D → Categories → Subcategories → Assets</p>
+            
+            <div class="navigation-demo">
+                <button class="nav-button active" onclick="showDimensions()">Dimensions</button>
+                <button class="nav-button" onclick="showCategories('3D')">3D Categories</button>
+                <button class="nav-button" onclick="showSubcategories('Assets')">Assets Subcategories</button>
+                <button class="nav-button" onclick="showSubcategories('FX')">FX Subcategories</button>
+                <button class="nav-button" onclick="showAssets('3D', 'Assets', 'Blacksmith Asset')">Blacksmith Assets</button>
+                <button class="nav-button" onclick="showAssets('3D', 'FX', 'FLIP')">FLIP Assets</button>
+            </div>
+
+            <div id="navigation-content">
+                <h3>Select a navigation option above</h3>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🔧 Frontend Expected vs Actual Data</h2>
+            <div id="data-analysis"></div>
+        </div>
+    </div>
+
+    <script>
+        let allAssets = [];
+
+        // Load assets from API
+        async function loadAssets() {
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/assets');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const assets = await response.json();
+                allAssets = assets;
+                
+                document.getElementById('connection-status').innerHTML = 
+                    `<div class="stats">✅ Successfully connected to API</div>`;
+                
+                document.getElementById('asset-count').innerHTML = 
+                    `📊 Found ${assets.length} assets in database`;
+                
+                displayRawAssets(assets);
+                analyzeDataStructure(assets);
+                
+            } catch (error) {
+                document.getElementById('connection-status').innerHTML = 
+                    `<div class="error">❌ Failed to connect: ${error.message}</div>`;
+                document.getElementById('asset-count').innerHTML = 
+                    `<div class="error">❌ Could not load assets</div>`;
+            }
+        }
+
+        function displayRawAssets(assets) {
+            const container = document.getElementById('raw-assets');
+            container.innerHTML = '';
+            
+            assets.forEach(asset => {
+                const assetCard = document.createElement('div');
+                assetCard.className = 'asset-card';
+                
+                assetCard.innerHTML = `
+                    <div class="asset-name">${asset.name || 'Unknown'}</div>
+                    <div class="asset-details">
+                        <div class="detail-item">
+                            <div class="detail-label">ID:</div>
+                            <div class="detail-value">${asset.id || 'N/A'}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Asset Type:</div>
+                            <div class="detail-value">${asset.asset_type || 'N/A'}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Category:</div>
+                            <div class="detail-value">${asset.category || 'N/A'}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Tags:</div>
+                            <div class="detail-value">${(asset.tags || []).join(', ') || 'None'}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Created:</div>
+                            <div class="detail-value">${asset.created_at || 'N/A'}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Artist:</div>
+                            <div class="detail-value">${asset.artist || 'N/A'}</div>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(assetCard);
+            });
+        }
+
+        function analyzeDataStructure(assets) {
+            const container = document.getElementById('data-analysis');
+            
+            if (assets.length === 0) {
+                container.innerHTML = '<div class="error">No assets to analyze</div>';
+                return;
+            }
+            
+            // Analyze structure
+            const sampleAsset = assets[0];
+            const dimensions = [...new Set(assets.map(a => a.dimension || '3D'))];
+            const assetTypes = [...new Set(assets.map(a => a.asset_type))];
+            const categories = [...new Set(assets.map(a => a.category))];
+            
+            container.innerHTML = `
+                <h3>📊 Data Structure Analysis</h3>
+                <div class="asset-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Total Assets:</div>
+                        <div class="detail-value">${assets.length}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Dimensions Found:</div>
+                        <div class="detail-value">${dimensions.join(', ')}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Asset Types Found:</div>
+                        <div class="detail-value">${assetTypes.join(', ')}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Categories Found:</div>
+                        <div class="detail-value">${categories.join(', ')}</div>
+                    </div>
+                </div>
+                
+                <h4>Navigation Path Examples:</h4>
+                <div class="asset-card">
+                    ${assets.map(asset => `
+                        <div style="margin: 5px 0; padding: 5px; background: #444; border-radius: 3px;">
+                            📁 3D → ${asset.asset_type} → ${asset.category} → ${asset.name}
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <h4>Expected Frontend Navigation:</h4>
+                <div class="asset-card">
+                    <div style="color: #4afa4a;">
+                        1. User clicks "3D" dimension<br>
+                        2. User sees categories: ${assetTypes.join(', ')}<br>
+                        3. User clicks a category (e.g., "${assetTypes[0]}")<br>
+                        4. User sees subcategories for that category<br>
+                        5. User clicks a subcategory (e.g., "${categories[0]}")<br>
+                        6. User sees assets filtered by that path
+                    </div>
+                </div>
+            `;
+        }
+
+        function showDimensions() {
+            document.getElementById('navigation-content').innerHTML = `
+                <h3>🧊 Available Dimensions</h3>
+                <div class="navigation-demo">
+                    <button class="nav-button" onclick="showCategories('3D')">3D Assets</button>
+                    <button class="nav-button" onclick="showCategories('2D')">2D Assets</button>
+                </div>
+                <p>Select a dimension to see categories</p>
+            `;
+        }
+
+        function showCategories(dimension) {
+            const categories3D = ['Assets', 'FX', 'Materials', 'HDAs', 'Textures', 'HDRI'];
+            const categories2D = ['Textures', 'References', 'UI'];
+            
+            const categories = dimension === '3D' ? categories3D : categories2D;
+            
+            document.getElementById('navigation-content').innerHTML = `
+                <h3>📂 ${dimension} Categories</h3>
+                <div class="navigation-demo">
+                    ${categories.map(cat => 
+                        `<button class="nav-button" onclick="showSubcategories('${cat}')">${cat}</button>`
+                    ).join('')}
+                </div>
+                <p>Select a category to see subcategories</p>
+            `;
+        }
+
+        function showSubcategories(category) {
+            const subcategoriesMap = {
+                'Assets': ['Blacksmith Asset', 'Megascans', 'Kitbash'],
+                'FX': ['Blacksmith FX', 'Atmosphere', 'FLIP', 'Pyro'],
+                'Materials': ['Blacksmith Materials', 'Redshift', 'Karma'],
+                'HDAs': ['Blacksmith HDAs']
+            };
+            
+            const subcategories = subcategoriesMap[category] || [];
+            
+            if (subcategories.length === 0) {
+                showAssets('3D', category, null);
+                return;
+            }
+            
+            document.getElementById('navigation-content').innerHTML = `
+                <h3>🏷️ ${category} Subcategories</h3>
+                <div class="navigation-demo">
+                    ${subcategories.map(sub => 
+                        `<button class="nav-button" onclick="showAssets('3D', '${category}', '${sub}')">${sub}</button>`
+                    ).join('')}
+                </div>
+                <p>Select a subcategory to see assets</p>
+            `;
+        }
+
+        function showAssets(dimension, category, subcategory) {
+            const filteredAssets = allAssets.filter(asset => {
+                const matchesDimension = !dimension || (asset.dimension || '3D') === dimension;
+                const matchesCategory = !category || asset.asset_type === category;
+                const matchesSubcategory = !subcategory || asset.category === subcategory;
+                
+                return matchesDimension && matchesCategory && matchesSubcategory;
+            });
+            
+            const pathDisplay = [dimension, category, subcategory].filter(Boolean).join(' → ');
+            
+            document.getElementById('navigation-content').innerHTML = `
+                <h3>📦 Assets: ${pathDisplay}</h3>
+                <div class="stats">Found ${filteredAssets.length} assets</div>
+                <div style="margin-top: 20px;">
+                    ${filteredAssets.length === 0 ? 
+                        '<div class="error">No assets found for this path</div>' :
+                        filteredAssets.map(asset => `
+                            <div class="asset-card">
+                                <div class="asset-name">${asset.name}</div>
+                                <div style="color: #aaa; font-size: 12px;">
+                                    ${asset.asset_type} / ${asset.category} • Created by ${asset.artist} • ${asset.created_at}
+                                </div>
+                                <div style="margin-top: 10px;">
+                                    Tags: ${(asset.tags || []).join(', ') || 'None'}
+                                </div>
+                            </div>
+                        `).join('')
+                    }
+                </div>
+                <div style="margin-top: 20px;">
+                    <button class="nav-button" onclick="showSubcategories('${category}')">← Back to ${category} subcategories</button>
+                </div>
+            `;
+        }
+
+        // Load assets when page loads
+        loadAssets();
+    </script>
+</body>
+</html>

@@ -221,6 +221,49 @@ class ExportJob(BaseModel):
     file_sizes: Dict[str, int] = {}
 
 
+class Todo(BaseModel):
+    """Todo/Task model for project management"""
+    _key: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    _type: str = "Todo"
+    title: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = Field(None, max_length=1000)
+    completed: bool = False
+    priority: str = "medium"  # low, medium, high, urgent
+    category: Optional[str] = Field(None, max_length=50)
+    due_date: Optional[datetime] = None
+    user_id: Optional[str] = None  # Assigned user
+    tags: List[str] = []
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    # Project association
+    project_id: Optional[str] = None
+    asset_id: Optional[str] = None  # Associated asset if applicable
+
+    # Progress tracking
+    progress: int = Field(default=0, ge=0, le=100)  # 0-100%
+    estimated_hours: Optional[float] = None
+    actual_hours: Optional[float] = None
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+
+    @validator('priority')
+    def validate_priority(cls, v):
+        valid_priorities = ['low', 'medium', 'high', 'urgent']
+        if v not in valid_priorities:
+            raise ValueError(f'Priority must be one of: {", ".join(valid_priorities)}')
+        return v
+
+    @validator('progress')
+    def validate_progress(cls, v):
+        if not 0 <= v <= 100:
+            raise ValueError('Progress must be between 0 and 100')
+        return v
+
+
 # Query helpers for ArangoDB
 class AssetQueries:
     """Helper class for common ArangoDB queries"""
@@ -229,7 +272,7 @@ class AssetQueries:
     def find_by_name(name: str) -> str:
         """AQL query to find assets by name"""
         return """
-        FOR asset IN assets
+        FOR asset IN Asset_Library
             FILTER asset.name == @name
             RETURN asset
         """
@@ -238,7 +281,7 @@ class AssetQueries:
     def find_by_category(category: str) -> str:
         """AQL query to find assets by category"""
         return """
-        FOR asset IN assets
+        FOR asset IN Asset_Library
             FILTER asset.category == @category
             SORT asset.created_at DESC
             RETURN asset
@@ -270,7 +313,7 @@ class AssetQueries:
     def find_unused_assets() -> str:
         """AQL query to find assets not used in any project"""
         return """
-        FOR asset IN assets
+        FOR asset IN Asset_Library
             LET usage = LENGTH(
                 FOR v IN 1..1 INBOUND asset asset_relationships
                     RETURN v
@@ -284,19 +327,19 @@ class AssetQueries:
         """AQL query to get asset library statistics"""
         return """
         RETURN {
-            total_assets: LENGTH(assets),
+            total_assets: LENGTH(Asset_Library),
             by_category: (
-                FOR asset IN assets
+                FOR asset IN Asset_Library
                     COLLECT category = asset.category WITH COUNT INTO count
                     RETURN {category: category, count: count}
             ),
             by_type: (
-                FOR asset IN assets
+                FOR asset IN Asset_Library
                     COLLECT type = asset._type WITH COUNT INTO count
                     RETURN {type: type, count: count}
             ),
             total_size: SUM(
-                FOR asset IN assets
+                FOR asset IN Asset_Library
                     RETURN SUM(VALUES(asset.file_sizes))
             )
         }

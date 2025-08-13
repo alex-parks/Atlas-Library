@@ -1,0 +1,338 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Initialize Project Repository and Docker Infrastructure",
+        "description": "Set up the foundational project structure with Docker containerization for development environment",
+        "details": "Create project root structure with backend/, frontend/, dcc_panels/, scripts/ directories. Initialize Docker Compose configuration with services for ArangoDB, Redis, and application containers. Set up environment variable templates and development scripts. Configure volume mounting for asset storage and cross-platform compatibility.",
+        "testStrategy": "Verify Docker containers start successfully, all services are accessible on correct ports, and volume mounting works across platforms",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Setup ArangoDB Database and Core Schema",
+        "description": "Initialize ArangoDB Community Edition with core collections and graph relationships",
+        "details": "Create ArangoDB database 'blacksmith_atlas' with collections: atlas_objects (base), assets, projects, ai_jobs, users. Define edge collections: asset_dependencies, project_assets. Implement base schema with _key, object_type, metadata fields. Set up indexes for performance optimization and configure authentication.",
+        "testStrategy": "Verify database creation, collection schemas, indexes are properly set up, and basic CRUD operations work correctly",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Implement BaseAtlasObject Core Architecture",
+        "description": "Create the foundational object-oriented architecture with BaseAtlasObject as the root class",
+        "details": "Implement BaseAtlasObject in backend/core/base_atlas_object.py with common properties (id, name, metadata, created_at, updated_at). Create abstract methods: validate(), serialize(), deserialize(). Implement child classes: AssetObject, ProjectObject, UserObject, AIToolObject, WorkflowObject with specific properties and validation rules.",
+        "testStrategy": "Unit tests for each object class, validation methods, serialization/deserialization, and inheritance hierarchy correctness",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Build FastAPI Backend Application Framework",
+        "description": "Create the FastAPI application with async/await patterns, middleware, and basic routing structure",
+        "details": "Initialize FastAPI app in backend/main.py with async ArangoDB connection using python-arango. Set up CORS middleware, authentication middleware, and error handling. Create router structure under api/v1/ with endpoints for assets, projects, users, ai-tools. Implement Pydantic models for request/response validation. Add health check endpoint.",
+        "testStrategy": "Test API startup, health check endpoint, middleware functionality, and basic routing structure with automated API tests",
+        "priority": "high",
+        "dependencies": [
+          3
+        ],
+        "status": "done",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Implement User Authentication and Role-Based Access Control",
+        "description": "Build secure authentication system with JWT tokens and role-based permissions",
+        "details": "Create User model with roles (artist, producer, administrator) and permissions. Implement JWT token generation/validation with refresh mechanism. Build login/logout endpoints with password hashing using bcrypt. Create authentication middleware for protecting routes. Implement role-based access decorators for API endpoints.",
+        "testStrategy": "Test user registration, login/logout, token validation, role-based access control, and security edge cases",
+        "priority": "high",
+        "dependencies": [
+          4
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Create React Frontend Application Foundation",
+        "description": "Initialize React/Vite frontend with routing, state management, and base component structure",
+        "details": "Set up React app with Vite build tool, React Router for navigation, and Context API for state management. Configure Tailwind CSS with dark mode defaults. Create base layout with sidebar navigation using Lucide React icons. Implement authentication context and protected routes. Set up API service layer for backend communication.",
+        "testStrategy": "Test application startup, routing functionality, responsive design, dark mode implementation, and basic component rendering",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Build Asset Storage and File Management System",
+        "description": "Implement configurable asset storage with file handling and metadata extraction",
+        "details": "Create asset storage service with configurable backends (local filesystem, Docker volumes). Implement file upload handling with multipart form data. Add metadata extraction for USD, FBX, OBJ files using appropriate libraries. Create file serving endpoints with proper headers and caching. Implement file validation and virus scanning.",
+        "testStrategy": "Test file upload/download, metadata extraction accuracy, storage configuration, and file serving performance",
+        "priority": "high",
+        "dependencies": [
+          5
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Implement Asset CRUD Operations and API Endpoints",
+        "description": "Create comprehensive asset management API with create, read, update, delete operations",
+        "details": "Build asset API endpoints in backend/api/assets.py with async operations. Implement AssetObject validation and serialization. Create endpoints for asset upload, metadata update, search/filter, and deletion. Add support for USD, FBX, OBJ formats with proper file type validation. Implement pagination and sorting for asset listings.",
+        "testStrategy": "Comprehensive API testing for all CRUD operations, file format support, validation rules, and error handling",
+        "priority": "high",
+        "dependencies": [
+          7
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Create Asset Browser Frontend Component",
+        "description": "Build the main asset library interface with grid/list views and search functionality",
+        "details": "Implement AssetLibrary.jsx component with grid and list view modes. Add search bar with real-time filtering, tag-based search, and metadata filters. Create asset cards with thumbnails, metadata display, and action buttons. Implement infinite scrolling or pagination for large asset collections. Add drag-and-drop upload interface.",
+        "testStrategy": "Test view mode switching, search functionality, filtering accuracy, upload interface, and performance with large asset collections",
+        "priority": "high",
+        "dependencies": [
+          6,
+          8
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Build Automatic Thumbnail and Preview Generation System",
+        "description": "Implement automated preview generation for assets with caching and optimization",
+        "details": "Create thumbnail generation service for 3D assets using headless rendering or preview libraries. Implement preview generation for USD files using USD Python API, FBX using FBX SDK, textures using PIL/OpenCV. Add caching mechanism with Redis for generated previews. Create background job system for processing large assets without blocking uploads.",
+        "testStrategy": "Test thumbnail generation accuracy, caching effectiveness, processing performance, and background job reliability",
+        "priority": "medium",
+        "dependencies": [
+          8
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 11,
+        "title": "Implement WebSocket Layer for Real-time Updates",
+        "description": "Create WebSocket infrastructure for live status updates and real-time communication",
+        "details": "Set up WebSocket server using FastAPI WebSocket support. Implement connection management with authentication and room-based messaging. Create client-side WebSocket service in React for real-time updates. Add event types for asset changes, job status updates, and system notifications. Implement connection resilience with automatic reconnection.",
+        "testStrategy": "Test WebSocket connection establishment, message delivery, room isolation, reconnection logic, and concurrent user handling",
+        "priority": "medium",
+        "dependencies": [
+          4
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "Create Asset Dependency Tracking System",
+        "description": "Implement asset relationship tracking and dependency resolution",
+        "details": "Build dependency graph system using ArangoDB edge collections. Create API endpoints for adding/removing asset dependencies. Implement dependency resolution algorithms to detect circular dependencies. Add visual dependency mapping in frontend. Create automated dependency detection for imported assets based on file references.",
+        "testStrategy": "Test dependency creation, circular dependency detection, resolution algorithms, and visual representation accuracy",
+        "priority": "medium",
+        "dependencies": [
+          8
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 13,
+        "title": "Build PyQt Panel Base Architecture",
+        "description": "Create standardized PyQt panel framework for DCC integration",
+        "details": "Implement AtlasPanelBase class in dcc_panels/base/panel_base.py with common functionality. Create authentication handling, API communication layer, and asset browser widget. Implement consistent UI styling matching the main application. Add configuration management and error handling. Create plugin architecture for DCC-specific implementations.",
+        "testStrategy": "Test base panel functionality, API communication, authentication flow, and UI consistency across different environments",
+        "priority": "medium",
+        "dependencies": [
+          11
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 14,
+        "title": "Implement Houdini Integration Panel",
+        "description": "Create Houdini-specific PyQt panel with asset import and workflow integration",
+        "details": "Build Houdini panel in dcc_panels/houdini/atlas_panel.py extending AtlasPanelBase. Implement Houdini-specific asset import using hou module. Create node creation and parameter setup for imported assets. Add material assignment and texture path resolution. Implement shelf tool creation for common workflows.",
+        "testStrategy": "Test panel installation in Houdini, asset import functionality, node creation, material assignment, and workflow automation",
+        "priority": "medium",
+        "dependencies": [
+          13
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 15,
+        "title": "Create Asset Format Conversion Pipeline",
+        "description": "Build format conversion system for USD, FBX, and OBJ with validation",
+        "details": "Implement format handlers in backend/assetlibrary/formats/ for each supported format. Create USD to FBX conversion using USD Python API and FBX SDK. Implement OBJ conversion with material preservation. Add format validation and error handling. Create conversion job queue for batch processing.",
+        "testStrategy": "Test format conversion accuracy, material preservation, error handling, and batch processing performance",
+        "priority": "medium",
+        "dependencies": [
+          14
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 16,
+        "title": "Build ComfyUI Integration Client",
+        "description": "Implement REST API client for ComfyUI workflow execution and management",
+        "details": "Create ComfyUI client in backend/assetlibrary/ai/comfy_client.py with async HTTP requests. Implement workflow submission, status monitoring, and result retrieval. Add parameter validation and input preprocessing. Create workflow template system for common AI operations. Implement error handling and retry logic.",
+        "testStrategy": "Test workflow submission, status monitoring, result retrieval, error handling, and template system functionality",
+        "priority": "medium",
+        "dependencies": [
+          11
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 17,
+        "title": "Implement AI Job Queue Management System",
+        "description": "Create distributed job queue system with Redis for AI workflow processing",
+        "details": "Build job queue system using Redis with priority queues and worker processes. Implement job status tracking, progress reporting, and result caching. Add job scheduling with resource management and GPU allocation. Create job retry logic and failure handling. Implement job history and analytics.",
+        "testStrategy": "Test job queuing, priority handling, worker processing, status tracking, and resource management",
+        "priority": "medium",
+        "dependencies": [
+          16
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 18,
+        "title": "Create AI Tools Frontend Interface",
+        "description": "Build user interface for AI tool configuration and job monitoring",
+        "details": "Implement AITools.jsx component with tool selection, parameter configuration, and job submission. Create job status monitoring with real-time updates via WebSocket. Add result display and asset integration options. Implement batch processing interface for multiple inputs. Create tool favorites and history features.",
+        "testStrategy": "Test tool interface, parameter validation, job submission, status monitoring, and result handling",
+        "priority": "medium",
+        "dependencies": [
+          17
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 19,
+        "title": "Build Maya Integration Panel",
+        "description": "Create Maya-specific PyQt panel with asset import and material handling",
+        "details": "Implement Maya panel in dcc_panels/maya/atlas_panel.py using Maya Python API. Create asset import with proper scene hierarchy setup. Implement material creation and texture assignment using Maya's material system. Add animation and rigging asset support. Create MEL command integration for pipeline tools.",
+        "testStrategy": "Test Maya panel installation, asset import, material assignment, scene hierarchy, and pipeline integration",
+        "priority": "low",
+        "dependencies": [
+          15
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 20,
+        "title": "Implement Project Management and Analytics System",
+        "description": "Create project tracking and analytics tools for producers",
+        "details": "Build project management system in backend/api/projects.py with project creation, team assignment, and timeline tracking. Implement asset usage analytics and project progress monitoring. Create cost tracking and budget analysis tools. Add automated reporting and dashboard generation.",
+        "testStrategy": "Test project creation, analytics accuracy, cost tracking, reporting functionality, and dashboard performance",
+        "priority": "medium",
+        "dependencies": [
+          12
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 21,
+        "title": "Build AI-Powered Bid Analysis Tool",
+        "description": "Implement bid document analysis with AI text processing for project estimation",
+        "details": "Create bid analysis service using NLP libraries for document processing. Implement project scope extraction and resource estimation algorithms. Add historical project data analysis for accurate predictions. Create timeline generation with dependency mapping. Implement cost estimation with market rate integration.",
+        "testStrategy": "Test document processing accuracy, estimation algorithms, historical data analysis, and prediction reliability",
+        "priority": "medium",
+        "dependencies": [
+          18
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 22,
+        "title": "Create Producer Tools Dashboard",
+        "description": "Build analytics dashboard for project monitoring and resource planning",
+        "details": "Implement ProducerTools.jsx component with project overview, resource allocation, and timeline visualization. Create real-time monitoring widgets for project progress and team productivity. Add cost tracking charts and budget variance analysis. Implement custom dashboard creation and report export functionality.",
+        "testStrategy": "Test dashboard functionality, real-time updates, visualization accuracy, and export capabilities",
+        "priority": "medium",
+        "dependencies": [
+          20,
+          21
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 23,
+        "title": "Implement Blacksmith Intelligence Chatbot",
+        "description": "Create conversational AI interface for user assistance and knowledge base access",
+        "details": "Build chatbot system with natural language processing using libraries like spaCy or transformers. Create knowledge base integration with asset database and workflow documentation. Implement context-aware responses based on user role and current project. Add learning system for continuous improvement and conversation history.",
+        "testStrategy": "Test natural language understanding, context awareness, knowledge base accuracy, and conversation flow",
+        "priority": "low",
+        "dependencies": [
+          18
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 24,
+        "title": "Build Nuke and Flame Integration Panels",
+        "description": "Create PyQt panels for Nuke and Flame with compositing workflow support",
+        "details": "Implement Nuke panel using Nuke Python API for comp asset import and node creation. Create Flame integration with proper media import and timeline placement. Add format conversion specific to compositing workflows. Implement render output integration back to Atlas asset library.",
+        "testStrategy": "Test panel functionality in both applications, asset import accuracy, workflow integration, and render output handling",
+        "priority": "low",
+        "dependencies": [
+          19
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 25,
+        "title": "Implement Performance Optimization and Caching Strategy",
+        "description": "Optimize system performance with caching, indexing, and resource management",
+        "details": "Implement Redis caching for frequently accessed data, API responses, and user sessions. Add database indexing optimization for search and filter operations. Create lazy loading for large asset collections and implement pagination. Add resource monitoring and automatic scaling for AI processing. Implement CDN integration for asset serving.",
+        "testStrategy": "Performance testing with large datasets, cache hit/miss ratio analysis, database query optimization verification, and load testing with concurrent users",
+        "priority": "medium",
+        "dependencies": [
+          22,
+          23,
+          24
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2025-08-01T23:26:29.350Z",
+      "updated": "2025-08-01T23:38:39.468Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

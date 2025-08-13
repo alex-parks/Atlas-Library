@@ -1,0 +1,60 @@
+# Blacksmith Atlas - Houdini Keymap Override
+# This file overrides Ctrl+V to handle Atlas assets in the clipboard
+# Place this in your Houdini user directory: ~/houdiniX.X/Houdini.keymap.overrides
+
+# Override Ctrl+V in Network Editor to handle Atlas assets
+h.pane.netwview.paste "Ctrl+V" {
+    # Call our Atlas paste function
+    python -c "
+import sys
+from pathlib import Path
+
+# Add Atlas paths
+backend_path = Path('/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend')
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
+_3d_path = Path('/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend/assetlibrary/_3D')
+if str(_3d_path) not in sys.path:
+    sys.path.insert(0, str(_3d_path))
+
+try:
+    from atlas_clipboard_handler import atlas_paste
+    atlas_paste()
+except Exception as e:
+    print(f'Atlas paste error: {e}')
+    # Fallback to normal paste
+    try:
+        import hou
+        hou.ui.triggerDefaultAction(hou.defaultActionType.Paste)
+    except:
+        pass
+"
+}
+
+# Also override in other contexts where pasting might occur
+h.pane.netwview.paste_at_cursor "Shift+Ctrl+V" {
+    python -c "
+import sys
+from pathlib import Path
+
+backend_path = Path('/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend')
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
+_3d_path = Path('/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend/assetlibrary/_3D')
+if str(_3d_path) not in sys.path:
+    sys.path.insert(0, str(_3d_path))
+
+try:
+    from atlas_clipboard_handler import atlas_paste
+    atlas_paste()
+except Exception as e:
+    print(f'Atlas paste error: {e}')
+    try:
+        import hou
+        hou.ui.triggerDefaultAction(hou.defaultActionType.Paste)
+    except:
+        pass
+"
+}

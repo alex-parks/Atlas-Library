@@ -1,14 +1,15 @@
 // frontend/src/App.jsx - SIMPLE VERSION
 import React, { useState, useEffect } from 'react';
-import { Library, Briefcase, Bot, Package, Settings } from 'lucide-react';
+import { Library, Briefcase, Bot, Package, Settings, CheckSquare } from 'lucide-react';
 import AssetLibrary from './components/AssetLibrary';
 import ProducerTools from './components/ProducerTools';
 import AITools from './components/AITools';
-import DeliveryTool from './components/DeliveryTool/DeliveryTool.jsx';
 import SettingsComponent from './components/Settings';
+import TodoDemo from './components/TodoDemo';
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState('delivery-tool'); // Start with delivery tool
+  // Set the default active tab to something other than delivery-tool
+  const [activeTab, setActiveTab] = useState('asset-library'); // Start with asset library
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [apiStatus, setApiStatus] = useState('connected'); // Assume it's working
 
@@ -55,11 +56,17 @@ const App = () => {
       component: AssetLibrary
     },
     {
-      id: 'delivery-tool',
-      name: 'Delivery Tool',
-      icon: Package,
-      component: DeliveryTool
+      id: 'todo-demo',
+      name: 'Todo Demo',
+      icon: CheckSquare,
+      component: TodoDemo
     },
+    // {
+    //   id: 'delivery-tool',
+    //   name: 'Delivery Tool',
+    //   icon: Package,
+    //   component: DeliveryTool
+    // },
     // {
     //   id: 'producer-tools',
     //   name: 'Producer Tools',
@@ -80,7 +87,7 @@ const App = () => {
     }
   ];
 
-  const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component || DeliveryTool;
+  const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component || AssetLibrary;
 
   return (
     <div className="flex h-screen bg-neutral-900 text-white overflow-hidden">

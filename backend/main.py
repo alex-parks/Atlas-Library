@@ -3,6 +3,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from backend.api.assets import router as assets_router
+from backend.api.todos import router as todos_router
+from backend.api.simple_assets import router as simple_assets_router
+from backend.api.asset_sync import router as sync_router
 from pathlib import Path
 import os
 import logging
@@ -39,7 +42,9 @@ app.add_middleware(
 # Initialize ArangoDB handler
 try:
     from backend.assetlibrary.database.arango_queries import AssetQueries
-    arango_config = BlacksmithAtlasConfig.DATABASE['arango']
+    # Get the correct environment configuration
+    environment = os.getenv('ATLAS_ENV', 'development')
+    arango_config = BlacksmithAtlasConfig.get_database_config(environment)
     asset_queries = AssetQueries(arango_config)
     database_available = True
     logger.info("✅ ArangoDB connection initialized")
@@ -114,8 +119,42 @@ async def get_thumbnail(asset_id: str):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error serving thumbnail: {str(e)}")
 
-# Include the assets router
+# Include the routers
 app.include_router(assets_router)
+app.include_router(todos_router)
+app.include_router(simple_assets_router)
+app.include_router(sync_router)
+
+@app.get("/test-assets")
+async def test_assets():
+    """Simple test endpoint to verify database connection and assets"""
+    try:
+        logger.info("🔍 Testing asset query from main.py")
+        assets = asset_queries.search_assets()
+        logger.info(f"📊 Found {len(assets)} assets directly")
+        
+        # Convert to simple format  
+        result = []
+        for asset in assets:
+            result.append({
+                "id": asset.get("_key", "unknown"),
+                "name": asset.get("name", "Unknown"), 
+                "category": asset.get("category", "Unknown"),
+                "created_at": asset.get("created_at", "Unknown")
+            })
+        
+        return {
+            "total": len(assets),
+            "assets": result,
+            "source": "main.py direct query"
+        }
+    except Exception as e:
+        logger.error(f"❌ Test assets failed: {e}")
+        return {
+            "error": str(e),
+            "total": 0,
+            "assets": []
+        }
 
 @app.get("/debug/routes")
 async def list_routes():

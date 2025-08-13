@@ -1,0 +1,300 @@
+# Blacksmith Atlas - Product Requirements Document
+
+## Overview  
+Blacksmith Atlas is a comprehensive, object-oriented asset management ecosystem designed to unify VFX production workflows, AI-powered toolsets, and cross-platform asset libraries. Built for professional VFX studios, Atlas serves as the central nervous system for creative operations, spanning from asset libraries to AI-driven production tools.
+
+**Problem Statement**: VFX studios struggle with fragmented workflows across multiple applications (Houdini, Maya, Nuke, Flame), inefficient asset management, and lack of integrated AI tools for production enhancement.
+
+**Solution**: Atlas provides a unified platform with cross-DCC integration, intelligent asset management, AI-powered tools, and producer analytics - all built on consistent object-oriented architecture principles.
+
+**Target Users**: VFX Artists, Producers, Studio Administrators, and Creative Directors working in professional post-production environments.
+
+## Core Features  
+
+### Asset Library System
+- **Unified Asset Management**: Central repository for 3D models, textures, materials, and light rigs with USD/FBX/OBJ format support
+- **Intelligent Metadata**: Automatic tag generation, dependency tracking, and version control for all assets
+- **Preview Generation**: Automatic thumbnail and preview creation for rapid asset browsing
+- **Cross-Platform Storage**: Docker-friendly file paths with configurable storage backends (local NAS, cloud storage)
+
+### AI-Powered Toolset Integration
+- **ComfyUI Integration**: Seamless connection to AI workflows for image processing, asset generation, and enhancement
+- **Job Queue Management**: Distributed task processing with real-time status tracking and result caching
+- **Custom AI Tools**: Extensible framework for studio-specific AI workflow integration
+- **Batch Processing**: Efficient handling of multiple AI jobs with resource optimization
+
+### Cross-DCC Integration
+- **PyQt Panel System**: Native panels for Houdini, Maya, Nuke, and Flame with consistent UI/UX
+- **Asset Import/Export**: One-click asset transfer between applications with format conversion
+- **Workflow Automation**: Automated setup of asset hierarchies and dependencies in target applications
+- **Real-time Sync**: Live updates of asset changes across all connected applications
+
+### Producer Tools & Analytics
+- **Bid Analysis**: AI-powered project scope estimation with historical data analysis
+- **Resource Planning**: Automatic calculation of team requirements and timeline estimation
+- **Project Tracking**: Real-time monitoring of asset usage, completion rates, and workflow bottlenecks
+- **Cost Analysis**: Detailed breakdown of project costs with predictive modeling
+
+### Blacksmith Intelligence Chatbot
+- **Natural Language Interface**: Conversational access to asset libraries, workflow guidance, and technical support
+- **Context-Aware Assistance**: Understanding of current project state and user role for relevant suggestions
+- **Knowledge Base**: Comprehensive VFX terminology, best practices, and workflow documentation
+- **Learning System**: Continuous improvement through user interaction analysis
+
+## User Experience  
+
+### User Personas
+- **VFX Artist**: Needs quick asset access, format conversion, and AI tool integration within familiar DCCs
+- **Producer**: Requires project analytics, bid analysis, and resource planning capabilities
+- **Technical Director**: Manages asset pipelines, custom integrations, and system administration
+- **Studio Administrator**: Oversees user management, system configuration, and security policies
+
+### Key User Flows
+1. **Asset Discovery & Import**: Browse → Preview → Import → Auto-setup in DCC
+2. **AI Tool Execution**: Select Tool → Configure Parameters → Queue Job → Review Results
+3. **Project Estimation**: Upload Brief → AI Analysis → Resource Plan → Timeline Generation
+4. **Cross-DCC Workflow**: Create in Houdini → Export to Atlas → Import to Nuke → Composite
+
+### UI/UX Considerations
+- **Dark Mode Default**: Professional VFX environment aesthetic with Tailwind CSS
+- **Responsive Design**: Consistent experience across desktop application and DCC panels
+- **Real-time Updates**: Live status indicators for AI jobs, asset changes, and system health
+- **Contextual Help**: Integrated assistance through Blacksmith chatbot
+
+## Technical Architecture  
+
+### System Components
+- **Backend**: Python FastAPI application with async/await patterns and Pydantic validation
+- **Frontend**: React/Vite SPA with Tailwind CSS and Lucide React icons
+- **Database**: ArangoDB Community Edition for document-based storage with graph relationships
+- **Desktop Application**: Electron wrapper for cross-platform deployment
+- **DCC Panels**: PyQt5/6 interfaces for Houdini, Maya, Nuke, and Flame integration
+
+### Data Models
+```python
+# Core Object Hierarchy
+BaseAtlasObject
+├── AssetObject (USD, FBX, textures, materials)
+├── ProjectObject (metadata, timeline, budget)
+├── AIToolObject (workflow definitions, execution requirements)
+├── UserObject (artists, producers, administrators)
+└── WorkflowObject (rendering, compositing, asset creation)
+```
+
+### APIs and Integrations
+- **RESTful API**: `/api/v1/` endpoints with automatic OpenAPI documentation
+- **WebSocket Layer**: Real-time communication for job status and asset updates
+- **ComfyUI Client**: Direct integration with AI workflow execution engine
+- **DCC Plugins**: Native API integrations for asset import/export workflows
+
+### Infrastructure Requirements
+- **Containerization**: Docker Compose for multi-service orchestration
+- **Storage**: Configurable asset storage with volume mounting support
+- **Caching**: Redis for session management and frequently accessed data
+- **Security**: Role-based access control with audit logging
+
+## Development Roadmap  
+
+### Phase 1: Foundation (MVP)
+**Core Infrastructure**
+- FastAPI backend with ArangoDB integration
+- React frontend with basic asset browsing
+- Docker containerization setup
+- User authentication and basic role management
+- Asset upload/download functionality with thumbnail generation
+
+**Basic Asset Management**
+- File-based asset storage with metadata tracking
+- Support for USD, FBX, and common texture formats
+- Simple tag system and search functionality
+- Version tracking for asset updates
+
+**Essential UI Components**
+- Asset library browser with grid/list views
+- Upload interface with drag-and-drop support
+- User settings and basic configuration
+- Dark mode interface with responsive design
+
+### Phase 2: DCC Integration
+**PyQt Panel Development** 
+- Houdini panel with asset browser and import functionality
+- Maya integration for geometry and material import
+- Standardized panel architecture for consistent UX
+- Asset preview within DCC environments
+
+**Cross-Application Workflows**
+- Format conversion pipeline (USD ↔ FBX ↔ OBJ)
+- Dependency tracking between assets
+- Automated setup of imported assets in target applications
+- Material and texture path resolution
+
+**Enhanced Asset Management**
+- Advanced search with metadata filtering
+- Collection system for organizing related assets
+- Batch operations for multiple asset handling
+- Asset relationship mapping and visualization
+
+### Phase 3: AI Integration
+**ComfyUI Integration Layer**
+- REST API client for workflow submission
+- Job queue management with priority system
+- Result caching and retrieval system
+- Custom workflow registration framework
+
+**AI Tool Framework**
+- Template system for common AI workflows
+- Parameter validation and input preprocessing
+- Output post-processing and asset integration
+- Batch processing capabilities for multiple inputs
+
+**Workflow Automation**
+- AI-powered asset tagging and categorization
+- Automatic thumbnail and preview generation
+- Content-aware asset recommendations
+- Quality assessment and validation tools
+
+### Phase 4: Producer Analytics
+**Project Management Tools**
+- Bid document analysis with AI text processing
+- Historical project data collection and analysis
+- Resource requirement estimation algorithms
+- Timeline generation with dependency mapping
+
+**Analytics Dashboard**
+- Real-time project status monitoring
+- Asset usage statistics and trends
+- Team productivity metrics and bottleneck identification
+- Cost tracking and budget variance analysis
+
+**Reporting System**
+- Automated report generation for stakeholders
+- Custom dashboard creation for different user roles
+- Export capabilities for external project management tools
+- Predictive analytics for project success factors
+
+### Phase 5: Intelligence & Automation
+**Blacksmith Chatbot**
+- Natural language processing for user queries
+- Integration with asset database for contextual responses
+- Workflow guidance and technical support automation
+- Learning system for continuous improvement
+
+**Advanced Automation**
+- Automated asset pipeline optimization
+- Intelligent workflow suggestions based on project type
+- Predictive maintenance for system components
+- Auto-scaling for AI processing resources
+
+**Third-party Integrations**
+- Shotgun/ShotGrid integration for project management
+- Cloud storage providers (AWS S3, Google Cloud)
+- Render farm integration for distributed processing
+- Plugin ecosystem for custom studio tools
+
+## Logical Dependency Chain
+
+### Foundation First (Immediate Development Priority)
+1. **Database Setup**: ArangoDB initialization with core schemas
+2. **API Framework**: FastAPI application with authentication middleware
+3. **Basic Frontend**: React application with routing and state management
+4. **Asset Storage**: File system integration with configurable paths
+5. **Docker Infrastructure**: Container orchestration for development environment
+
+### Progressive Feature Building
+1. **Asset CRUD Operations**: Create, read, update, delete functionality for assets
+2. **User Interface**: Asset browser, upload interface, and basic search
+3. **Thumbnail System**: Preview generation and serving infrastructure
+4. **Authentication**: User management with role-based access control
+5. **Real-time Updates**: WebSocket integration for live status updates
+
+### Integration Layer Development
+1. **PyQt Framework**: Base panel architecture for DCC integration
+2. **Houdini Integration**: First DCC implementation as reference architecture
+3. **Format Handlers**: USD, FBX, OBJ import/export pipeline
+4. **Asset Dependencies**: Relationship tracking and resolution system
+5. **Cross-DCC Workflows**: Standardized asset transfer protocols
+
+### AI and Analytics Enhancement
+1. **ComfyUI Client**: API integration for AI workflow execution
+2. **Job Management**: Queue system with status tracking and caching
+3. **AI Tool Framework**: Template system for custom workflow integration
+4. **Producer Tools**: Bid analysis and project estimation algorithms
+5. **Chatbot Integration**: Natural language interface with knowledge base
+
+### Advanced Features and Optimization
+1. **Performance Optimization**: Caching strategies and database indexing
+2. **Scalability Improvements**: Load balancing and distributed processing
+3. **Advanced Analytics**: Machine learning for predictive insights
+4. **Third-party Integration**: External tool and service connections
+5. **Enterprise Features**: Advanced security, audit logging, and compliance
+
+## Risks and Mitigations  
+
+### Technical Challenges
+**Risk**: Complex DCC integration across multiple applications with different APIs
+**Mitigation**: Standardized PyQt panel architecture with plugin-based approach for application-specific implementations
+
+**Risk**: AI workflow integration complexity with ComfyUI dependency management
+**Mitigation**: Abstraction layer for AI services with fallback options and local processing capabilities
+
+**Risk**: Large asset file handling and storage scalability
+**Mitigation**: Configurable storage backends, lazy loading, and distributed file systems with automatic cleanup
+
+### MVP Definition and Scope Management
+**Risk**: Feature creep leading to delayed initial release
+**Mitigation**: Strict MVP definition focused on core asset management with clear phase boundaries
+
+**Risk**: Over-engineering early architecture preventing rapid iteration
+**Mitigation**: Pragmatic approach with refactoring planned at each phase boundary
+
+**Risk**: Complex user workflows preventing adoption by less technical users
+**Mitigation**: Progressive disclosure of features with simple defaults and guided onboarding
+
+### Resource and Infrastructure Constraints
+**Risk**: Development team bandwidth for simultaneous frontend, backend, and DCC integration
+**Mitigation**: Phased development approach with clear dependencies and parallel workstream identification
+
+**Risk**: Testing complexity across multiple DCC environments and platforms
+**Mitigation**: Automated testing framework with Docker-based DCC environment simulation
+
+**Risk**: Performance degradation with large asset libraries and concurrent users
+**Mitigation**: Performance monitoring from day one with scalability testing at each phase
+
+### Business and Adoption Risks
+**Risk**: User resistance to changing established workflows
+**Mitigation**: Incremental adoption strategy with non-disruptive integration into existing pipelines
+
+**Risk**: Competition from established pipeline tools (Shotgun, Ftrack)
+**Mitigation**: Focus on unique AI integration and cross-DCC workflows as differentiators
+
+**Risk**: Data security and intellectual property protection concerns
+**Mitigation**: Enterprise-grade security implementation with encryption, audit trails, and access controls
+
+## Appendix  
+
+### Research Findings
+- **Industry Analysis**: 73% of VFX studios report workflow fragmentation as primary productivity bottleneck
+- **Technology Assessment**: ComfyUI provides most flexible AI integration platform for custom workflows
+- **User Research**: Artists prioritize speed and consistency over feature richness in daily tools
+
+### Technical Specifications
+- **Supported Formats**: USD (Universal Scene Description), FBX, OBJ, EXR, PNG, TIFF textures
+- **DCC Versions**: Houdini 19.5+, Maya 2023+, Nuke 13+, Flame 2023+
+- **System Requirements**: 16GB RAM minimum, 500GB storage, GPU for AI processing
+- **Performance Targets**: <2s asset load time, <30s AI job queue wait, 99.5% uptime
+
+### Architecture Decisions
+- **ArangoDB**: Chosen for flexible document storage with graph relationship capabilities
+- **FastAPI**: Selected for automatic API documentation and async performance
+- **React/Electron**: Provides cross-platform desktop experience with web technology flexibility
+- **PyQt**: Industry standard for DCC panel development with native performance
+
+### Security Considerations
+- **Authentication**: JWT tokens with refresh mechanism and session management
+- **Authorization**: Role-based access control with granular permissions
+- **Data Protection**: Encryption at rest and in transit with secure key management
+- **Audit Trail**: Comprehensive logging of all user actions and system events
+
+Document Version: 1.0
+Created: August 2025
+Next Review: November 2025

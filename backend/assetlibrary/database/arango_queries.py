@@ -11,23 +11,24 @@ class AssetQueries:
             username=db_config['username'],
             password=db_config['password']
         )
-        self.assets = self.db.collection('assets')
+        self.assets = self.db.collection('Asset_Library')
 
     def search_assets(self, search_term: str = "", category: str = None, tags: List[str] = None) -> List[Dict]:
         """Search assets with filters"""
         query = """
-        FOR asset IN assets
-            FILTER (@search == "" OR CONTAINS(LOWER(asset.name), LOWER(@search)) OR CONTAINS(LOWER(asset.metadata.hda_parameters.notes), LOWER(@search)))
-            FILTER (@category == null OR asset.category == @category)
-            FILTER (@tags == null OR LENGTH(INTERSECTION(asset.tags, @tags)) > 0)
+        FOR asset IN Asset_Library
+            FILTER (@search == "" OR CONTAINS(LOWER(asset.name), LOWER(@search)) OR 
+                   CONTAINS(LOWER(asset.description || ""), LOWER(@search)))
+            FILTER (@category == null OR @category == "" OR asset.category == @category)
+            FILTER (@tags == null OR LENGTH(@tags) == 0 OR LENGTH(INTERSECTION(asset.tags, @tags)) > 0)
             SORT asset.created_at DESC
             RETURN asset
         """
 
         bind_vars = {
             'search': search_term,
-            'category': category,
-            'tags': tags
+            'category': category if category else None,
+            'tags': tags if tags else None
         }
 
         cursor = self.db.aql.execute(query, bind_vars=bind_vars)
@@ -36,7 +37,7 @@ class AssetQueries:
     def get_asset_with_dependencies(self, asset_id: str) -> Dict:
         """Get asset with all its dependencies"""
         query = """
-        LET asset = DOCUMENT('assets', @asset_id)
+        LET asset = DOCUMENT('Asset_Library', @asset_id)
         LET textures = (
             FOR texture IN asset.dependencies.textures
                 RETURN texture
@@ -54,7 +55,7 @@ class AssetQueries:
     def get_assets_by_artist(self, artist: str) -> List[Dict]:
         """Get all assets created by a specific user"""
         query = """
-        FOR asset IN assets
+        FOR asset IN Asset_Library
             FILTER asset.metadata.created_by == @artist
             SORT asset.created_at DESC
             RETURN {
@@ -72,7 +73,7 @@ class AssetQueries:
     def get_recent_assets(self, limit: int = 10) -> List[Dict]:
         """Get most recent assets"""
         query = """
-        FOR asset IN assets
+        FOR asset IN Asset_Library
             SORT asset.created_at DESC
             LIMIT @limit
             RETURN asset
@@ -84,23 +85,23 @@ class AssetQueries:
     def get_asset_statistics(self) -> Dict:
         """Get statistics about the asset library"""
         query = """
-        LET total_assets = LENGTH(assets)
+        LET total_assets = LENGTH(Asset_Library)
         LET by_category = (
-            FOR asset IN assets
+            FOR asset IN Asset_Library
                 COLLECT category = asset.category WITH COUNT INTO count
                 RETURN {category: category, count: count}
         )
         LET by_type = (
-            FOR asset IN assets
+            FOR asset IN Asset_Library
                 COLLECT type = asset.asset_type WITH COUNT INTO count
                 RETURN {type: type, count: count}
         )
         LET total_size = SUM(
-            FOR asset IN assets
+            FOR asset IN Asset_Library
                 RETURN asset.file_sizes.usd + asset.file_sizes.thumbnail
         )
         LET recent_week = (
-            FOR asset IN assets
+            FOR asset IN Asset_Library
                 FILTER DATE_DIFF(asset.created_at, DATE_NOW(), 'days') <= 7
                 RETURN 1
         )
@@ -121,11 +122,11 @@ class AssetQueries:
     def find_duplicate_names(self) -> List[Dict]:
         """Find assets with duplicate names"""
         query = """
-        FOR asset IN assets
+        FOR asset IN Asset_Library
             COLLECT name = asset.name WITH COUNT INTO count
             FILTER count > 1
             LET duplicates = (
-                FOR a IN assets
+                FOR a IN Asset_Library
                     FILTER a.name == name
                     RETURN {
                         id: a._key,

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Blacksmith Atlas - Houdini Node Context Menu Integration
+========================================================
+
+This file adds the "Collapse into Blacksmith Atlas Asset" option to the node right-click context menu.
+
+INSTALLATION:
+1. Copy this file to: $HOUDINI_USER_PREF_DIR/OPmenu.xml
+2. Restart Houdini
+3. Select nodes and right-click directly on them to see "Blacksmith Atlas" options
+
+LOCATION: /net/users/linux/alex.parks/houdini20.5/OPmenu.xml
+-->
+
+<menuDocument>
+    <!-- Add Atlas options to the node context menu -->
+    <menu>
+        <addToMenu>
+            <!-- Add separator before Atlas menu -->
+            <separatorItem />
+            
+            <!-- Blacksmith Atlas submenu for selected nodes -->
+            <subMenu id="blacksmith_atlas_node_menu" label="🏭 Blacksmith Atlas">
+                <context>
+                    <!-- Only show when nodes are selected -->
+                    <expression>len(hou.selectedNodes()) > 0</expression>
+                </context>
+                
+                <scriptItem id="collapse_selected_to_atlas" label="Collapse into Atlas Asset">
+                    <context>
+                        <!-- Show when multiple nodes selected or single node that can be collapsed -->
+                        <expression>len(hou.selectedNodes()) > 0</expression>
+                    </context>
+                    <scriptCode><![CDATA[
+# Blacksmith Atlas - Node Context Menu Collapse
+import sys
+from pathlib import Path
+
+print("🏭 Blacksmith Atlas - Right-click collapse initiated...")
+
+# Add backend path for imports
+backend_path = Path("/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend")
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
+try:
+    # Import the enhanced collapse function
+    from assetlibrary._3D.right_click_collapse import collapse_nodes_to_atlas_asset
+    
+    print("✅ Loaded right-click collapse function")
+    
+    # Get currently selected nodes
+    selected_nodes = hou.selectedNodes()
+    if selected_nodes:
+        print(f"📦 Processing {len(selected_nodes)} selected nodes...")
+        # Call the collapse function
+        success = collapse_nodes_to_atlas_asset()
+        if success:
+            print("✅ Atlas Asset creation completed successfully!")
+        else:
+            print("⚠️ Atlas Asset creation had issues - check console")
+    else:
+        hou.ui.displayMessage("No nodes selected. Please select nodes first.", 
+                            severity=hou.severityType.Warning, 
+                            title="Atlas Asset")
+        print("❌ No nodes selected")
+    
+except Exception as e:
+    error_msg = f"Error launching Atlas collapse: {e}"
+    print(f"❌ {error_msg}")
+    import traceback
+    traceback.print_exc()
+    hou.ui.displayMessage(error_msg, 
+                        severity=hou.severityType.Error, 
+                        title="Atlas Asset Error")
+]]></scriptCode>
+                </scriptItem>
+                
+                <!-- Quick info about what Atlas assets are -->
+                <scriptItem id="atlas_quick_info" label="About Atlas Assets">
+                    <scriptCode><![CDATA[
+info_text = """🏭 BLACKSMITH ATLAS ASSETS
+
+WORKFLOW:
+1. Select nodes you want to export
+2. Right-click → Blacksmith Atlas → Collapse into Atlas Asset
+3. Name your asset and configure parameters
+4. Click 'Export Atlas Asset' button in the created subnet
+
+FEATURES:
+• Perfect reconstruction using Houdini templates
+• Automatic texture extraction and copying
+• Multiple export formats (ABC, FBX, HIP)
+• Organized library structure
+
+LIBRARY: /net/library/atlaslib/3D/Assets/
+
+Select nodes and use 'Collapse into Atlas Asset' to get started!"""
+
+hou.ui.displayMessage(info_text, title="Blacksmith Atlas")
+]]></scriptCode>
+                </scriptItem>
+                
+                <separatorItem />
+                
+                <!-- Future: Asset browser -->
+                <scriptItem id="browse_atlas_assets" label="Browse Atlas Library...">
+                    <scriptCode><![CDATA[
+hou.ui.displayMessage("Asset browser coming soon!\n\nAssets are stored in:\n/net/library/atlaslib/3D/Assets/\n\nUse file browser to explore for now.", 
+                    title="Atlas Asset Browser")
+]]></scriptCode>
+                </scriptItem>
+            </subMenu>
+        </addToMenu>
+    </menu>
+</menuDocument>

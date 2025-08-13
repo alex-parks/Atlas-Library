@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Blacksmith Atlas Custom Context Menu
+Place this file in: $HOUDINI_USER_PREF_DIR/MainMenus/BLAtlas.xml
+-->
+
+<mainMenu>
+    <menuBar>
+        <subMenu id="blacksmith_atlas_menu" label="Blacksmith Atlas">
+            <actionItem id="collapse_to_atlas_asset">
+                <label>Collapse to BL Atlas Asset</label>
+                <scriptCode>
+                    <![CDATA[
+# Blacksmith Atlas - Collapse to Atlas Asset
+import hou
+
+def collapse_to_atlas_asset():
+    """Collapse selected nodes into an Atlas Asset subnet"""
+    try:
+        print("🔄 Collapsing selected nodes to Blacksmith Atlas Asset...")
+        
+        # Get selected nodes
+        selected_nodes = hou.selectedNodes()
+        if not selected_nodes:
+            hou.ui.displayMessage("Please select nodes to collapse into Atlas Asset.", 
+                                severity=hou.severityType.Warning)
+            return False
+        
+        print(f"📦 Found {len(selected_nodes)} selected nodes")
+        
+        # Get the common parent
+        parent = selected_nodes[0].parent()
+        for node in selected_nodes[1:]:
+            if node.parent() != parent:
+                hou.ui.displayMessage("All selected nodes must be in the same context.", 
+                                    severity=hou.severityType.Error)
+                return False
+        
+        print(f"📂 Parent context: {parent.path()}")
+        
+        # Get asset name from user
+        result = hou.ui.readInput("Atlas Asset Name", ("Enter name for the Atlas Asset:",), ("AtlasAsset",))
+        if result[0] == 0:  # User clicked OK
+            subnet_name = result[1]
+            if not subnet_name:
+                return False
+        else:
+            return False  # User cancelled
+        
+        print(f"🏷️ Asset name: {subnet_name}")
+        
+        # Create the subnet by collapsing selected nodes
+        try:
+            subnet = parent.collapseIntoSubnet(selected_nodes, subnet_name)
+            subnet.setComment("Blacksmith Atlas Asset - Ready for Export")
+            subnet.setColor(hou.Color(0.2, 0.6, 1.0))  # Blue color to identify Atlas assets
+            
+            print(f"✅ Created Atlas Asset subnet: {subnet.path()}")
+            
+            # Add Atlas asset parameters to the subnet
+            add_atlas_parameters(subnet)
+            
+            hou.ui.displayMessage(f"Atlas Asset '{subnet_name}' created successfully!\n\nConfigure parameters in the subnet and use the Export button.", 
+                                title="Atlas Asset Created")
+            
+            return True
+            
+        except Exception as collapse_error:
+            print(f"❌ Failed to collapse nodes: {collapse_error}")
+            hou.ui.displayMessage(f"Failed to collapse nodes: {collapse_error}", 
+                                severity=hou.severityType.Error)
+            return False
+        
+    except Exception as e:
+        error_msg = f"❌ Collapse error: {str(e)}"
+        print(error_msg)
+        hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
+        return False
+
+def add_atlas_parameters(subnet):
+    """Add Atlas-specific parameters to the subnet"""
+    try:
+        print(f"⚙️ Adding Atlas parameters to {subnet.name()}")
+        
+        # Get the parameter template group
+        ptg = subnet.parmTemplateGroup()
+        
+        # Create Atlas folder
+        folder = hou.FolderParmTemplate("atlas_folder", "Atlas Export", hou.folderType.Simple)
+        
+        # Asset name parameter
+        asset_name = hou.StringParmTemplate("asset_name", "Asset Name", 1)
+        asset_name.setDefaultValue([subnet.name()])
+        asset_name.setHelp("Name of the asset for export")
+        folder.addParmTemplate(asset_name)
+        
+        # Subcategory menu parameter
+        subcategory = hou.MenuParmTemplate("subcategory", "Subcategory", 
+                                         ["props", "characters", "environments", "vehicles", 
+                                          "architecture", "furniture", "weapons", "organic", 
+                                          "hard_surface", "general"],
+                                         ["Props", "Characters", "Environments", "Vehicles",
+                                          "Architecture", "Furniture", "Weapons", "Organic",
+                                          "Hard Surface", "General"])
+        subcategory.setDefaultValue(0)  # Default to Props
+        subcategory.setHelp("Asset subcategory for organization")
+        folder.addParmTemplate(subcategory)
+        
+        # Description parameter
+        description = hou.StringParmTemplate("description", "Description", 1)
+        description.setDefaultValue([""])
+        description.setHelp("Description of the asset")
+        folder.addParmTemplate(description)
+        
+        # Tags parameter
+        tags = hou.StringParmTemplate("tags", "Tags", 1)
+        tags.setDefaultValue([""])
+        tags.setHelp("Comma-separated tags for searching (e.g., vehicle, helicopter, military)")
+        folder.addParmTemplate(tags)
+        
+        # Separator
+        separator = hou.SeparatorParmTemplate("sep1")
+        folder.addParmTemplate(separator)
+        
+        # Export button
+        export_btn = hou.ButtonParmTemplate("export_atlas_btn", "Export Atlas Asset")
+        export_btn.setHelp("Export this Atlas Asset as a template")
+        export_btn.setScriptCallback('''
+# Export Atlas Asset Template
+try:
+    import sys
+    from pathlib import Path
+    
+    # Add backend path
+    backend_path = Path("/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend")
+    if str(backend_path) not in sys.path:
+        sys.path.insert(0, str(backend_path))
+    
+    from assetlibrary._3D.houdiniae import TemplateAssetExporter
+    
+    # Get current node (the subnet)
+    subnet = hou.pwd()
+    
+    # Get parameters
+    asset_name = subnet.parm("asset_name").eval()
+    subcategory_idx = int(subnet.parm("subcategory").eval())
+    description = subnet.parm("description").eval()
+    tags = subnet.parm("tags").eval()
+    
+    # Convert subcategory index to name
+    subcategories = ["Props", "Characters", "Environments", "Vehicles", "Architecture", 
+                    "Furniture", "Weapons", "Organic", "Hard_Surface", "General"]
+    subcategory = subcategories[subcategory_idx] if subcategory_idx < len(subcategories) else "Props"
+    
+    print(f"🏭 Exporting Atlas Asset: {asset_name}")
+    print(f"   Category: {subcategory}")
+    print(f"   Description: {description}")
+    print(f"   Tags: {tags}")
+    
+    # Create exporter
+    exporter = TemplateAssetExporter(
+        asset_name=asset_name,
+        subcategory=subcategory,
+        description=description,
+        tags=tags.split(',') if tags else []
+    )
+    
+    # Export the subnet contents
+    nodes_to_export = subnet.children()
+    success = exporter.export_as_template(subnet, nodes_to_export)
+    
+    if success:
+        hou.ui.displayMessage(f"✅ Atlas Asset '{asset_name}' exported successfully!\\n\\nLocation: {exporter.asset_folder}", 
+                            title="Export Complete")
+    else:
+        hou.ui.displayMessage("❌ Export failed! Check the console for details.", 
+                            severity=hou.severityType.Error)
+    
+except Exception as e:
+    print(f"❌ Export error: {e}")
+    import traceback
+    traceback.print_exc()
+    hou.ui.displayMessage(f"Export error: {e}", severity=hou.severityType.Error)
+''')
+        export_btn.setScriptCallbackLanguage(hou.scriptLanguage.Python)
+        folder.addParmTemplate(export_btn)
+        
+        # Add folder to parameter group
+        ptg.addParmTemplate(folder)
+        
+        # Apply parameters to subnet
+        subnet.setParmTemplateGroup(ptg)
+        
+        print(f"✅ Added Atlas parameters to {subnet.name()}")
+        
+    except Exception as e:
+        print(f"⚠️ Could not add Atlas parameters: {e}")
+        import traceback
+        traceback.print_exc()
+
+# Execute the main function
+collapse_to_atlas_asset()
+                    ]]>
+                </scriptCode>
+            </actionItem>
+        </subMenu>
+    </menuBar>
+</mainMenu>

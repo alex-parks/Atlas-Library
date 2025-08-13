@@ -27,30 +27,22 @@ class BlacksmithAtlasConfig:
         'arango': {
             # Development (local) configuration
             'development': {
-                'hosts': [os.getenv('ARANGO_HOST', 'http://localhost:8529')],
+                'hosts': [f"http://{os.getenv('ARANGO_HOST', 'localhost')}:{os.getenv('ARANGO_PORT', '8529')}"],
                 'database': os.getenv('ARANGO_DATABASE', 'blacksmith_atlas'),
                 'username': os.getenv('ARANGO_USER', 'root'),
                 'password': os.getenv('ARANGO_PASSWORD', ''),
                 'collections': {
-                    'assets': 'assets',
-                    'relationships': 'asset_relationships',
-                    'projects': 'projects',
-                    'tags': 'tags',
-                    'users': 'users'
+                    'assets': 'Asset_Library'
                 }
             },
             # Production (shared) configuration
             'production': {
-                'hosts': [os.getenv('ARANGO_HOST', 'http://arangodb:8529')],
+                'hosts': [f"http://{os.getenv('ARANGO_HOST', 'arangodb')}:{os.getenv('ARANGO_PORT', '8529')}"],
                 'database': os.getenv('ARANGO_DATABASE', 'blacksmith_atlas'),
                 'username': os.getenv('ARANGO_USER', 'root'),
                 'password': os.getenv('ARANGO_PASSWORD', 'atlas_password'),
                 'collections': {
-                    'assets': 'assets',
-                    'relationships': 'asset_relationships',
-                    'projects': 'projects',
-                    'tags': 'tags',
-                    'users': 'users'
+                    'assets': 'Asset_Library'
                 }
             }
         }

@@ -1,0 +1,473 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Blacksmith Atlas Shelf Tools -->
+<shelfDocument>
+  <!-- Shelf Set Definition -->
+  <toolshelf name="atlas" label="ATLAS">
+    
+    <!-- Create Atlas Asset Tool -->
+    <tool name="create_atlas_asset" label="🏭 Create" icon="MISC_python">
+      <helpText><![CDATA[Create Atlas Asset from Selected Nodes
+
+Copies selected nodes into an Atlas Asset subnet with export parameters.
+Original nodes are preserved.
+
+Usage:
+1. Select nodes to export (matnet, geo, etc.)
+2. Click this button
+3. Enter asset name
+4. Configure parameters and export]]></helpText>
+      
+      <script scriptType="python"><![CDATA[# Blacksmith Atlas - Create Atlas Asset
+import sys
+from pathlib import Path
+
+print("🏭 BLACKSMITH ATLAS - CREATE ASSET")
+print("=" * 40)
+
+# Add backend path
+backend_path = Path("/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend")
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
+# Clear Atlas modules for development (fresh imports)
+atlas_modules = [k for k in list(sys.modules.keys()) if 'assetlibrary' in k]
+for module_name in atlas_modules:
+    del sys.modules[module_name]
+
+if atlas_modules:
+    print(f"🔄 Cleared {len(atlas_modules)} Atlas modules for fresh import")
+
+try:
+    from assetlibrary._3D.copy_to_atlas_asset import copy_selected_to_atlas_asset
+    print("✅ Atlas create script loaded")
+    
+    # Run the create function
+    success = copy_selected_to_atlas_asset()
+    
+    if success:
+        print("🎉 Atlas asset creation completed successfully!")
+    else:
+        print("⚠️ Atlas asset creation had issues - check console")
+
+except Exception as e:
+    error_msg = f"Atlas Create Error: {str(e)}"
+    hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Atlas Create Error")
+    print(f"❌ {error_msg}")
+    import traceback
+    traceback.print_exc()]]></script>
+    </tool>
+
+    <!-- Import Atlas Asset Tool -->
+    <tool name="import_atlas_asset" label="📦 Import" icon="MISC_python">
+      <helpText><![CDATA[Import Atlas Asset from Library
+
+Browse and import Atlas assets from the library.
+
+Usage:
+1. Click this button
+2. Select asset from library
+3. Asset will be imported into current context
+
+Library Location: /net/library/atlaslib/3D/Assets/]]></helpText>
+      
+      <script scriptType="python"><![CDATA[# Blacksmith Atlas - Import Atlas Asset
+import sys
+import os
+from pathlib import Path
+
+print("📦 BLACKSMITH ATLAS - IMPORT ASSET")
+print("=" * 40)
+
+# Add backend path
+backend_path = Path("/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend")
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
+# Clear Atlas modules for development
+atlas_modules = [k for k in list(sys.modules.keys()) if 'assetlibrary' in k]
+for module_name in atlas_modules:
+    del sys.modules[module_name]
+
+if atlas_modules:
+    print(f"🔄 Cleared {len(atlas_modules)} Atlas modules")
+
+try:
+    library_path = "/net/library/atlaslib/3D/Assets"
+    
+    # Check if library exists
+    if not os.path.exists(library_path):
+        error_msg = f"Atlas library not found at:\n{library_path}\n\nCreate assets first or check library path."
+        hou.ui.displayMessage(error_msg, severity=hou.severityType.Warning, title="Library Not Found")
+        print(f"❌ Library path not found: {library_path}")
+    else:
+        print(f"📂 Scanning library: {library_path}")
+        
+        # Scan for assets
+        assets = []
+        categories = []
+        
+        for category in sorted(os.listdir(library_path)):
+            category_path = os.path.join(library_path, category)
+            if os.path.isdir(category_path):
+                categories.append(category)
+                category_assets = []
+                
+                for asset_folder in sorted(os.listdir(category_path)):
+                    asset_path = os.path.join(category_path, asset_folder)
+                    if os.path.isdir(asset_path):
+                        # Check for template file
+                        template_file = os.path.join(asset_path, "Data", "template.hipnc")
+                        if os.path.exists(template_file):
+                            display_name = f"{category}/{asset_folder}"
+                            assets.append({
+                                'display': display_name,
+                                'path': asset_path,
+                                'template': template_file,
+                                'category': category,
+                                'name': asset_folder
+                            })
+                            category_assets.append(asset_folder)
+                
+                if category_assets:
+                    print(f"   📋 {category}: {len(category_assets)} assets")
+        
+        if assets:
+            print(f"✅ Found {len(assets)} total assets in {len(categories)} categories")
+            
+            # Create selection list
+            asset_choices = [asset['display'] for asset in assets]
+            
+            # Show selection dialog
+            selected_indices = hou.ui.selectFromList(asset_choices, 
+                                                   message=f"Select Atlas Asset to Import:\n\nFound {len(assets)} assets in library", 
+                                                   title="📦 Import Atlas Asset",
+                                                   column_header="Available Assets",
+                                                   num_visible_rows=10)
+            
+            if selected_indices and len(selected_indices) > 0:
+                selected_asset = assets[selected_indices[0]]
+                
+                # For now, show asset info (import functionality to be implemented)
+                asset_info = f"""Selected Asset: {selected_asset['name']}
+Category: {selected_asset['category']}
+Location: {selected_asset['path']}
+
+Template File: {selected_asset['template']}
+Status: ✅ Template found
+
+IMPORT FUNCTIONALITY:
+Coming in next phase - will use TemplateAssetImporter
+from your houdiniae.py with loadChildrenFromFile()
+for perfect reconstruction.
+
+Current Status: Asset browsing ready! 🎯"""
+                
+                hou.ui.displayMessage(asset_info, title=f"📦 {selected_asset['name']}")
+                print(f"📦 Selected: {selected_asset['display']}")
+                print(f"📁 Path: {selected_asset['path']}")
+                print(f"📄 Template: {selected_asset['template']}")
+                
+            else:
+                print("❌ No asset selected")
+        else:
+            no_assets_msg = f"""No Atlas assets found in library.
+
+Library Path: {library_path}
+
+TO CREATE ASSETS:
+1. Select nodes in Houdini
+2. Click '🏭 Create' button  
+3. Configure and export assets
+
+Assets will appear here after export."""
+            
+            hou.ui.displayMessage(no_assets_msg, title="📂 No Assets Found")
+            print("📋 No assets found in library - create some first!")
+
+except Exception as e:
+    error_msg = f"Atlas Import Error: {str(e)}"
+    hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Atlas Import Error")
+    print(f"❌ {error_msg}")
+    import traceback
+    traceback.print_exc()]]></script>
+    </tool>
+
+    <!-- Browse Atlas Library Tool -->
+    <tool name="browse_atlas_library" label="📂 Browse" icon="MISC_python">
+      <helpText><![CDATA[Browse Atlas Asset Library
+
+Open file browser to Atlas library location for manual browsing.
+
+Library: /net/library/atlaslib/3D/Assets/]]></helpText>
+      
+      <script scriptType="python"><![CDATA[# Blacksmith Atlas - Browse Library
+import os
+import subprocess
+
+library_path = "/net/library/atlaslib/3D/Assets"
+
+print("📂 BLACKSMITH ATLAS - BROWSE LIBRARY")
+print(f"📁 Library: {library_path}")
+
+if os.path.exists(library_path):
+    try:
+        # Open file browser (Linux)
+        subprocess.Popen(['nautilus', library_path])
+        print(f"✅ Opened file browser: {library_path}")
+        hou.ui.displayMessage(f"Opened Atlas library in file browser:\n\n{library_path}", title="📂 Library Browser")
+    except:
+        # Fallback - show path
+        hou.ui.displayMessage(f"Atlas Library Location:\n\n{library_path}\n\nOpen this path in your file browser to explore assets.", title="📂 Atlas Library")
+        print(f"📋 Library location: {library_path}")
+else:
+    hou.ui.displayMessage(f"Atlas library not found:\n\n{library_path}\n\nCreate assets first using the Create button.", title="📂 Library Not Found")
+    print(f"❌ Library not found: {library_path}")]]></script>
+    </tool>
+
+    <!-- Atlas Copy Tool -->
+    <tool name="atlas_copy" label="📋 Copy" icon="MISC_python">
+      <helpText><![CDATA[Atlas Copy - Export to Clipboard
+
+Copy selected nodes to Atlas library and generate a copy string for sharing.
+Inspired by HPasteWeb but uses Atlas library as storage backend.
+
+Usage:
+1. Select nodes to copy
+2. Click Atlas Copy
+3. Enter asset name and select subcategory  
+4. Choose encryption (optional)
+5. Copy string is placed in clipboard
+6. Share copy string or use Atlas Paste anywhere
+
+Features:
+• Exports all textures and geometry files
+• Optional AES encryption for security
+• Automatic path remapping on paste
+• Compatible with existing Atlas library
+• Perfect node reconstruction
+
+Copy String Format: AtlasAsset_AssetName_UID[!encryption_key]
+Example: AtlasAsset_Helicopter_DEA80B867493!x9K2mP1s]]></helpText>
+      
+      <script scriptType="python"><![CDATA[# Blacksmith Atlas - Copy to Clipboard
+import sys
+from pathlib import Path
+
+print("📋 BLACKSMITH ATLAS - COPY")
+print("=" * 40)
+
+# Add backend path for Atlas modules
+backend_path = Path("/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend")
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
+# Add _3D module path
+module_path = backend_path / "assetlibrary" / "_3D"
+if str(module_path) not in sys.path:
+    sys.path.insert(0, str(module_path))
+
+try:
+    from shelf_atlas_copy import atlas_copy_nodes
+    print("✅ Atlas Copy module loaded")
+    atlas_copy_nodes()
+    
+except ImportError as e:
+    error_msg = f"Failed to import Atlas Copy module!\n\nError: {str(e)}\n\nMake sure the Atlas clipboard system is properly installed."
+    hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Atlas Copy - Import Error")
+    print(f"❌ Import error: {e}")
+    
+except Exception as e:
+    error_msg = f"Atlas Copy failed!\n\nError: {str(e)}"
+    hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Atlas Copy - Error")
+    print(f"❌ Atlas Copy error: {e}")
+    import traceback
+    traceback.print_exc()]]></script>
+    </tool>
+
+    <!-- Atlas Paste Tool -->
+    <tool name="atlas_paste" label="📥 Paste" icon="MISC_python">
+      <helpText><![CDATA[Atlas Paste - Import from Clipboard
+
+Paste Atlas asset from clipboard copy string with automatic path remapping.
+Companion to Atlas Copy for seamless asset sharing.
+
+Usage:
+1. Copy Atlas copy string to clipboard
+2. Navigate to desired network location
+3. Click Atlas Paste
+4. Confirm asset import
+5. Nodes are imported with proper file paths
+
+Features:
+• Automatic asset library lookup
+• Texture and geometry path remapping
+• Encryption support with key validation
+• Context-aware pasting (SOP/OBJ/etc.)
+• Cursor positioning of imported nodes
+
+Copy String Format: AtlasAsset_AssetName_UID[!encryption_key]
+Example: AtlasAsset_Helicopter_DEA80B867493!x9K2mP1s]]></helpText>
+      
+      <script scriptType="python"><![CDATA[# Blacksmith Atlas - Paste from Clipboard
+import sys
+from pathlib import Path
+
+print("📥 BLACKSMITH ATLAS - PASTE")
+print("=" * 40)
+
+# Add backend path for Atlas modules
+backend_path = Path("/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend")
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
+# Add _3D module path
+module_path = backend_path / "assetlibrary" / "_3D"
+if str(module_path) not in sys.path:
+    sys.path.insert(0, str(module_path))
+
+try:
+    from shelf_atlas_paste import atlas_paste_nodes
+    print("✅ Atlas Paste module loaded")
+    atlas_paste_nodes()
+    
+except ImportError as e:
+    error_msg = f"Failed to import Atlas Paste module!\n\nError: {str(e)}\n\nMake sure the Atlas clipboard system is properly installed."
+    hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Atlas Paste - Import Error")
+    print(f"❌ Import error: {e}")
+    
+except Exception as e:
+    error_msg = f"Atlas Paste failed!\n\nError: {str(e)}"
+    hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Atlas Paste - Error")
+    print(f"❌ Atlas Paste error: {e}")
+    import traceback
+    traceback.print_exc()]]></script>
+    </tool>
+
+    <!-- Atlas Inspect Tool -->
+    <tool name="atlas_inspect" label="🔍 Inspect" icon="MISC_python">
+      <helpText><![CDATA[Atlas Inspect - Analyze Copy String
+
+Inspect Atlas copy string from clipboard without importing.
+Shows detailed information about the asset.
+
+Usage:
+1. Copy Atlas copy string to clipboard
+2. Click Atlas Inspect
+3. View asset information and validation status
+
+Information shown:
+• Asset name and UID
+• Encryption status
+• Library location and availability  
+• Copy string format validation
+• Asset metadata if found
+
+Copy String Format: AtlasAsset_AssetName_UID[!encryption_key]
+Example: AtlasAsset_Helicopter_DEA80B867493!x9K2mP1s]]></helpText>
+      
+      <script scriptType="python"><![CDATA[# Blacksmith Atlas - Inspect Copy String
+import sys
+from pathlib import Path
+
+print("🔍 BLACKSMITH ATLAS - INSPECT")
+print("=" * 40)
+
+# Add backend path for Atlas modules
+backend_path = Path("/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend")
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
+# Add _3D module path
+module_path = backend_path / "assetlibrary" / "_3D"
+if str(module_path) not in sys.path:
+    sys.path.insert(0, str(module_path))
+
+try:
+    from shelf_atlas_paste import atlas_paste_inspect
+    print("✅ Atlas Inspect module loaded")
+    atlas_paste_inspect()
+    
+except ImportError as e:
+    error_msg = f"Failed to import Atlas Inspect module!\n\nError: {str(e)}\n\nMake sure the Atlas clipboard system is properly installed."
+    hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Atlas Inspect - Import Error")
+    print(f"❌ Import error: {e}")
+    
+except Exception as e:
+    error_msg = f"Atlas Inspect failed!\n\nError: {str(e)}"
+    hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Atlas Inspect - Error")
+    print(f"❌ Atlas Inspect error: {e}")
+    import traceback
+    traceback.print_exc()]]></script>
+    </tool>
+
+    <!-- Atlas Info Tool -->
+    <tool name="atlas_info" label="ℹ️ Info" icon="MISC_python">
+      <helpText><![CDATA[Blacksmith Atlas Information
+
+Show information about the Atlas asset management system.]]></helpText>
+      
+      <script scriptType="python"><![CDATA[# Blacksmith Atlas - System Information
+info_text = """🏭 BLACKSMITH ATLAS
+Asset Management System
+
+VERSION: 2.1 (Template-Based + Clipboard)
+LIBRARY: /net/library/atlaslib/3D/Assets/
+
+🎯 WORKFLOW:
+1. SELECT nodes to export
+2. CLICK '🏭 Create' button
+3. CONFIGURE asset parameters
+4. EXPORT to Atlas library
+5. IMPORT using '📦 Import' button
+
+📋 CLIPBOARD WORKFLOW:
+1. SELECT nodes to copy
+2. CLICK '📋 Copy' button  
+3. SHARE copy string anywhere
+4. CLICK '📥 Paste' to import
+5. USE '🔍 Inspect' to analyze
+
+🔧 KEY FEATURES:
+• Template-based perfect reconstruction
+• Clipboard-style copy/paste sharing
+• HPasteWeb-inspired workflow with local storage
+• Automatic texture extraction & copying  
+• Multiple export formats (HIP, ABC, FBX)
+• Comprehensive material scanning
+• Organized library structure
+• Cross-DCC compatibility
+• Optional AES encryption for security
+
+📂 LIBRARY STRUCTURE:
+Assets/{Category}/{AssetID}_{Name}/
+├── Data/template.hipnc (perfect reconstruction)
+├── templates/ (clipboard system files)
+├── Textures/{Material}/ (organized by material)
+└── metadata.json (searchable info)
+
+📋 COPY STRING FORMAT:
+AtlasAsset_AssetName_UID[!encryption_key]
+Example: AtlasAsset_Helicopter_DEA80B867493!x9K2mP1s
+
+🚀 EXPORT FORMATS:
+• HIP Template: Perfect node reconstruction
+• ABC Cache: Geometry export
+• FBX: Cross-application compatibility  
+• Textures: All materials automatically copied
+• Metadata: Searchable asset information
+• Clipboard Templates: Shareable copy strings
+
+💡 The Create button preserves your original nodes
+while copying them into an exportable Atlas subnet.
+
+📋 The Copy/Paste buttons provide HPasteWeb-style
+sharing but using your Atlas library as storage.
+
+Atlas integrates with your existing houdiniae.py
+export logic for comprehensive asset processing."""
+
+hou.ui.displayMessage(info_text, title="🏭 Blacksmith Atlas Info")]]></script>
+    </tool>
+
+  </toolshelf>
+</shelfDocument>
