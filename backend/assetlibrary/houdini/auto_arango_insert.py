@@ -21,13 +21,17 @@ script_dir = Path(__file__).parent
 backend_path = script_dir.parent.parent
 sys.path.insert(0, str(backend_path))
 
-# Import ArangoDB
+# Import ArangoDB - Use direct HTTP requests as fallback
 try:
     from arango import ArangoClient
     ARANGO_AVAILABLE = True
+    USE_HTTP_FALLBACK = False
 except ImportError:
-    print("⚠️  ArangoDB client not available - install with: pip install python-arango")
+    print("⚠️  ArangoDB client not available - using HTTP fallback")
     ARANGO_AVAILABLE = False
+    USE_HTTP_FALLBACK = True
+    import requests
+    import json
 
 # Import Atlas configuration
 try:
@@ -320,7 +324,7 @@ def get_arango_inserter(environment: str = 'development') -> AutoArangoAssetInse
 
 def auto_insert_on_export(metadata_file_path: str) -> bool:
     """
-    Automatically insert asset into ArangoDB after Houdini export
+    Automatically insert asset into ArangoDB after Houdini export via Backend API
     
     This function is called by the Houdini export process
     
@@ -331,19 +335,133 @@ def auto_insert_on_export(metadata_file_path: str) -> bool:
         bool: True if successful, False otherwise
     """
     
-    print("🚀 AUTO-INSERT TO ARANGODB")
-    print("=" * 40)
+    print("🚀 AUTO-INSERT TO ARANGODB VIA BACKEND API")
+    print("=" * 50)
     
     try:
-        inserter = get_arango_inserter()
-        success = inserter.insert_asset(metadata_file_path)
+        # Read metadata file
+        if not os.path.exists(metadata_file_path):
+            print(f"❌ Metadata file not found: {metadata_file_path}")
+            return False
+            
+        with open(metadata_file_path, 'r') as f:
+            metadata = json.load(f)
         
-        if success:
-            print("✅ Auto-insert to ArangoDB successful!")
+        print(f"📄 Read metadata for asset: {metadata.get('name', 'Unknown')}")
+        
+        # Call the containerized script that has database access
+        import subprocess
+        
+        print(f"🐳 Calling containerized database insert script...")
+        
+        # Convert host path to container path 
+        # Host: /net/library/atlaslib/... -> Container: /app/assets/...
+        host_base = "/net/library/atlaslib"
+        container_base = "/app/assets"
+        
+        if metadata_file_path.startswith(host_base):
+            container_metadata_path = metadata_file_path.replace(host_base, container_base)
+            print(f"🔄 Path conversion: {metadata_file_path} -> {container_metadata_path}")
         else:
-            print("❌ Auto-insert to ArangoDB failed!")
+            container_metadata_path = metadata_file_path
+            print(f"⚠️ Using original path (no conversion needed): {metadata_file_path}")
         
-        return success
+        try:
+            # Execute the database insertion inside the backend container
+            cmd = [
+                "docker", "exec", "blacksmith-atlas-backend",
+                "python", "-c", f"""
+import sys
+import json
+import os
+from pathlib import Path
+
+# Add backend to path
+sys.path.insert(0, '/app/backend')
+
+try:
+    from assetlibrary.database.arango_queries import AssetQueries
+    from assetlibrary.config import BlacksmithAtlasConfig
+    
+    # Read metadata (using container path)
+    metadata_file = '{container_metadata_path}'
+    print(f'Reading metadata from container path: {{metadata_file}}')
+    
+    if not os.path.exists(metadata_file):
+        print(f'ERROR: Metadata file not found at container path: {{metadata_file}}')
+        exit(1)
+        
+    with open(metadata_file, 'r') as f:
+        metadata = json.load(f)
+    
+    # Get database connection (inside container with proper env vars)
+    environment = os.getenv('ATLAS_ENV', 'development')
+    arango_config = BlacksmithAtlasConfig.get_database_config(environment)
+    asset_queries = AssetQueries(arango_config)
+    
+    # Create asset document
+    asset_id = metadata.get('asset_id', metadata.get('name', 'unknown'))
+    asset_data = {{
+        '_key': asset_id,
+        'id': asset_id,
+        'name': metadata.get('name', 'Unknown Asset'),
+        'asset_type': metadata.get('asset_type', 'Assets'),
+        'category': metadata.get('subcategory', 'General'),
+        'dimension': '3D',
+        'hierarchy': {{
+            'dimension': '3D',
+            'asset_type': metadata.get('asset_type', 'Assets'),
+            'subcategory': metadata.get('subcategory', 'General')
+        }},
+        'metadata': metadata,
+        'paths': {{
+            'asset_folder': metadata.get('asset_folder', ''),
+            'metadata': metadata_file
+        }},
+        'tags': metadata.get('tags', []),
+        'created_at': metadata.get('created_at', ''),
+        'created_by': metadata.get('created_by', 'unknown'),
+        'status': 'active'
+    }}
+    
+    # Insert into Atlas_Library collection
+    collection = asset_queries.db.collection('Atlas_Library')
+    result = collection.insert(asset_data)
+    
+    print(f'SUCCESS: {{result["_key"]}}')
+    
+except Exception as e:
+    print(f'ERROR: {{str(e)}}')
+    import traceback
+    traceback.print_exc()
+"""
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
+            if result.returncode == 0:
+                output = result.stdout.strip()
+                if "SUCCESS:" in output:
+                    asset_key = output.split("SUCCESS: ")[1]
+                    print(f"✅ Asset inserted successfully into ArangoDB!")
+                    print(f"   🆔 Asset Key: {asset_key}")
+                    return True
+                else:
+                    print(f"❌ Container script failed: {output}")
+                    if result.stderr:
+                        print(f"❌ Error output: {result.stderr}")
+                    return False
+            else:
+                print(f"❌ Docker exec failed with return code: {result.returncode}")
+                print(f"❌ Error: {result.stderr}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            print("❌ Database insertion timed out")
+            return False
+        except Exception as e:
+            print(f"❌ Failed to execute containerized script: {e}")
+            return False
         
     except Exception as e:
         print(f"❌ Auto-insert error: {e}")

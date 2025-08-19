@@ -1,0 +1,38 @@
+# Task ID: 25
+# Title: Integrate Database Operations into Export Workflow
+# Status: in-progress
+# Dependencies: 24
+# Priority: high
+# Description: Seamlessly integrate database insertion into existing Houdini export process
+# Details:
+Modify the existing `TemplateAssetExporter.create_asset_metadata()` method in `houdiniae.py` to include automatic database population:
+
+- Call `HoudiniArangoInserter` after successful metadata.json creation
+- Implement non-blocking database operations (export continues on DB failure)
+- Add comprehensive user feedback through Houdini interface
+- Update metadata.json with database sync status
+- Handle Docker container communication from Houdini environment
+- Implement fallback mechanisms for database unavailability
+- Log all operations for debugging and monitoring
+
+Integration points:
+- Line 775 in houdiniae.py: "Database operations are handled separately"
+- Line 786-851: Existing auto-insert logic to be enhanced
+- Ensure backward compatibility with existing export workflow
+
+# Test Strategy:
+End-to-end testing from Houdini shelf button to database verification. Test failure scenarios including database unavailability, network issues, and Docker container problems.
+
+# Subtasks:
+## 1. Generate _key from metadata id and name combination [pending]
+### Dependencies: None
+### Description: Create database _key by combining id and name fields from metadata.json with underscore separator (format: id_name)
+### Details:
+
+
+## 2. Configure database collection to use 3D_Atlas_Library [pending]
+### Dependencies: None
+### Description: Update database insertion logic to store Houdini exported assets in '3D_Atlas_Library' collection instead of 'Atlas_Library'
+### Details:
+
+

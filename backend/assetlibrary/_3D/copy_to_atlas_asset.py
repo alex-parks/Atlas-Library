@@ -1,32 +1,31 @@
 #!/usr/bin/env python3
 """
-Blacksmith Atlas - Copy to Atlas Asset (No Collapse)
-====================================================
-
-Copy selected nodes into a new Atlas Asset subnet while preserving the originals.
-This script creates a subnet with comprehensive export parameters.
+🏭 BLACKSMITH ATLAS: COPY TO ATLAS ASSET TOOL
+Enhanced version with full parameter interface and simplified export
 """
 
-import hou
+import os
+import sys
+from pathlib import Path
 
 def copy_selected_to_atlas_asset():
-    """Copy selected nodes into Atlas Asset subnet (preserve originals)"""
-    
-    print("🏭 BLACKSMITH ATLAS - COPY TO ASSET")
-    print("=" * 60)
-    
+    """
+    Main function to copy selected nodes to a subnet and add Atlas export parameters
+    """
     try:
+        import hou
+        
+        print("\n🏭 BLACKSMITH ATLAS: Copy Selected to Atlas Asset")
+        print("=" * 60)
+        
         # Get selected nodes
         selected_nodes = hou.selectedNodes()
-        if not selected_nodes:
-            hou.ui.displayMessage("❌ Please select nodes to copy into Atlas Asset.", 
-                                severity=hou.severityType.Warning, 
-                                title="Atlas Asset")
-            return False
         
-        print(f"📦 Processing {len(selected_nodes)} selected nodes:")
-        for i, node in enumerate(selected_nodes, 1):
-            print(f"   {i}. {node.path()} ({node.type().name()})")
+        # Validation
+        if not selected_nodes:
+            error_msg = "❌ No nodes selected.\n\nPlease select nodes to copy to Atlas Asset."
+            hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
+            return False
         
         # Verify all nodes have same parent
         parent = selected_nodes[0].parent()
@@ -38,279 +37,247 @@ def copy_selected_to_atlas_asset():
             for node_path in invalid_nodes:
                 error_msg += f"• {node_path}\n"
             
-            hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Atlas Asset Error")
+            hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
             return False
+
+        print(f"📦 Creating subnet from {len(selected_nodes)} nodes in {parent.path()}")
         
-        print(f"✅ All nodes in context: {parent.path()}")
+        # Get asset name from user
+        result = hou.ui.readInput("Enter name for the Atlas Asset:", 
+                                 buttons=("OK", "Cancel"),
+                                 severity=hou.severityType.Message,
+                                 title="Atlas Asset Name",
+                                 initial_contents="atlas_asset")
         
-        # Get asset name
-        if len(selected_nodes) == 1:
-            default_name = f"{selected_nodes[0].name()}_Atlas"
+        # result is (text, button_index)
+        text_input = result[0]
+        button_clicked = result[1]
+        
+        if button_clicked == 1:  # User clicked Cancel
+            print("❌ User cancelled operation")
+            return False
+            
+        # Handle different return types from readInput
+        if isinstance(text_input, str):
+            subnet_name = text_input.strip() if text_input.strip() else "atlas_asset"
         else:
-            default_name = f"{len(selected_nodes)}Nodes_Atlas"
+            subnet_name = "atlas_asset"
+            
+        subnet_name = subnet_name.replace(" ", "_")  # Replace spaces with underscores
         
-        try:
-            result = hou.ui.readInput("Enter Atlas Asset Name:", initial_contents=default_name)
-            if result[0] != 0:
-                print("❌ User cancelled")
-                return False
-            asset_name = result[1].strip()
-            if not asset_name:
-                asset_name = default_name
-        except:
-            asset_name = default_name
+        print(f"📝 Asset name: {subnet_name}")
         
-        print(f"🏷️ Asset name: '{asset_name}'")
+        # Collect nodes and bounds
+        node_bounds = []
+        for node in selected_nodes:
+            print(f"   • {node.name()} ({node.type().name()})")
+            
+            # Check if node has boundingRect method (not all node types do)
+            if hasattr(node, 'boundingRect'):
+                try:
+                    bounds = node.boundingRect()
+                    node_bounds.append((bounds.min(), bounds.max(), node))
+                except:
+                    # If boundingRect fails, try position
+                    pos = node.position()
+                    node_bounds.append((pos, pos, node))
+            else:
+                # For nodes without boundingRect (like ShopNode), use position
+                pos = node.position()
+                node_bounds.append((pos, pos, node))
         
-        # Create subnet and copy nodes
-        print("📦 Creating Atlas Asset subnet...")
-        subnet = parent.createNode("subnet", asset_name)
-        subnet.setComment("🏭 Blacksmith Atlas Asset\\n(Copied Nodes - Originals Preserved)")
-        subnet.setColor(hou.Color(0.2, 0.6, 1.0))  # Atlas blue
+        # Calculate position for subnet
+        if node_bounds:
+            # Get x and y coordinates, handling both hou.Vector2 and bounds objects
+            x_coords = []
+            y_coords = []
+            
+            for bounds in node_bounds:
+                if hasattr(bounds[0], 'x'):
+                    x_coords.append(bounds[0].x())
+                    y_coords.append(bounds[0].y())
+                else:
+                    x_coords.append(bounds[0][0])
+                    y_coords.append(bounds[0][1])
+                    
+                if hasattr(bounds[1], 'x'):
+                    x_coords.append(bounds[1].x())
+                    y_coords.append(bounds[1].y())
+                else:
+                    x_coords.append(bounds[1][0])
+                    y_coords.append(bounds[1][1])
+            
+            # Position subnet at center-bottom of selection
+            subnet_x = (min(x_coords) + max(x_coords)) / 2
+            subnet_y = min(y_coords) - 1.5
+        else:
+            subnet_x, subnet_y = 0, 0
+
+        # Create subnet
+        subnet = parent.createNode("subnet", subnet_name)
+        subnet.setPosition([subnet_x, subnet_y])
         
         print(f"✅ Created subnet: {subnet.path()}")
         
         # Copy nodes into subnet
-        print(f"📋 Copying {len(selected_nodes)} nodes...")
         copied_nodes = []
+        with hou.undos.group("Copy nodes to Atlas Asset"):
+            for node in selected_nodes:
+                # Use copyItems for proper copying
+                items_to_copy = [node]
+                copied_items = hou.copyNodesTo(items_to_copy, subnet)
+                copied_nodes.extend(copied_items)
+                print(f"   📋 Copied: {node.name()} → {copied_items[0].name() if copied_items else 'failed'}")
         
-        for node in selected_nodes:
-            try:
-                copied_node = subnet.copyItems([node])[0]
-                copied_nodes.append(copied_node)
-                print(f"   ✅ Copied: {node.name()} -> {copied_node.name()}")
-            except Exception as e:
-                print(f"   ⚠️ Failed to copy {node.name()}: {e}")
-        
-        # Reconnect copied nodes
-        print("🔗 Reconnecting copied nodes...")
-        connection_count = 0
-        for i, original_node in enumerate(selected_nodes):
-            if i < len(copied_nodes):
-                copied_node = copied_nodes[i]
-                
-                try:
-                    # Get input connections
-                    for input_idx in range(len(original_node.inputs())):
-                        input_connections = original_node.inputConnections()
-                        if input_connections and input_idx < len(input_connections):
-                            input_connection = input_connections[input_idx]
-                            input_node = input_connection.inputNode()
-                            
-                            # If input node is also in our selection, connect to its copy
-                            if input_node in selected_nodes:
-                                input_node_idx = selected_nodes.index(input_node)
-                                if input_node_idx < len(copied_nodes):
-                                    copied_input = copied_nodes[input_node_idx]
-                                    copied_node.setInput(input_idx, copied_input)
-                                    connection_count += 1
-                                    print(f"   🔗 {copied_input.name()} -> {copied_node.name()}")
-                except Exception as e:
-                    print(f"   ⚠️ Connection error: {e}")
-        
-        print(f"✅ Made {connection_count} connections between copied nodes")
-        
-        # Layout subnet contents
-        try:
-            subnet.layoutChildren()
-            print("📐 Laid out subnet contents")
-        except:
-            pass
-        
-        # Add Atlas export parameters
-        print("⚙️ Adding Atlas export parameters...")
-        try:
-            param_success = add_atlas_export_parameters(subnet, asset_name)
+        if not copied_nodes:
+            hou.ui.displayMessage("❌ Failed to copy nodes to subnet", severity=hou.severityType.Error)
+            subnet.destroy()
+            return False
             
-            if param_success:
-                print("✅ Export parameters added successfully!")
-                
-                # Verify parameters were actually added
-                if subnet.parm("asset_name"):
-                    print("✅ Verified: asset_name parameter exists")
-                else:
-                    print("❌ asset_name parameter missing after addition!")
-                    
-                if subnet.parm("export_atlas_asset"):  
-                    print("✅ Verified: export button exists")
-                else:
-                    print("❌ Export button missing after addition!")
-                    
-            else:
-                print("❌ add_atlas_export_parameters() returned False")
-                
-        except Exception as param_error:
-            print(f"❌ Exception adding parameters: {param_error}")
-            import traceback
-            traceback.print_exc()
-            param_success = False
+        print(f"✅ Successfully copied {len(copied_nodes)} nodes to subnet")
         
-        # Position subnet near original nodes
-        if selected_nodes:
-            first_pos = selected_nodes[0].position()
-            subnet.setPosition([first_pos[0] + 4, first_pos[1]])
+        # Add comprehensive export parameters  
+        success = add_atlas_export_parameters(subnet, subnet_name)
+        if not success:
+            print("❌ Failed to add export parameters")
+            return False
+            
+        print("✅ Atlas Asset subnet created successfully!")
         
-        # Select the new subnet
+        # Select the new subnet and display inside
         subnet.setSelected(True, clear_all_selected=True)
         
         # Success message
-        success_msg = f"""✅ Atlas Asset Created Successfully!
+        success_msg = f"""✅ ATLAS ASSET SUBNET CREATED!
 
-🏷️ Asset: {asset_name}
-📦 Subnet: {subnet.path()}
-📋 Copied: {len(copied_nodes)} nodes
-🔧 Export Parameters: {'✅ Added' if param_success else '❌ Failed'}
+📦 Subnet: {subnet.name()}
+📁 Location: {subnet.path()}
+🎯 Nodes copied: {len(copied_nodes)}
 
-ORIGINAL NODES PRESERVED ✅
+The subnet now contains:
+• All your selected nodes
+• Export parameters for Asset Library
+• Export button for one-click publishing
 
-NEXT STEPS:
-1. Configure asset parameters in the subnet
-2. Click '🚀 Export Atlas Asset' button
-3. Asset will be saved to Atlas library
-
-The subnet contains copies - originals are untouched!"""
+Next steps:
+1. Configure asset details in parameters
+2. Click 'Export Atlas Asset' button"""
         
         hou.ui.displayMessage(success_msg, title="🎉 Atlas Asset Ready")
-        
-        print("🎉 Atlas Asset creation complete!")
-        print(f"📍 Subnet: {subnet.path()}")
-        print(f"📋 Original nodes preserved")
-        print(f"🚀 Ready for export!")
-        
         return True
         
     except Exception as e:
-        error_msg = f"❌ Unexpected error: {str(e)}"
-        print(error_msg)
+        print(f"❌ Atlas copy operation failed: {e}")
         import traceback
         traceback.print_exc()
-        hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Atlas Asset Error")
         return False
 
-def add_atlas_export_parameters(subnet, asset_name):
-    """Add comprehensive Atlas export parameters to subnet"""
+def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
+    """Add comprehensive export parameters to the subnet"""
     try:
-        print(f"   📋 Adding export parameters to {subnet.name()}...")
+        import hou
+        print("   🔧 Adding Atlas export parameters...")
         
-        ptg = subnet.parmTemplateGroup()
+        # Get existing parameter template group
+        parm_group = subnet.parmTemplateGroup()
         
-        # Create individual parameters first
-        parameters = []
+        # Create a folder (tab) for Atlas Export parameters
+        atlas_folder = hou.FolderParmTemplate("atlas_export_folder", "Atlas Export")
+        atlas_folder.setFolderType(hou.folderType.Tabs)
         
-        # Asset name
+        # Create Atlas-specific parameters to go inside the folder
+        atlas_parameters = []
+        
+        # === ASSET INFORMATION ===
+        # Asset Name
         asset_name_parm = hou.StringParmTemplate("asset_name", "Asset Name", 1)
-        asset_name_parm.setDefaultValue([asset_name])
-        parameters.append(asset_name_parm)
+        asset_name_parm.setDefaultValue([default_name])
+        asset_name_parm.setHelp("Enter a unique name for this asset")
+        atlas_parameters.append(asset_name_parm)
         
-        # Asset Type
+        # Asset Type dropdown
         asset_type_parm = hou.MenuParmTemplate("asset_type", "Asset Type", 
-                                              ["assets", "fx", "materials", "hdas"],
-                                              ["Assets", "FX", "Materials", "HDAs"])
-        asset_type_parm.setDefaultValue(0)  # Default to Assets
-        parameters.append(asset_type_parm)
+                                              menu_items=("0", "1", "2", "3"),
+                                              menu_labels=("Assets", "FX", "Materials", "HDAs"),
+                                              default_value=0)
+        asset_type_parm.setHelp("Select the primary category for this asset")
+        atlas_parameters.append(asset_type_parm)
         
-        # Subcategory (dynamic based on Asset Type)
-        subcategory_parm = hou.MenuParmTemplate("subcategory", "Subcategory", 
-                                               ["blacksmith_asset", "megascans", "kitbash"],  # Default for Assets
-                                               ["Blacksmith Asset", "Megascans", "Kitbash"])
-        subcategory_parm.setDefaultValue(0)  # Default to first option
-        subcategory_parm.setConditional(hou.parmCondType.DisableWhen, "{ asset_type != 0 }")  # Show for Assets
-        parameters.append(subcategory_parm)
-        
-        # FX Subcategory
-        fx_subcategory_parm = hou.MenuParmTemplate("fx_subcategory", "Subcategory", 
-                                                  ["blacksmith_fx", "atmosphere", "flip", "pyro"],
-                                                  ["Blacksmith FX", "Atmosphere", "FLIP", "Pyro"])
-        fx_subcategory_parm.setDefaultValue(0)
-        fx_subcategory_parm.setConditional(hou.parmCondType.DisableWhen, "{ asset_type != 1 }")  # Show for FX
-        parameters.append(fx_subcategory_parm)
-        
-        # Materials Subcategory
-        materials_subcategory_parm = hou.MenuParmTemplate("materials_subcategory", "Subcategory", 
-                                                         ["blacksmith_materials", "redshift", "karma"],
-                                                         ["Blacksmith Materials", "Redshift", "Karma"])
-        materials_subcategory_parm.setDefaultValue(0)
-        materials_subcategory_parm.setConditional(hou.parmCondType.DisableWhen, "{ asset_type != 2 }")  # Show for Materials
-        parameters.append(materials_subcategory_parm)
-        
-        # HDAs Subcategory
-        hdas_subcategory_parm = hou.MenuParmTemplate("hdas_subcategory", "Subcategory", 
-                                                    ["blacksmith_hdas"],
-                                                    ["Blacksmith HDAs"])
-        hdas_subcategory_parm.setDefaultValue(0)
-        hdas_subcategory_parm.setConditional(hou.parmCondType.DisableWhen, "{ asset_type != 3 }")  # Show for HDAs
-        parameters.append(hdas_subcategory_parm)
+        # Subcategory dropdown
+        subcategory_parm = hou.MenuParmTemplate("subcategory", "Subcategory",
+                                               menu_items=("0", "1", "2"),
+                                               menu_labels=("Blacksmith Asset", "Megascans", "Kitbash"),
+                                               default_value=0)
+        subcategory_parm.setHelp("Select the subcategory for this asset")
+        atlas_parameters.append(subcategory_parm)
         
         # Render Engine
-        render_engine_parm = hou.MenuParmTemplate("render_engine", "Render Engine", 
-                                                 ["redshift", "karma"],
-                                                 ["Redshift", "Karma"])
-        render_engine_parm.setDefaultValue(0)  # Default to Redshift
-        parameters.append(render_engine_parm)
+        render_engine_parm = hou.MenuParmTemplate("render_engine", "Render Engine",
+                                                 menu_items=("0", "1"),
+                                                 menu_labels=("Redshift", "Karma"),
+                                                 default_value=0)
+        render_engine_parm.setHelp("Primary render engine for this asset")
+        atlas_parameters.append(render_engine_parm)
         
-        # Description
-        description_parm = hou.StringParmTemplate("description", "Description", 1)
-        description_parm.setDefaultValue([f"Atlas asset: {asset_name}"])
-        parameters.append(description_parm)
+        # Tags (keep this one)
+        tags_parm = hou.StringParmTemplate("tags", "Tags", 1)
+        tags_parm.setDefaultValue([""])
+        tags_parm.setHelp("Comma-separated tags for categorization (e.g., 'props, environment, medieval')")
+        atlas_parameters.append(tags_parm)
         
-        # Metadata Text Area
-        metadata_parm = hou.StringParmTemplate("metadata", "Metadata (for search)", 5)  # 5 lines
-        metadata_parm.setStringType(hou.stringParmType.Regular)
-        metadata_parm.setDefaultValue(["Enter searchable metadata keywords, descriptions, or notes here..."])
-        parameters.append(metadata_parm)
+        # === EXPORT SECTION ===
+        # Separator
+        separator = hou.SeparatorParmTemplate("export_sep")
+        atlas_parameters.append(separator)
         
-        # Tags
-        tags_parm = hou.StringParmTemplate("tags", "Search Tags", 1)
-        tags_parm.setDefaultValue(["helicopter, vehicle"])
-        parameters.append(tags_parm)
+        # Export button
+        export_button = hou.ButtonParmTemplate("export_atlas_asset", "Export Atlas Asset")
+        export_button.setHelp("Export this asset to the Atlas Library with auto-database insertion")
+        export_script = create_export_script()
+        export_button.setScriptCallback(export_script)
+        export_button.setScriptCallbackLanguage(hou.scriptLanguage.Python)
+        atlas_parameters.append(export_button)
         
-        # Export status
-        status_parm = hou.StringParmTemplate("export_status", "Export Status", 1)
-        status_parm.setDefaultValue(["Ready to export"])
-        status_parm.setReadOnly(True)
-        parameters.append(status_parm)
+        # Export status (read-only)
+        export_status = hou.StringParmTemplate("export_status", "Export Status", 1)
+        export_status.setDefaultValue(["Ready to export"])
+        export_status.setHelp("Current export status")
+        atlas_parameters.append(export_status)
         
-        # Export button - THE MAIN EXPORT FUNCTIONALITY
-        export_btn = hou.ButtonParmTemplate("export_atlas_asset", "🚀 Export Atlas Asset")
-        export_btn.setScriptCallback(create_comprehensive_export_script())
-        export_btn.setScriptCallbackLanguage(hou.scriptLanguage.Python)
-        parameters.append(export_btn)
+        # Add all Atlas parameters to the folder
+        for parm in atlas_parameters:
+            atlas_folder.addParmTemplate(parm)
         
-        # Info button
-        info_btn = hou.ButtonParmTemplate("atlas_info", "ℹ️ About Atlas")
-        info_btn.setScriptCallback('''
-info_text = """🏭 BLACKSMITH ATLAS EXPORT
-
-WORKFLOW:
-1. Configure asset name, category, description
-2. Add search tags (comma-separated)
-3. Click '🚀 Export Atlas Asset' button
-4. Asset saved with textures and metadata
-
-FEATURES:
-• Template-based perfect reconstruction  
-• Automatic texture extraction from materials
-• Multiple export formats (HIP, ABC, FBX)
-• Organized library structure
-
-LOCATION: /net/library/atlaslib/3D/Assets/{category}/
-
-Click the Export button to save this asset!"""
-
-hou.ui.displayMessage(info_text, title="Atlas Export Info")
-''')
-        info_btn.setScriptCallbackLanguage(hou.scriptLanguage.Python)
-        parameters.append(info_btn)
+        # Add the Atlas Export folder as a new tab to the parameter group
+        parm_group.append(atlas_folder)
         
-        # Create folder with the parameter list - correct syntax
-        atlas_folder = hou.FolderParmTemplate("atlas_export", "🏭 Atlas Export", parameters, hou.folderType.Collapsible)
-        atlas_folder.setDefaultValue(1)  # Open by default
+        # Apply the updated parameter group to the subnet
+        subnet.setParmTemplateGroup(parm_group)
         
-        # Add folder to parameter group
-        ptg.addParmTemplate(atlas_folder)
-        subnet.setParmTemplateGroup(ptg)
+        print(f"   📦 Total Atlas parameters: {len(atlas_parameters)}")
         
-        print(f"   ✅ Added Atlas export parameters successfully")
+        # Now make the standard switcher tabs invisible
+        try:
+            if subnet.parm("stdswitcher3"):
+                subnet.parm("stdswitcher3").set(1)  # Set to invisible
+                print(f"   🫥 Made stdswitcher3 invisible")
+            if subnet.parm("stdswitcher3_1"):
+                subnet.parm("stdswitcher3_1").set(1)  # Set to invisible  
+                print(f"   🫥 Made stdswitcher3_1 invisible")
+        except Exception as invisible_error:
+            print(f"   ⚠️ Could not set invisible: {invisible_error}")
+        
+        # Verify parameters were added
+        try:
+            if subnet.parm("asset_name"):
+                print(f"   ✅ asset_name parameter verified")
+            if subnet.parm("export_atlas_asset"):
+                print(f"   ✅ export_atlas_asset button verified")
+            if subnet.parm("asset_type"):
+                print(f"   ✅ asset_type parameter verified")
+        except Exception as verify_error:
+            print(f"   ⚠️ Parameter verification error: {verify_error}")
+        
         return True
         
     except Exception as e:
@@ -319,11 +286,12 @@ hou.ui.displayMessage(info_text, title="Atlas Export Info")
         traceback.print_exc()
         return False
 
-def create_comprehensive_export_script():
-    """Create the export callback script that calls your houdiniae.py logic"""
+def create_export_script():
+    """Create the export callback script - FIXED VERSION"""
     return '''
 # 🏭 BLACKSMITH ATLAS EXPORT SCRIPT
 import sys
+import os
 from pathlib import Path
 
 try:
@@ -343,7 +311,7 @@ try:
             importlib.reload(sys.modules[module_name])
             print(f"🔄 Reloaded: {module_name}")
     
-    from assetlibrary._3D.houdiniae import TemplateAssetExporter
+    from assetlibrary.houdini.houdiniae import TemplateAssetExporter
     
     subnet = hou.pwd()
     print(f"📦 Exporting from subnet: {subnet.path()}")
@@ -351,138 +319,152 @@ try:
     # Get parameters from subnet
     asset_name = subnet.parm("asset_name").eval().strip()
     asset_type_idx = int(subnet.parm("asset_type").eval())
-    description = subnet.parm("description").eval().strip()
-    metadata = subnet.parm("metadata").eval().strip()
     tags_str = subnet.parm("tags").eval().strip()
     render_engine_idx = int(subnet.parm("render_engine").eval())
     
-    # Validation
+    # Quick validation
     if not asset_name:
         subnet.parm("export_status").set("❌ Missing asset name")
         hou.ui.displayMessage("❌ Asset name is required!", severity=hou.severityType.Error)
-        raise Exception("Asset name required")
-    
-    # Convert asset type and get subcategory
-    asset_types = ["Assets", "FX", "Materials", "HDAs"]
-    asset_type = asset_types[asset_type_idx] if asset_type_idx < len(asset_types) else "Assets"
-    
-    # Get the appropriate subcategory based on asset type
-    subcategory = "Unknown"
-    if asset_type_idx == 0:  # Assets
-        subcategory_idx = int(subnet.parm("subcategory").eval())
-        subcategories = ["Blacksmith Asset", "Megascans", "Kitbash"]
-        subcategory = subcategories[subcategory_idx] if subcategory_idx < len(subcategories) else "Blacksmith Asset"
-    elif asset_type_idx == 1:  # FX
-        subcategory_idx = int(subnet.parm("fx_subcategory").eval())
-        subcategories = ["Blacksmith FX", "Atmosphere", "FLIP", "Pyro"]
-        subcategory = subcategories[subcategory_idx] if subcategory_idx < len(subcategories) else "Blacksmith FX"
-    elif asset_type_idx == 2:  # Materials
-        subcategory_idx = int(subnet.parm("materials_subcategory").eval())
-        subcategories = ["Blacksmith Materials", "Redshift", "Karma"]
-        subcategory = subcategories[subcategory_idx] if subcategory_idx < len(subcategories) else "Blacksmith Materials"
-    elif asset_type_idx == 3:  # HDAs
-        subcategory_idx = int(subnet.parm("hdas_subcategory").eval())
-        subcategories = ["Blacksmith HDAs"]
-        subcategory = subcategories[subcategory_idx] if subcategory_idx < len(subcategories) else "Blacksmith HDAs"
-    
-    # Get render engine
-    render_engines = ["Redshift", "Karma"]
-    render_engine = render_engines[render_engine_idx] if render_engine_idx < len(render_engines) else "Redshift"
-    
-    # Process tags
-    tags_list = [tag.strip() for tag in tags_str.split(',') if tag.strip()] if tags_str else []
-    
-    # Update status
-    subnet.parm("export_status").set("🔄 Exporting...")
-    
-    print(f"📋 EXPORT CONFIGURATION:")
-    print(f"   🏷️ Asset: {asset_name}")
-    print(f"   📂 Asset Type: {asset_type}")
-    print(f"   📋 Subcategory: {subcategory}")
-    print(f"   🎨 Render Engine: {render_engine}")
-    print(f"   📝 Description: {description}")
-    print(f"   📄 Metadata: {metadata[:100]}..." if len(metadata) > 100 else f"📄 Metadata: {metadata}")
-    print(f"   🏷️ Tags: {tags_list}")
-    
-    # Create extended tags list including metadata for search
-    extended_tags = tags_list.copy()
-    extended_tags.extend([asset_type.lower(), subcategory.lower().replace(' ', '_'), render_engine.lower()])
-    if metadata and metadata != "Enter searchable metadata keywords, descriptions, or notes here...":
-        # Add metadata words as tags
-        metadata_words = [word.strip().lower() for word in metadata.split() if len(word.strip()) > 2]
-        extended_tags.extend(metadata_words)
-    
-    # Create comprehensive metadata for frontend filtering  
-    from datetime import datetime
-    hierarchy_metadata = {
-        "dimension": "3D",  # Always 3D from Houdini
-        "asset_type": asset_type,  # Assets, FX, Materials, HDAs
-        "subcategory": subcategory,  # Blacksmith Asset, Megascans, etc.
-        "render_engine": render_engine,
-        "houdini_version": f"{hou.applicationVersion()[0]}.{hou.applicationVersion()[1]}.{hou.applicationVersion()[2]}",
-        "export_time": str(datetime.now()),
-        "description": description,
-        "tags": extended_tags,
-        "user_metadata": metadata  # Original user metadata
-    }
-
-    # Create your TemplateAssetExporter
-    exporter = TemplateAssetExporter(
-        asset_name=asset_name,
-        subcategory=subcategory,  # Just the subcategory name (e.g. "Blacksmith Asset")
-        description=description,
-        tags=extended_tags,
-        asset_type=asset_type,
-        render_engine=render_engine,
-        metadata=hierarchy_metadata  # Pass structured metadata
-    )
-    
-    print(f"✅ Created exporter with ID: {exporter.asset_id}")
-    print(f"📁 Export location: {exporter.asset_folder}")
-    
-    # Get nodes to export (children of subnet)
-    nodes_to_export = subnet.children()
-    if not nodes_to_export:
-        subnet.parm("export_status").set("❌ No nodes to export")
-        hou.ui.displayMessage("❌ No nodes found in subnet to export!", 
-                            severity=hou.severityType.Error)
-        raise Exception("No nodes to export")
-    
-    print(f"📦 Found {len(nodes_to_export)} nodes to export:")
-    for i, node in enumerate(nodes_to_export, 1):
-        print(f"   {i}. {node.name()} ({node.type().name()})")
-    
-    # CALL YOUR EXISTING EXPORT LOGIC
-    print("🚀 Starting template export with texture scanning...")
-    success = exporter.export_as_template(subnet, nodes_to_export)
-    
-    if success:
-        subnet.parm("export_status").set("✅ Export completed!")
+    else:
+        # Convert asset type and get subcategory
+        asset_types = ["Assets", "FX", "Materials", "HDAs"]
+        asset_type = asset_types[asset_type_idx] if asset_type_idx < len(asset_types) else "Assets"
         
-        success_msg = f"""✅ ATLAS ASSET EXPORT SUCCESSFUL!
+        # Get the subcategory
+        subcategory_idx = int(subnet.parm("subcategory").eval())
+        subcategory_options = {
+            0: ["Blacksmith Asset", "Megascans", "Kitbash"],
+            1: ["Blacksmith FX", "Atmosphere", "FLIP", "Pyro"],
+            2: ["Blacksmith Materials", "Redshift", "Karma"],
+            3: ["Blacksmith HDAs"]
+        }
+        
+        available_subcategories = subcategory_options.get(asset_type_idx, ["Blacksmith Asset"])
+        subcategory = available_subcategories[subcategory_idx] if subcategory_idx < len(available_subcategories) else available_subcategories[0]
+        
+        # Get render engine
+        render_engines = ["Redshift", "Karma"]
+        render_engine = render_engines[render_engine_idx] if render_engine_idx < len(render_engines) else "Redshift"
+        
+        # Process tags
+        tags_list = [tag.strip() for tag in tags_str.split(',') if tag.strip()] if tags_str else []
+        
+        # Update status
+        subnet.parm("export_status").set("🔄 Exporting...")
+        
+        print(f"📋 EXPORT CONFIGURATION:")
+        print(f"   🏷️ Asset: {asset_name}")
+        print(f"   📂 Asset Type: {asset_type}")
+        print(f"   📋 Subcategory: {subcategory}")
+        print(f"   🎨 Render Engine: {render_engine}")
+        print(f"   🏷️ Tags: {tags_list}")
+        
+        # Create extended tags list
+        extended_tags = tags_list.copy()
+        extended_tags.extend([asset_type.lower(), subcategory.lower().replace(' ', '_'), render_engine.lower()])
+        
+        # Create metadata
+        from datetime import datetime
+        hierarchy_metadata = {
+            "dimension": "3D",
+            "asset_type": asset_type,
+            "subcategory": subcategory,
+            "render_engine": render_engine,
+            "houdini_version": f"{hou.applicationVersion()[0]}.{hou.applicationVersion()[1]}.{hou.applicationVersion()[2]}",
+            "export_time": str(datetime.now()),
+            "tags": extended_tags
+        }
 
-🏷️ Asset: {asset_name}  
+        # Create TemplateAssetExporter
+        exporter = TemplateAssetExporter(
+            asset_name=asset_name,
+            subcategory=subcategory,
+            tags=extended_tags,
+            asset_type=asset_type,
+            render_engine=render_engine,
+            metadata=hierarchy_metadata
+        )
+        
+        print(f"✅ Created exporter with ID: {exporter.asset_id}")
+        print(f"📁 Export location: {exporter.asset_folder}")
+        
+        # Get nodes to export
+        nodes_to_export = subnet.children()
+        if not nodes_to_export:
+            subnet.parm("export_status").set("❌ No nodes to export")
+            hou.ui.displayMessage("❌ No nodes found in subnet to export!", severity=hou.severityType.Error)
+        else:
+            print(f"📦 Found {len(nodes_to_export)} nodes to export:")
+            for i, node in enumerate(nodes_to_export, 1):
+                print(f"   {i}. {node.name()} ({node.type().name()})")
+            
+            # CALL EXPORT LOGIC
+            print("🚀 Starting template export...")
+            success = exporter.export_as_template(subnet, nodes_to_export)
+            
+            if success:
+                subnet.parm("export_status").set("✅ Export completed!")
+                
+                # Add to ArangoDB Atlas_Library collection
+                try:
+                    print("\\n🗄️ ADDING TO ARANGODB...")
+                    print(f"🔍 Looking for metadata in: {exporter.asset_folder}")
+                    
+                    # Find the metadata.json file in the exported asset folder
+                    metadata_file = os.path.join(exporter.asset_folder, "metadata.json")
+                    print(f"🔍 Checking metadata file: {metadata_file}")
+                    
+                    if os.path.exists(metadata_file):
+                        print("✅ Metadata file found! Reading contents...")
+                        
+                        # Debug: Show metadata contents
+                        with open(metadata_file, 'r') as f:
+                            metadata_content = f.read()
+                        print(f"📄 Metadata content (first 500 chars): {metadata_content[:500]}...")
+                        
+                        # Import and call the database insertion
+                        from assetlibrary.houdini.auto_arango_insert import auto_insert_on_export
+                        print("✅ Imported auto_insert_on_export function")
+                        
+                        db_success = auto_insert_on_export(metadata_file)
+                        if db_success:
+                            print("✅ Successfully added to ArangoDB Atlas_Library collection!")
+                        else:
+                            print("❌ Failed to add to ArangoDB (check database connection)")
+                    else:
+                        print(f"❌ Metadata file not found: {metadata_file}")
+                        
+                        # Debug: List what files ARE in the folder
+                        try:
+                            folder_contents = os.listdir(exporter.asset_folder)
+                            print(f"📁 Folder contents: {folder_contents}")
+                        except:
+                            print(f"📁 Could not list folder contents")
+                        
+                except Exception as db_error:
+                    print(f"❌ Database insertion error: {db_error}")
+                    import traceback
+                    traceback.print_exc()
+                    # Don't fail the export if database fails - just log it
+                
+                success_msg = f"""✅ ATLAS ASSET EXPORT SUCCESSFUL!
+                
+🏷️ Asset: {asset_name}
 🆔 Asset ID: {exporter.asset_id}
 📂 Category: Assets/{subcategory}/
 📍 Location: {exporter.asset_folder}
 
-📦 EXPORTED FILES:
-• Template: Perfect reconstruction with saveChildrenToFile()
-• Textures: Comprehensive material scanning & copying
-• Metadata: Searchable asset information
-• ABC/FBX: Cross-DCC compatibility
-
-🎯 The asset is now in the Atlas library!"""
-        
-        hou.ui.displayMessage(success_msg, title="🎉 Atlas Export Complete")
-        print("🎉 EXPORT SUCCESS!")
-        print(f"📍 Location: {exporter.asset_folder}")
-        
-    else:
-        subnet.parm("export_status").set("❌ Export failed")
-        hou.ui.displayMessage("❌ Export failed! Check console for details.", 
-                            severity=hou.severityType.Error)
-        print("❌ EXPORT FAILED - See console")
+🎯 The asset is now in the Atlas library!
+🗄️ Added to ArangoDB Atlas_Library collection"""
+                
+                hou.ui.displayMessage(success_msg, title="🎉 Atlas Export Complete")
+                print("🎉 EXPORT SUCCESS!")
+                print(f"📍 Location: {exporter.asset_folder}")
+            else:
+                subnet.parm("export_status").set("❌ Export failed")
+                hou.ui.displayMessage("❌ Export failed! Check console for details.", severity=hou.severityType.Error)
+                print("❌ EXPORT FAILED - See console")
 
 except Exception as e:
     error_msg = f"Export error: {str(e)}"
@@ -493,8 +475,7 @@ except Exception as e:
     except:
         pass
     
-    hou.ui.displayMessage(f"❌ {error_msg}\\n\\nCheck console for details.", 
-                        severity=hou.severityType.Error)
+    hou.ui.displayMessage(f"❌ {error_msg}\\n\\nCheck console for details.", severity=hou.severityType.Error)
     import traceback
     traceback.print_exc()
 '''
@@ -503,5 +484,5 @@ except Exception as e:
 if __name__ == "__main__":
     copy_selected_to_atlas_asset()
 
-print("📦 Atlas copy-to-asset script loaded")
+print("📦 Atlas copy-to-asset script loaded (FIXED VERSION)")
 print("💡 Run: copy_selected_to_atlas_asset()")

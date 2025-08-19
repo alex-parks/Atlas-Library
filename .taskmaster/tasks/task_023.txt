@@ -1,0 +1,22 @@
+# Task ID: 23
+# Title: Create Database Integration Script Foundation
+# Status: done
+# Dependencies: None
+# Priority: high
+# Description: Develop the standalone houdini_arango_insert.py script for ArangoDB database operations
+# Details:
+Create the core `houdini_arango_insert.py` script in `backend/assetlibrary/houdini/tools/` that handles ArangoDB connections and document insertion. This script should:
+
+- Implement `HoudiniArangoInserter` class with connection management
+- Support Docker internal network communication (`arangodb:8529`)
+- Load configuration from project root `.env` file
+- Include comprehensive error handling with graceful fallback
+- Support both single asset and batch operations
+- Validate metadata schema before insertion
+- Handle connection timeouts with exponential backoff retry logic
+
+Key dependencies: python-arango>=7.5.0, pathlib, json, datetime, logging
+Implementation approach: Build upon existing `auto_arango_insert.py` patterns but optimize for direct Houdini integration
+
+# Test Strategy:
+Unit tests for database connection, metadata validation, document insertion, and error handling scenarios. Integration tests with Docker ArangoDB container. Test connection failure scenarios and retry logic.

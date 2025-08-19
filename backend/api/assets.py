@@ -206,26 +206,37 @@ async def create_asset(asset_request: AssetCreateRequest):
     
     try:
         import uuid
-        asset_id = uuid.uuid4().hex[:8]
+        asset_id = f"{asset_request.name}_{uuid.uuid4().hex[:8]}"
+        
+        # Create asset document for ArangoDB
         asset_data = {
             '_key': asset_id,
             'id': asset_id,
             'name': asset_request.name,
             'category': asset_request.category,
-            'paths': asset_request.paths,
+            'asset_type': asset_request.metadata.get('hierarchy', {}).get('asset_type', 'Assets'),
+            'dimension': '3D',
+            'hierarchy': asset_request.metadata.get('hierarchy', {}),
             'metadata': asset_request.metadata,
+            'paths': asset_request.paths,
             'file_sizes': asset_request.file_sizes,
-            'created_at': datetime.now().isoformat(),
-            'dependencies': {},
-            'copied_files': []
+            'tags': asset_request.tags if hasattr(asset_request, 'tags') else [],
+            'created_at': asset_request.created_at if hasattr(asset_request, 'created_at') else datetime.now().isoformat(),
+            'created_by': asset_request.created_by if hasattr(asset_request, 'created_by') else 'unknown',
+            'status': 'active'
         }
-        from backend.assetlibrary._3D.houdiniae import ArangoDBHandler
-        environment = os.getenv('ATLAS_ENV', 'development')
-        arango_config = BlacksmithAtlasConfig.get_database_config(environment)
-        db_handler = ArangoDBHandler(arango_config)
-        success = db_handler.save_asset(asset_data)
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to create asset")
+        
+        # Use existing asset queries to insert
+        asset_queries = get_asset_queries()
+        if not asset_queries:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Insert into ArangoDB using collection
+        collection = asset_queries.db.collection('Atlas_Library')
+        result = collection.insert(asset_data)
+        
+        logger.info(f"✅ Asset inserted with key: {result['_key']}")
+        
         return convert_asset_to_response(asset_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating asset: {str(e)}")

@@ -1,0 +1,28 @@
+# Task ID: 26
+# Title: Reorganize Shelf Tool File Structure
+# Status: pending
+# Dependencies: None
+# Priority: medium
+# Description: Restructure shelf tools according to specified CAA folder organization
+# Details:
+Reorganize the Houdini shelf tool file structure as specified in the PRD:
+
+- Create `CAA/` folder inside `backend/assetlibrary/houdini/shelftools/`
+- Move `Create_Atlas_Asset.py` to `CAA/Create_Atlas_Asset.py`
+- Create `create_atlas_asset_implementation.py` in `CAA/` folder
+- Update `Create_Atlas_Asset.py` to be a lightweight delegation script
+- Ensure backward compatibility with existing shelf button configuration
+- Update import paths and module references
+- Maintain all existing functionality while improving organization
+
+File structure:
+```
+shelftools/
+├── CAA/
+│   ├── Create_Atlas_Asset.py (lightweight delegator)
+│   └── create_atlas_asset_implementation.py (core logic)
+└── houdini_arango_insert.py (database operations)
+```
+
+# Test Strategy:
+Verify shelf button functionality after reorganization. Test import paths and ensure no regression in existing workflow. Validate file organization matches specification.

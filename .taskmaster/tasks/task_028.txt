@@ -1,0 +1,25 @@
+# Task ID: 28
+# Title: Implement Docker Environment Communication
+# Status: pending
+# Dependencies: 23
+# Priority: high
+# Description: Establish reliable communication between Houdini and Docker containers
+# Details:
+Implement robust Docker container communication for database operations:
+
+- Configure connection to ArangoDB via internal Docker network (`arangodb:8529`)
+- Handle host-to-container path mapping for asset files
+- Implement environment variable loading from project root `.env`
+- Support both direct Python imports and subprocess execution methods
+- Add comprehensive error handling for Docker connectivity issues
+- Implement connection pooling and timeout management
+- Support development and production environment configurations
+
+Docker integration specifics:
+- Host path: `/net/library/atlaslib/...` → Container path: `/app/assets/...`
+- Use `blacksmith-atlas-backend` container for database access
+- Leverage existing docker-compose.yml network configuration
+- Environment variables: ARANGO_HOST=arangodb, ARANGO_PORT=8529
+
+# Test Strategy:
+Test Docker container communication, path mapping accuracy, and environment configuration loading. Verify connection reliability under various network conditions and container states.

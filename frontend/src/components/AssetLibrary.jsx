@@ -201,20 +201,25 @@ const AssetLibrary = () => {
     setSelectedDimension(null);
     setSelectedCategory(null);
     setSelectedSubcategory(null);
-    setAssets([]);
+    setActiveFilters([]); // Clear navigation filters when going back to dimensions
+    // Don't clear assets - keep them loaded for filtering
   };
 
   const handleBackToCategories = () => {
     setCurrentView('category');
     setSelectedCategory(null);
     setSelectedSubcategory(null);
-    setAssets([]);
+    // Remove category and subcategory filters but keep dimension filter
+    setActiveFilters(prev => prev.filter(f => f.type === 'dimension'));
+    // Don't clear assets - keep them loaded for filtering
   };
 
   const handleBackToSubcategories = () => {
     setCurrentView('subcategory');
     setSelectedSubcategory(null);
-    setAssets([]);
+    // Remove subcategory filters but keep dimension and category filters
+    setActiveFilters(prev => prev.filter(f => f.type === 'dimension' || f.type === 'category'));
+    // Don't clear assets - keep them loaded for filtering
   };
 
   const loadAssets = () => {

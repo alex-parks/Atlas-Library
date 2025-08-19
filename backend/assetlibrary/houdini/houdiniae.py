@@ -782,50 +782,95 @@ class TemplateAssetExporter:
             
             print(f"   📋 Created metadata: {metadata_file}")
             
-            # Auto-insert into ArangoDB via Docker (this is the main database sync method)
+            # Auto-insert into ArangoDB using enhanced HoudiniArangoInserter
             try:
-                print(f"   🗄️ Auto-inserting into ArangoDB via Docker...")
+                print(f"   🗄️ Syncing to ArangoDB database...")
                 
-                # Method 1: Try direct import
                 success = False
+                error_message = ""
+                
+                # Method 1: Try direct integration with HoudiniArangoInserter
                 try:
                     # Import with absolute path to avoid import issues from Houdini
                     import sys
                     from pathlib import Path
                     script_dir = Path(__file__).parent
-                    sys.path.insert(0, str(script_dir))
+                    tools_dir = script_dir / "tools"
+                    sys.path.insert(0, str(tools_dir))
+                    sys.path.insert(0, str(script_dir.parent))  # For config imports
                     
-                    import docker_auto_insert
-                    success = docker_auto_insert.docker_auto_insert(str(metadata_file))
-                    print(f"   📋 Direct import method: {'✅ Success' if success else '❌ Failed'}")
+                    from houdini_arango_insert import HoudiniArangoInserter
                     
-                except Exception as import_error:
-                    print(f"   ⚠️ Direct import failed: {import_error}")
+                    # Initialize inserter and process the exported asset
+                    inserter = HoudiniArangoInserter(environment='development')
                     
-                    # Method 2: Fallback to subprocess call
+                    if inserter.is_connected():
+                        success = inserter.process_exported_asset(str(self.asset_folder))
+                        if success:
+                            print(f"   ✅ Direct database integration successful")
+                        else:
+                            error_message = "HoudiniArangoInserter processing failed"
+                            print(f"   ❌ Direct integration failed: {error_message}")
+                    else:
+                        error_message = "Database connection failed"
+                        print(f"   ⚠️ Database not connected: {error_message}")
+                    
+                except Exception as direct_error:
+                    error_message = f"Direct integration error: {str(direct_error)}"
+                    print(f"   ⚠️ Direct integration failed: {error_message}")
+                    
+                    # Method 2: Fallback to containerized execution
                     try:
-                        print(f"   🔄 Trying subprocess fallback...")
+                        print(f"   🔄 Trying containerized fallback...")
                         import subprocess
-                        script_path = Path(__file__).parent / "docker_auto_insert.py"
                         
+                        # Execute database insertion in Docker container
                         cmd = [
-                            "python", str(script_path), 
-                            "--metadata", str(metadata_file)
+                            "docker", "exec", "blacksmith-atlas-backend",
+                            "python", "-c", f"""
+import sys
+sys.path.insert(0, '/app/backend')
+
+try:
+    from assetlibrary.houdini.tools.houdini_arango_insert import HoudiniArangoInserter
+    
+    # Convert host path to container path if needed
+    host_path = '{str(self.asset_folder)}'
+    container_path = host_path.replace('/net/library/atlaslib', '/app/assets')
+    
+    inserter = HoudiniArangoInserter(environment='development')
+    
+    if inserter.is_connected():
+        success = inserter.process_exported_asset(container_path)
+        if success:
+            print('SUCCESS: Database sync completed')
+        else:
+            print('ERROR: Processing failed')
+    else:
+        print('ERROR: Database connection failed')
+        
+except Exception as e:
+    print(f'ERROR: {{str(e)}}')
+    import traceback
+    traceback.print_exc()
+"""
                         ]
                         
-                        result = subprocess.run(cmd, capture_output=True, text=True, cwd=Path(__file__).parent)
-                        success = result.returncode == 0
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                         
-                        if result.stdout:
-                            print(f"   📄 Output: {result.stdout[-200:]}")  # Show last 200 chars
-                        if result.stderr:
-                            print(f"   ⚠️ Errors: {result.stderr[-200:]}")
+                        if result.returncode == 0 and "SUCCESS:" in result.stdout:
+                            success = True
+                            print(f"   ✅ Containerized database sync successful")
+                        else:
+                            error_message = f"Container execution failed: {result.stderr or result.stdout}"
+                            print(f"   ❌ Containerized sync failed: {error_message}")
                             
-                        print(f"   📋 Subprocess method: {'✅ Success' if success else '❌ Failed'}")
-                        
-                    except Exception as subprocess_error:
-                        print(f"   ❌ Subprocess fallback failed: {subprocess_error}")
-                        success = False
+                    except subprocess.TimeoutExpired:
+                        error_message = "Database sync timeout (60s)"
+                        print(f"   ⏰ Database sync timed out")
+                    except Exception as container_error:
+                        error_message = f"Container fallback error: {str(container_error)}"
+                        print(f"   ❌ Container fallback failed: {error_message}")
                 
                 # Update metadata with sync status
                 if success:

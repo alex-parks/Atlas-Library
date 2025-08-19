@@ -32,7 +32,7 @@ class BlacksmithAtlasConfig:
                 'username': os.getenv('ARANGO_USER', 'root'),
                 'password': os.getenv('ARANGO_PASSWORD', ''),
                 'collections': {
-                    'assets': 'Asset_Library'
+                    'assets': '3D_Atlas_Library'
                 }
             },
             # Production (shared) configuration
@@ -42,7 +42,7 @@ class BlacksmithAtlasConfig:
                 'username': os.getenv('ARANGO_USER', 'root'),
                 'password': os.getenv('ARANGO_PASSWORD', 'atlas_password'),
                 'collections': {
-                    'assets': 'Asset_Library'
+                    'assets': '3D_Atlas_Library'
                 }
             }
         }

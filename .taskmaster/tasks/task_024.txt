@@ -1,0 +1,34 @@
+# Task ID: 24
+# Title: Implement Metadata Processing and Schema Transformation
+# Status: done
+# Dependencies: 23
+# Priority: high
+# Description: Build metadata.json processing pipeline with database schema compliance
+# Details:
+Implement comprehensive metadata processing in the `HoudiniArangoInserter` class:
+
+- Parse metadata.json from exported asset folders
+- Transform hierarchical metadata to match ArangoDB `Atlas_Library` schema
+- Generate required database fields (_key, created_at, updated_at, folder_path)
+- Preserve all existing metadata while ensuring compatibility
+- Handle asset ID generation and validation
+- Map Houdini-specific fields to database equivalents
+- Support schema versioning for future updates
+
+Schema compliance requirements:
+```json
+{
+  "_key": "asset_id",
+  "id": "asset_id",
+  "name": "Asset Name",
+  "asset_type": "Assets|FX|Materials|HDAs",
+  "category": "Subcategory Name",
+  "dimension": "3D",
+  "hierarchy": {...},
+  "metadata": {...},
+  "paths": {...}
+}
+```
+
+# Test Strategy:
+Validate metadata parsing accuracy, schema transformation correctness, and field mapping integrity. Test with various asset types and metadata configurations.

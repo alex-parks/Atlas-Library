@@ -1,0 +1,320 @@
+# Houdini to ArangoDB Integration - Product Requirements Document
+
+## Executive Summary
+
+This PRD outlines the integration of Houdini asset export workflow with ArangoDB database population, enabling automated database updates when assets are exported from Houdini via the existing shelf button workflow.
+
+## Current State Analysis
+
+### Existing Workflow
+1. **Houdini Shelf Button** (`🏭 Create`) uses `Create_Atlas_Asset.py`
+2. **Asset Export Process** leverages `TemplateAssetExporter` class from `houdiniae.py`
+3. **Template-Based Export** uses Houdini's native `saveChildrenToFile()` method
+4. **Metadata Generation** creates `metadata.json` with comprehensive asset information
+5. **File Organization** saves assets to `/net/library/atlaslib/3D/Assets/{category}/`
+
+### Target Database Structure
+- **Database**: `Blacksmith_Atlas` (ArangoDB instance in Docker)
+- **Collection**: `Atlas_Library`
+- **Connection**: Internal Docker network communication only
+- **Environment**: Configuration via `.env` file in project root
+
+## Requirements
+
+### Functional Requirements
+
+#### FR-001: Database Integration Layer
+- **Description**: Create a standalone script that handles ArangoDB connections and asset document insertion
+- **Acceptance Criteria**:
+  - Connects to ArangoDB container using existing environment configuration
+  - Validates database and collection existence before operations
+  - Handles connection errors gracefully with informative logging
+  - Supports both single asset insertion and batch operations
+
+#### FR-002: Metadata JSON Processing
+- **Description**: Process the exported metadata JSON file and transform it for database storage
+- **Acceptance Criteria**:
+  - Reads metadata.json from exported asset folder
+  - Validates required fields (id, name, asset_type, category)
+  - Transforms hierarchical metadata structure to match database schema
+  - Adds database-specific fields (created_at, updated_at, folder_path)
+  - Preserves all existing metadata while ensuring database compatibility
+
+#### FR-003: Automated Database Population
+- **Description**: Integrate database insertion into the existing export workflow
+- **Acceptance Criteria**:
+  - Triggers automatically after successful asset export
+  - Uses the same asset ID generated during export
+  - Updates existing records if asset already exists in database
+  - Maintains export workflow reliability (database failures don't break export)
+  - Provides user feedback on database operations through Houdini interface
+
+#### FR-004: File Organization and Structure
+- **Description**: Reorganize shelf tool files according to specified structure
+- **Acceptance Criteria**:
+  - Create `CAA` folder inside `shelftools` directory
+  - Move `Create_Atlas_Asset.py` to `CAA/Create_Atlas_Asset.py`
+  - Create `create_atlas_asset_implementation.py` in `CAA/` folder
+  - Create standalone `houdini_arango_insert.py` for database operations
+  - Maintain backwards compatibility with existing shelf button
+
+### Technical Requirements
+
+#### TR-001: Database Connection Management
+- **Docker Network Communication**: Use internal Docker network (`atlas-network`)
+- **Environment Configuration**: Read from existing `.env` file
+- **Connection Parameters**:
+  - Host: `arangodb` (Docker service name)
+  - Port: `8529`
+  - Database: `blacksmith_atlas`
+  - Collection: `Atlas_Library`
+  - Authentication: Root credentials from environment
+
+#### TR-002: Document Schema Compliance
+- **Required Fields**:
+  ```json
+  {
+    "_key": "asset_id",
+    "id": "asset_id", 
+    "name": "Asset Name",
+    "asset_type": "Assets|FX|Materials|HDAs",
+    "category": "Subcategory Name",
+    "dimension": "3D",
+    "hierarchy": {
+      "dimension": "3D", 
+      "asset_type": "Assets",
+      "subcategory": "Blacksmith Asset"
+    },
+    "metadata": {
+      "render_engine": "Redshift|Karma",
+      "created_by": "artist_name",
+      "houdini_version": "20.0",
+      "description": "Asset description",
+      "tags": []
+    },
+    "paths": {
+      "asset_folder": "/net/library/atlaslib/path",
+      "metadata_file": "/path/to/metadata.json"
+    },
+    "created_at": "ISO_timestamp",
+    "updated_at": "ISO_timestamp"
+  }
+  ```
+
+#### TR-003: Error Handling and Logging
+- **Database Connection Failures**: Continue export process, log error
+- **Document Insertion Failures**: Log detailed error, provide user notification
+- **Schema Validation Failures**: Log validation errors, attempt graceful degradation
+- **Network Issues**: Implement retry logic with exponential backoff
+
+## Implementation Plan
+
+### Phase 1: Database Integration Script
+
+#### File: `houdini_arango_insert.py`
+**Location**: `backend/assetlibrary/houdini/tools/`
+**Purpose**: Standalone database integration script
+
+**Key Functions**:
+```python
+class HoudiniArangoInserter:
+    def __init__(self):
+        """Initialize with Docker environment configuration"""
+        
+    def connect_to_database(self):
+        """Establish connection to ArangoDB container"""
+        
+    def validate_metadata(self, metadata_dict):
+        """Validate and transform metadata for database"""
+        
+    def insert_asset_document(self, metadata_dict):
+        """Insert or update asset document in Atlas_Library collection"""
+        
+    def process_exported_asset(self, asset_folder_path):
+        """Main function to process exported asset and update database"""
+```
+
+**Dependencies**:
+- `python-arango` (ArangoDB Python driver)
+- `pathlib` (path handling)
+- `json` (metadata processing)
+- `datetime` (timestamp generation)
+- `logging` (error handling)
+
+### Phase 2: Implementation Integration
+
+#### File: `create_atlas_asset_implementation.py`
+**Location**: `shelftools/CAA/`
+**Purpose**: Core implementation logic combining export and database operations
+
+**Key Functions**:
+```python
+def create_atlas_asset_complete_workflow():
+    """
+    Complete workflow that:
+    1. Runs existing template export process
+    2. Calls database insertion
+    3. Provides unified user feedback
+    """
+    
+def export_asset_and_populate_database(subnet):
+    """
+    Enhanced export function that:
+    1. Performs template-based export using existing TemplateAssetExporter
+    2. Reads generated metadata.json
+    3. Calls HoudiniArangoInserter to populate database
+    4. Handles any database errors gracefully
+    """
+    
+def update_shelf_button_interface(subnet, success_status, db_status):
+    """Update Houdini interface with export and database status"""
+```
+
+### Phase 3: Shelf Tool Reorganization
+
+#### File: `Create_Atlas_Asset.py`
+**Location**: `shelftools/CAA/Create_Atlas_Asset.py`
+**Purpose**: Minimal shelf button script that delegates to implementation
+
+```python
+# Lightweight shelf button script
+import sys
+from pathlib import Path
+
+# Add implementation path
+implementation_path = Path(__file__).parent
+sys.path.insert(0, str(implementation_path))
+
+from create_atlas_asset_implementation import create_atlas_asset_complete_workflow
+
+try:
+    create_atlas_asset_complete_workflow()
+except Exception as e:
+    hou.ui.displayMessage(f"Atlas Asset Creation Error: {e}", 
+                         severity=hou.severityType.Error)
+```
+
+## Database Operation Details
+
+### Connection Strategy
+1. **Use Docker Service Name**: Connect to `arangodb:8529` (internal network)
+2. **Environment Loading**: Read credentials from project root `.env` file
+3. **Connection Validation**: Test connection before attempting operations
+4. **Graceful Fallback**: Continue export process if database unavailable
+
+### Document Insertion Logic
+1. **Read Metadata**: Load `metadata.json` from exported asset folder
+2. **Transform Data**: Convert Houdini metadata to database schema
+3. **Generate Keys**: Use existing asset ID as document `_key`
+4. **Upsert Operation**: Insert new or update existing document
+5. **Index Updates**: Ensure search indexes are updated
+
+### Error Scenarios and Handling
+1. **Database Unavailable**: Log error, continue export, notify user
+2. **Collection Missing**: Attempt to create collection, fallback to logging
+3. **Schema Validation Failed**: Log specifics, insert partial document
+4. **Network Timeout**: Retry with exponential backoff (3 attempts max)
+
+## User Experience Impact
+
+### Existing Workflow (Preserved)
+1. User selects nodes in Houdini
+2. Clicks `🏭 Create` shelf button
+3. Configures asset parameters in subnet
+4. Clicks `🚀 Export Atlas Asset` button
+5. Receives success confirmation
+
+### Enhanced Workflow (New)
+1. **Same as above steps 1-4**
+2. **Export Process**: Template export + database population
+3. **Enhanced Feedback**: 
+   - "✅ Asset exported to library"
+   - "📊 Database updated successfully" 
+   - OR "⚠️ Database unavailable - asset saved locally"
+
+### No Breaking Changes
+- All existing functionality preserved
+- Database integration is additive only
+- Failure cases degrade gracefully
+- Artist workflow remains unchanged
+
+## Success Metrics
+
+### Technical Metrics
+- **Database Connection Success Rate**: >95% for stable Docker environment
+- **Document Insertion Success Rate**: >99% when database accessible
+- **Export Process Reliability**: No degradation from current baseline
+- **Error Recovery**: All database failures handled without breaking export
+
+### User Experience Metrics
+- **Workflow Disruption**: Zero additional clicks or steps required
+- **Feedback Clarity**: Clear status messages for both export and database operations
+- **Performance Impact**: <2 second addition to total export time
+
+## Testing Strategy
+
+### Unit Testing
+- Database connection with various environment configurations
+- Metadata transformation for different asset types
+- Error handling for each failure scenario
+- Document schema validation
+
+### Integration Testing
+- End-to-end workflow from Houdini shelf button to database
+- Docker container communication validation
+- Environment configuration testing
+- Concurrent export operations
+
+### User Acceptance Testing
+- Artist workflow validation (no disruption)
+- Error message clarity and actionability
+- Performance impact assessment
+- Database consistency verification
+
+## Deployment Strategy
+
+### Development Environment
+1. **File Organization**: Create `CAA` folder and move files
+2. **Database Script**: Implement `houdini_arango_insert.py`
+3. **Integration Layer**: Create `create_atlas_asset_implementation.py`
+4. **Testing**: Validate against running Docker environment
+
+### Production Deployment
+1. **Backup Current**: Save existing working shelf tools
+2. **Gradual Rollout**: Deploy to test artists first
+3. **Monitoring**: Watch for database performance impact
+4. **Rollback Plan**: Quick revert to previous shelf tools if needed
+
+## Risk Mitigation
+
+### Technical Risks
+- **Database Performance**: Monitor insertion times, optimize if needed
+- **Docker Dependencies**: Ensure ArangoDB container reliability
+- **Network Issues**: Implement robust retry and fallback mechanisms
+- **Schema Evolution**: Design flexible document structure
+
+### User Impact Risks
+- **Workflow Disruption**: Extensive testing before deployment
+- **Performance Degradation**: Benchmark current vs new workflow
+- **Error Confusion**: Clear, actionable error messages
+- **Feature Regression**: Maintain all existing export functionality
+
+## Future Considerations
+
+### Scalability
+- **Batch Operations**: Support multiple asset database updates
+- **Background Processing**: Queue database operations for large exports
+- **Caching**: Cache database connections for performance
+- **Monitoring**: Add database operation metrics and alerting
+
+### Feature Enhancements
+- **Asset Versioning**: Track asset updates in database
+- **Usage Analytics**: Monitor which assets are exported/used
+- **Search Integration**: Enable Houdini-based asset search
+- **Dependency Tracking**: Link related assets in database
+
+## Conclusion
+
+This integration provides a seamless bridge between Houdini asset creation and database population while maintaining the reliability and simplicity of the existing template-based export system. The implementation prioritizes backwards compatibility and graceful error handling to ensure that database issues never disrupt the core asset export workflow.
+
+By organizing the code into three focused files and leveraging the existing Docker infrastructure, this solution provides a robust foundation for future database-driven features while requiring minimal changes to the current artist workflow.
