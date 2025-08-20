@@ -82,6 +82,8 @@ class AtlasMetadataIngester:
                 "template_file": metadata.get("template_file"),
                 "source_hip_file": metadata.get("source_hip_file")
             },
+            "created_at": metadata.get("created_at"),
+            "created_by": metadata.get("created_by"),
             "metadata": {
                 # Core asset information
                 "id": metadata.get("id"),  # Include the UID_Name ID for proper key assignment
@@ -113,6 +115,9 @@ class AtlasMetadataIngester:
                 # Database sync status
                 "database_synced": metadata.get("database_synced", False),
                 "database_sync_error": metadata.get("database_sync_error"),
+                
+                # Creator information (preserve original)
+                "created_by": metadata.get("created_by"),
                 
                 # Ingestion metadata
                 "ingested_at": datetime.now().isoformat(),

@@ -59,6 +59,9 @@ class AssetCreateRequest(BaseModel):
     paths: dict
     metadata: dict = {}
     file_sizes: dict = {}
+    tags: List[str] = []
+    created_at: Optional[str] = None
+    created_by: Optional[str] = None
 
 def find_actual_thumbnail(asset_data: dict) -> Optional[str]:
     asset_id = asset_data.get('_key', asset_data.get('id', ''))
@@ -108,10 +111,8 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
     
     # Debug: Print asset data structure
     logger.info(f"🔍 Raw asset_data keys: {list(asset_data.keys())}")
-    logger.info(f"🔍 Raw metadata: {metadata}")
-    logger.info(f"🔍 Hierarchy: {asset_data.get('hierarchy', {})}")
-    logger.info(f"🔍 Category: {asset_data.get('category')}")
-    logger.info(f"🔍 Asset Type: {asset_data.get('asset_type')}")
+    logger.info(f"🔍 Created at value: {asset_data.get('created_at')} (type: {type(asset_data.get('created_at'))})")
+    logger.info(f"🔍 Created by value: {asset_data.get('created_by')} (type: {type(asset_data.get('created_by'))})")
     
     # Add hierarchy data from top-level fields if metadata is structured
     if isinstance(metadata, dict):
@@ -132,7 +133,7 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
         file_sizes=asset_data.get('file_sizes', {}),
         tags=asset_data.get('tags', []),
         metadata=metadata,  # Now includes hierarchy data
-        created_at=asset_data.get('created_at', datetime.now().isoformat()),
+        created_at=asset_data.get('created_at') or datetime.now().isoformat(),
         thumbnail_path=thumbnail_url,
         artist=artist,
         file_format="USD",
@@ -228,25 +229,41 @@ async def create_asset(asset_request: AssetCreateRequest):
         import uuid
         import re
         
-        # Check if metadata contains an ID in UID_Name format (from Houdini export)
-        existing_id = asset_request.metadata.get('id') if asset_request.metadata else None
-        print(f"🔴 DEBUG: asset_request.metadata = {asset_request.metadata}")
-        print(f"🔴 DEBUG: existing_id from metadata = {existing_id}")
+        # Extract ID and name from metadata
+        metadata_id = asset_request.metadata.get('id') if asset_request.metadata else None
+        asset_name = asset_request.name
         
-        if existing_id and '_' in existing_id and len(existing_id.split('_')[0]) == 8:
-            # Use existing ID from Houdini export (already in UID_Name format)
-            asset_id = existing_id
-            print(f"🔴 DEBUG: Using existing asset ID from metadata: {asset_id}")
+        print(f"🔴 DEBUG: asset_request.metadata = {asset_request.metadata}")
+        print(f"🔴 DEBUG: metadata_id = {metadata_id}")
+        print(f"🔴 DEBUG: asset_name = {asset_name}")
+        
+        if metadata_id:
+            # For new Houdini exports: metadata_id is just the UID (e.g., "B6A48C5B")
+            # For legacy exports: metadata_id might be the full format (e.g., "B6A48C5B_atlas_asset")
+            
+            # Extract UID part if metadata_id contains underscore (legacy format)
+            if '_' in metadata_id:
+                uid_part = metadata_id.split('_')[0]
+                asset_key = metadata_id  # Use full format for _key
+                asset_id = uid_part      # Use just UID for document id
+                print(f"🔴 DEBUG: Legacy format - _key: {asset_key}, id: {asset_id}")
+            else:
+                # New format: metadata_id is just the UID
+                sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
+                asset_key = f"{metadata_id}_{sanitized_name}"  # Create full format for _key
+                asset_id = metadata_id                         # Use UID for document id
+                print(f"🔴 DEBUG: New format - _key: {asset_key}, id: {asset_id}")
         else:
-            # Generate new asset ID in UID_Name format
-            sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_request.name)
+            # Generate new asset ID and key
+            sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
             uid = uuid.uuid4().hex[:8].upper()
-            asset_id = f"{uid}_{sanitized_name}"
-            print(f"🔴 DEBUG: Generated new asset ID: {asset_id}")
+            asset_key = f"{uid}_{sanitized_name}"
+            asset_id = uid
+            print(f"🔴 DEBUG: Generated new - _key: {asset_key}, id: {asset_id}")
         
         # Create asset document for ArangoDB
         asset_data = {
-            '_key': asset_id,
+            '_key': asset_key,
             'id': asset_id,
             'name': asset_request.name,
             'category': asset_request.category,
@@ -257,8 +274,8 @@ async def create_asset(asset_request: AssetCreateRequest):
             'paths': asset_request.paths,
             'file_sizes': asset_request.file_sizes,
             'tags': asset_request.tags if hasattr(asset_request, 'tags') else [],
-            'created_at': asset_request.created_at if hasattr(asset_request, 'created_at') else datetime.now().isoformat(),
-            'created_by': asset_request.created_by if hasattr(asset_request, 'created_by') else 'unknown',
+            'created_at': getattr(asset_request, 'created_at', None) or datetime.now().isoformat(),
+            'created_by': getattr(asset_request, 'created_by', None) or 'unknown',
             'status': 'active'
         }
         
@@ -273,7 +290,10 @@ async def create_asset(asset_request: AssetCreateRequest):
         
         logger.info(f"✅ Asset inserted with key: {result['_key']}")
         
-        return convert_asset_to_response(asset_data)
+        # Get the inserted document from database for proper response
+        inserted_asset = collection.get(result['_key'])
+        
+        return convert_asset_to_response(inserted_asset)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating asset: {str(e)}")
 
@@ -295,8 +315,8 @@ async def update_asset(asset_id: str, asset_request: AssetCreateRequest):
         
         # Create updated asset document
         asset_data = {
-            '_key': asset_id,
-            'id': asset_id,
+            '_key': asset_id,  # Keep existing _key
+            'id': asset_request.metadata.get('id') if asset_request.metadata else asset_id,
             'name': asset_request.name,
             'category': asset_request.category,
             'asset_type': asset_request.metadata.get('hierarchy', {}).get('asset_type', 'Assets'),

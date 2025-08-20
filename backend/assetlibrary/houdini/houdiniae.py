@@ -71,6 +71,34 @@ class TemplateAssetExporter:
         # Database key in UID_Name format (matching folder name)
         self.database_key = f"{self.asset_id}_{self.sanitized_asset_name}"
     
+    def _get_artist_name(self):
+        """Extract artist name from POSE environment variable or fallback to USER"""
+        try:
+            # Try to get from Houdini POSE variable first
+            if HOU_AVAILABLE:
+                try:
+                    pose_path = hou.expandString("$POSE")
+                    if pose_path and "/net/users/linux/" in pose_path:
+                        # Extract username from path like "/net/users/linux/alex.parks/houdini20.5/poselib"
+                        parts = pose_path.split("/")
+                        for i, part in enumerate(parts):
+                            if part == "linux" and i + 1 < len(parts):
+                                # Next part after "linux" should be the username
+                                username = parts[i + 1]
+                                if username and username != "":
+                                    print(f"   👤 Artist extracted from POSE: {username}")
+                                    return username
+                except Exception as e:
+                    print(f"   ⚠️ Could not extract artist from POSE: {e}")
+                    pass
+            
+            # Fallback to standard environment variables
+            fallback_user = os.environ.get('USER', os.environ.get('USERNAME', 'unknown'))
+            print(f"   👤 Artist from environment fallback: {fallback_user}")
+            return fallback_user
+        except:
+            return 'unknown'
+    
     def export_as_template(self, parent_node, nodes_to_export):
         """Export nodes as template using saveChildrenToFile"""
         try:
@@ -895,7 +923,7 @@ class TemplateAssetExporter:
             
             # Create metadata structure with hierarchy data for frontend filtering
             metadata = {
-                "id": self.database_key,  # Use UID_Name format for database key
+                "id": self.asset_id,  # Use just the UID part for the document ID
                 "name": self.asset_name,
                 "asset_type": self.asset_type,
                 "subcategory": self.subcategory,
@@ -903,7 +931,7 @@ class TemplateAssetExporter:
                 "render_engine": self.render_engine,
                 "tags": self.tags,
                 "created_at": datetime.now().isoformat(),
-                "created_by": os.environ.get('USER', 'unknown'),
+                "created_by": self._get_artist_name(),
                 
                 # Frontend hierarchy filtering structure
                 "dimension": "3D",  # Always 3D from Houdini
@@ -935,18 +963,16 @@ class TemplateAssetExporter:
                 # For search functionality
                 "search_keywords": self._generate_search_keywords(),
                 
-                # Texture info with detailed mapping
+                # Texture info (simplified - no verbose mapping)
                 "textures": {
                     "count": len(texture_info),
-                    "files": [tex['relative_path'] for tex in texture_info if 'relative_path' in tex],
-                    "mapping": self._create_texture_mapping(texture_info)
+                    "files": [tex['relative_path'] for tex in texture_info if 'relative_path' in tex]
                 },
                 
-                # Geometry file info with detailed mapping
+                # Geometry file info (simplified - no verbose mapping)
                 "geometry_files": {
                     "count": len(geometry_info),
-                    "files": [geo['relative_path'] for geo in geometry_info if 'relative_path' in geo],
-                    "mapping": self._create_geometry_mapping(geometry_info)
+                    "files": [geo['relative_path'] for geo in geometry_info if 'relative_path' in geo]
                 },
                 
                 # Direct folder path for file manager access

@@ -306,7 +306,7 @@ def call_atlas_api_ingestion(metadata_file_path):
         print(f"📡 Starting API ingestion for: {metadata_file_path}")
         
         # Path to the ingestion script
-        ingestion_script = "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/scripts/utilities/ingest_metadata.py"
+        ingestion_script = "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/scripts/utilities/ingest_metadata_curl.py"
         
         # Check if ingestion script exists
         if not os.path.exists(ingestion_script):
