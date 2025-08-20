@@ -1,17 +1,51 @@
 // frontend/src/App.jsx - SIMPLE VERSION
 import React, { useState, useEffect } from 'react';
-import { Library, Briefcase, Bot, Package, Settings, CheckSquare } from 'lucide-react';
+import { Library, Briefcase, Bot, Package, Settings } from 'lucide-react';
 import AssetLibrary from './components/AssetLibrary';
 import ProducerTools from './components/ProducerTools';
 import AITools from './components/AITools';
 import SettingsComponent from './components/Settings';
-import TodoDemo from './components/TodoDemo';
+
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+    this.props.setHasError(true);
+    this.props.setErrorMessage(error.message || 'An unexpected error occurred');
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center p-8">
+            <h2 className="text-xl font-bold text-red-400 mb-4">Component Error</h2>
+            <p className="text-neutral-300">This component encountered an error.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 const App = () => {
   // Set the default active tab to something other than delivery-tool
   const [activeTab, setActiveTab] = useState('asset-library'); // Start with asset library
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [apiStatus, setApiStatus] = useState('connected'); // Assume it's working
+  const [hasError, setHasError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Initialize theme and settings on app startup
   useEffect(() => {
@@ -45,7 +79,10 @@ const App = () => {
   useEffect(() => {
     fetch('http://localhost:8000/health')
       .then(res => res.ok ? setApiStatus('connected') : setApiStatus('disconnected'))
-      .catch(() => setApiStatus('disconnected'));
+      .catch((error) => {
+        console.error('API health check failed:', error);
+        setApiStatus('disconnected');
+      });
   }, []);
 
   const tabs = [
@@ -54,12 +91,6 @@ const App = () => {
       name: 'Asset Library',
       icon: Library,
       component: AssetLibrary
-    },
-    {
-      id: 'todo-demo',
-      name: 'Todo Demo',
-      icon: CheckSquare,
-      component: TodoDemo
     },
     // {
     //   id: 'delivery-tool',
@@ -88,6 +119,28 @@ const App = () => {
   ];
 
   const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component || AssetLibrary;
+
+  // Error boundary fallback
+  if (hasError) {
+    return (
+      <div className="flex h-screen bg-neutral-900 text-white items-center justify-center">
+        <div className="text-center p-8">
+          <h1 className="text-2xl font-bold text-red-400 mb-4">Application Error</h1>
+          <p className="text-neutral-300 mb-4">{errorMessage}</p>
+          <button 
+            onClick={() => {
+              setHasError(false);
+              setErrorMessage('');
+              window.location.reload();
+            }}
+            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg"
+          >
+            Reload Application
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-neutral-900 text-white overflow-hidden">
@@ -179,7 +232,9 @@ const App = () => {
 
         {/* Content Area */}
         <div className="flex-1 overflow-auto">
-          <ActiveComponent />
+          <ErrorBoundary setHasError={setHasError} setErrorMessage={setErrorMessage}>
+            <ActiveComponent />
+          </ErrorBoundary>
         </div>
       </div>
     </div>

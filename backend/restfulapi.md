@@ -52,7 +52,6 @@ backend/
 ├── api/
 │   ├── assets.py          # Asset management endpoints
 │   ├── asset_sync.py      # Admin sync operations
-│   ├── todos.py           # Todo management endpoints
 │   └── simple_assets.py   # Simplified asset endpoints
 └── assetlibrary/
     ├── config.py          # Configuration management
@@ -67,7 +66,7 @@ backend/
 - **Host**: `arangodb` (Docker container)
 - **Port**: `8529`
 - **Database**: `blacksmith_atlas`
-- **Collections**: `Atlas_Library`, `todos`
+- **Collections**: `Atlas_Library`
 - **Authentication**: Root user with password
 
 ---
@@ -125,16 +124,6 @@ All API endpoints are versioned under `/api/v1/`
 | **GET** | `/debug/test-connection` | Test DB connection | ✅ Implemented |
 | **GET** | `/test-assets` | Test asset query | ✅ Implemented |
 | **GET** | `/thumbnails/{asset_id}` | Get asset thumbnail | ✅ Implemented |
-
-#### **4. Todo Management Endpoints** (`/api/v1/todos`)
-
-| Method | Endpoint | Description | Status |
-|--------|----------|-------------|---------|
-| **GET** | `/api/v1/todos` | List todos | ✅ Implemented |
-| **POST** | `/api/v1/todos` | Create todo | ✅ Implemented |
-| **GET** | `/api/v1/todos/{todo_id}` | Get todo | ✅ Implemented |
-| **PUT** | `/api/v1/todos/{todo_id}` | Update todo | ✅ Implemented |
-| **DELETE** | `/api/v1/todos/{todo_id}` | Delete todo | ✅ Implemented |
 
 ---
 

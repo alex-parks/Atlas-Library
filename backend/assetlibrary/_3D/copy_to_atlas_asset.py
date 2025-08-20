@@ -10,83 +10,6 @@ import subprocess
 import json
 from pathlib import Path
 
-def call_atlas_api_ingestion(metadata_file_path):
-    """
-    Call the Atlas API ingestion script to submit metadata.json via REST API
-    """
-    try:
-        print(f"📡 Starting API ingestion for: {metadata_file_path}")
-        
-        # Path to the ingestion script
-        ingestion_script = "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/scripts/utilities/ingest_metadata.py"
-        
-        # Check if ingestion script exists
-        if not os.path.exists(ingestion_script):
-            print(f"❌ Ingestion script not found: {ingestion_script}")
-            return False
-        
-        # Check if metadata file exists
-        if not os.path.exists(metadata_file_path):
-            print(f"❌ Metadata file not found: {metadata_file_path}")
-            return False
-            
-        print(f"✅ Found ingestion script: {ingestion_script}")
-        print(f"✅ Found metadata file: {metadata_file_path}")
-        
-        # Use the backend's virtual environment Python
-        backend_venv_python = "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend/venv/bin/python"
-        
-        # Check if venv python exists, fallback to system python3
-        if os.path.exists(backend_venv_python):
-            python_exec = backend_venv_python
-            print(f"✅ Using backend virtual environment: {python_exec}")
-        else:
-            python_exec = "python3"
-            print(f"⚠️ Backend venv not found, using system python3")
-        
-        # Prepare the command to run the ingestion script
-        cmd = [
-            python_exec,
-            ingestion_script,
-            metadata_file_path,
-            "--api-url", "http://localhost:8000",
-            "--verbose"
-        ]
-        
-        print(f"🚀 Running command: {' '.join(cmd)}")
-        
-        # Run the ingestion script
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60  # 60 second timeout
-        )
-        
-        # Log the output
-        if result.stdout:
-            print(f"📄 STDOUT:\\n{result.stdout}")
-        
-        if result.stderr:
-            print(f"⚠️ STDERR:\\n{result.stderr}")
-            
-        # Check if the command was successful
-        if result.returncode == 0:
-            print("✅ API ingestion completed successfully!")
-            return True
-        else:
-            print(f"❌ API ingestion failed with return code: {result.returncode}")
-            return False
-            
-    except subprocess.TimeoutExpired:
-        print("❌ API ingestion timed out after 60 seconds")
-        return False
-    except Exception as e:
-        print(f"❌ API ingestion error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
 def copy_selected_to_atlas_asset():
     """
     Main function to copy selected nodes to a subnet and add Atlas export parameters
@@ -371,7 +294,79 @@ def create_export_script():
 # 🏭 BLACKSMITH ATLAS EXPORT SCRIPT
 import sys
 import os
+import subprocess
+import json
 from pathlib import Path
+
+def call_atlas_api_ingestion(metadata_file_path):
+    """
+    Call the Atlas API ingestion script to submit metadata.json via REST API
+    """
+    try:
+        print(f"📡 Starting API ingestion for: {metadata_file_path}")
+        
+        # Path to the ingestion script
+        ingestion_script = "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/scripts/utilities/ingest_metadata.py"
+        
+        # Check if ingestion script exists
+        if not os.path.exists(ingestion_script):
+            print(f"❌ Ingestion script not found: {ingestion_script}")
+            return False
+        
+        # Check if metadata file exists
+        if not os.path.exists(metadata_file_path):
+            print(f"❌ Metadata file not found: {metadata_file_path}")
+            return False
+            
+        print(f"✅ Found ingestion script: {ingestion_script}")
+        print(f"✅ Found metadata file: {metadata_file_path}")
+        
+        # Use system python3 to avoid virtual environment conflicts with Houdini
+        python_exec = "python3"
+        print(f"✅ Using system python3: {python_exec}")
+        
+        # Prepare the command to run the ingestion script
+        cmd = [
+            python_exec,
+            ingestion_script,
+            metadata_file_path,
+            "--api-url", "http://localhost:8000",
+            "--verbose"
+        ]
+        
+        print(f"🚀 Running command: {' '.join(cmd)}")
+        
+        # Run the ingestion script
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60  # 60 second timeout
+        )
+        
+        # Log the output
+        if result.stdout:
+            print(f"📄 STDOUT:\\n{result.stdout}")
+        
+        if result.stderr:
+            print(f"⚠️ STDERR:\\n{result.stderr}")
+            
+        # Check if the command was successful
+        if result.returncode == 0:
+            print("✅ API ingestion completed successfully!")
+            return True
+        else:
+            print(f"❌ API ingestion failed with return code: {result.returncode}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("❌ API ingestion timed out after 60 seconds")
+        return False
+    except Exception as e:
+        print(f"❌ API ingestion error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 try:
     print("🚀 BLACKSMITH ATLAS EXPORT INITIATED")

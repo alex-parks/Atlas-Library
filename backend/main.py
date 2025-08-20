@@ -8,7 +8,6 @@ from fastapi.exceptions import RequestValidationError
 # Import only working routers for now
 from backend.api.assets import router as assets_router
 # Disabled problematic routers until Pydantic compatibility is fixed
-# from backend.api.todos import router as todos_router
 # from backend.api.asset_sync import router as sync_router
 # from backend.api.products import router as products_router
 # from backend.api.users import router as users_router
@@ -182,7 +181,6 @@ async def get_thumbnail(asset_id: str):
 # Include only working routers for now
 app.include_router(assets_router)
 # Disabled problematic routers until Pydantic compatibility is fixed
-# app.include_router(todos_router)
 # app.include_router(sync_router)
 # app.include_router(products_router, prefix="/api/v1")
 # app.include_router(users_router, prefix="/api/v1")
@@ -261,8 +259,7 @@ async def root():
                 "health": "/health",
                 "assets": "/api/v1/assets",
                 "products": "/api/v1/products", 
-                "users": "/api/v1/users",
-                "todos": "/api/v1/todos"
+                "users": "/api/v1/users"
             },
             "status": "running",
             "statistics": {

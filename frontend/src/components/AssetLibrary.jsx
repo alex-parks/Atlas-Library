@@ -92,8 +92,13 @@ const AssetLibrary = () => {
 
   useEffect(() => {
     // Always load assets on component mount and when API endpoint changes
-    loadAssets();
-    checkDatabaseStatus();
+    try {
+      loadAssets();
+      checkDatabaseStatus();
+    } catch (error) {
+      console.error('Error in AssetLibrary useEffect:', error);
+      setLoading(false);
+    }
   }, [settings.apiEndpoint]);
 
   useEffect(() => {
@@ -233,8 +238,10 @@ const AssetLibrary = () => {
       })
       .then(data => {
         console.log('Loaded assets from API:', data);
-        console.log('Number of assets loaded:', data.length);
-        setAssets(data);
+        // API returns {items: [...], total: n, limit: n, offset: n}
+        const assets = data.items || [];
+        console.log('Number of assets loaded:', assets.length);
+        setAssets(Array.isArray(assets) ? assets : []);
         setLoading(false);
       })
       .catch(err => {
@@ -249,9 +256,9 @@ const AssetLibrary = () => {
       .then(res => res.json())
       .then(data => {
         setDbStatus({
-          status: data.status || 'unknown',
-          assets_count: data.database_assets || 0,
-          database_type: data.database || 'unknown'
+          status: data.components?.database?.status || data.status || 'unknown',
+          assets_count: data.components?.database?.assets_count || 0,
+          database_type: data.components?.database?.type || 'unknown'
         });
       })
       .catch(err => {
@@ -316,7 +323,7 @@ const AssetLibrary = () => {
                        (selectedFilters.type === '3d' && ['3D', 'Assets', 'FX', 'Materials', 'HDAs'].includes(asset.asset_type));
 
     const matchesCategory = selectedFilters.category === 'all' || asset.category === selectedFilters.category;
-    const matchesCreator = selectedFilters.creator === 'all' || asset.artist === selectedFilters.creator;
+    const matchesCreator = selectedFilters.creator === 'all' || asset.metadata?.ingested_by === selectedFilters.creator;
 
     // Apply navigation filters based on current navigation state and ArangoDB data structure
     let matchesNavigation = true;
@@ -467,7 +474,7 @@ const AssetLibrary = () => {
         asset_name: asset.name,
         asset_type: asset.metadata?.asset_type || asset.category,
         subcategory: asset.metadata?.subcategory || 'General',
-        render_engine: asset.metadata?.render_engine || 'Redshift',
+        render_engine: asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine || 'Redshift',
         
         // File paths (Docker-mounted paths for Houdini access)  
         asset_folder: asset.asset_folder || `/net/library/atlaslib/3D/${asset.metadata?.asset_type || 'Assets'}/${asset.metadata?.subcategory?.replace(/\s/g, '') || 'General'}/${asset.id}_${asset.name}`,
@@ -481,7 +488,7 @@ const AssetLibrary = () => {
           houdini_version: asset.metadata?.houdini_version || '20.0',
           tags: asset.metadata?.tags || [],
           description: asset.description || '',
-          artist: asset.artist || 'Unknown'
+          artist: asset.metadata?.ingested_by || 'Unknown'
         },
         
         // Instructions for Houdini
@@ -501,8 +508,8 @@ const AssetLibrary = () => {
       const clipboardText = `# Blacksmith Atlas Asset Copy
 # Asset: ${asset.name}
 # Type: ${asset.metadata?.dimension || '3D'} → ${asset.metadata?.asset_type || 'Assets'} → ${asset.metadata?.subcategory || 'General'}
-# Render Engine: ${asset.metadata?.render_engine || 'Redshift'}
-# Artist: ${asset.artist || 'Unknown'}
+# Render Engine: ${asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine || 'Redshift'}
+# Artist: ${asset.metadata?.ingested_by || 'Unknown'}
 # Copied: ${new Date().toLocaleString()}
 
 # JSON Data for Houdini Integration:
@@ -542,7 +549,7 @@ ${JSON.stringify(assetClipboardData, null, 2)}
   }, []);
 
   const assetCategories = [...new Set(assets.map(asset => asset.category))];
-  const creators = [...new Set(assets.map(asset => asset.artist).filter(Boolean))];
+  const creators = [...new Set(assets.map(asset => asset.metadata?.ingested_by).filter(Boolean))];
 
   return (
     <div className="min-h-screen bg-neutral-900 text-white">
@@ -969,7 +976,7 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                     <span className="px-2 py-1 bg-green-600/20 text-green-300 rounded">{previewAsset.metadata?.subcategory || 'General'}</span>
                   </div>
                   <div className="text-neutral-400 text-sm">•</div>
-                  <div className="text-neutral-400 text-sm">{previewAsset.artist || 'Unknown Artist'}</div>
+                  <div className="text-neutral-400 text-sm">{previewAsset.metadata?.ingested_by || 'Unknown Artist'}</div>
                 </div>
               </div>
               <button
@@ -1024,17 +1031,17 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                       </div>
                       <div className="flex justify-between">
                         <span className="text-neutral-400">Artist:</span>
-                        <span className="text-green-400">{previewAsset.artist || 'Unknown'}</span>
+                        <span className="text-green-400">{previewAsset.metadata?.ingested_by || 'Unknown'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-neutral-400">Render Engine:</span>
-                        <span className="text-orange-400">{previewAsset.metadata?.render_engine || 'Unknown'}</span>
+                        <span className="text-orange-400">{previewAsset.metadata?.hierarchy?.render_engine || previewAsset.metadata?.render_engine || 'Unknown'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-neutral-400">Size:</span>
                         <span className="text-neutral-300">
                           {(() => {
-                            const totalBytes = previewAsset.file_sizes?.total_folder_size || 0;
+                            const totalBytes = previewAsset.file_sizes?.estimated_total_size || 0;
                             if (totalBytes === 0) return 'Calculating...';
                             if (totalBytes < 1024 * 1024) return `${Math.round(totalBytes / 1024)} KB`;
                             else if (totalBytes < 1024 * 1024 * 1024) return `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -1281,23 +1288,23 @@ ${JSON.stringify(assetClipboardData, null, 2)}
 
                             {/* Render Engine Tags - Bottom Right */}
                             <div className="absolute bottom-2 right-2 flex flex-col gap-1 items-end">
-                              {(asset.metadata?.render_engine === 'Redshift' || asset.metadata?.render_engine?.includes('Redshift')) && (
+                              {((asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine) === 'Redshift' || (asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine)?.includes('Redshift')) && (
                                 <span className="px-2 py-1 text-xs rounded font-medium bg-red-500/20 text-red-300 backdrop-blur-sm">
                                   Redshift
                                 </span>
                               )}
-                              {(asset.metadata?.render_engine === 'Karma' || asset.metadata?.render_engine?.includes('Karma')) && (
+                              {((asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine) === 'Karma' || (asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine)?.includes('Karma')) && (
                                 <span className="px-2 py-1 text-xs rounded font-medium bg-gray-500/20 text-gray-300 backdrop-blur-sm">
                                   Karma
                                 </span>
                               )}
                               {/* If asset has multiple exports with different engines, check tags */}
-                              {asset.metadata?.tags?.includes('redshift') && !asset.metadata?.render_engine?.includes('Redshift') && (
+                              {asset.metadata?.tags?.includes('redshift') && !(asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine)?.includes('Redshift') && (
                                 <span className="px-2 py-1 text-xs rounded font-medium bg-red-500/20 text-red-300 backdrop-blur-sm">
                                   Redshift
                                 </span>
                               )}
-                              {asset.metadata?.tags?.includes('karma') && !asset.metadata?.render_engine?.includes('Karma') && (
+                              {asset.metadata?.tags?.includes('karma') && !(asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine)?.includes('Karma') && (
                                 <span className="px-2 py-1 text-xs rounded font-medium bg-gray-500/20 text-gray-300 backdrop-blur-sm">
                                   Karma
                                 </span>
@@ -1338,14 +1345,14 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                           <div className="grid grid-cols-2 gap-2 text-xs text-neutral-500">
                             <div>
                               <span className="text-neutral-400">Render Engine:</span>
-                              <div className="text-orange-400 font-medium">{asset.metadata?.render_engine || 'Unknown'}</div>
+                              <div className="text-orange-400 font-medium">{asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine || 'Unknown'}</div>
                             </div>
                             <div>
                               <span className="text-neutral-400">Size:</span>
                               <div className="text-neutral-300">
                                 {(() => {
-                                  // Use total_folder_size which includes all assets and textures
-                                  const totalBytes = asset.file_sizes?.total_folder_size || 0;
+                                  // Use estimated_total_size from database
+                                  const totalBytes = asset.file_sizes?.estimated_total_size || 0;
                                   
                                   if (totalBytes === 0) {
                                     // If no size data, show placeholder
@@ -1365,7 +1372,7 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                             </div>
                             <div>
                               <span className="text-neutral-400">Artist:</span>
-                              <div className="text-green-400 font-medium truncate">{asset.artist || 'Unknown'}</div>
+                              <div className="text-green-400 font-medium truncate">{asset.metadata?.ingested_by || 'Unknown'}</div>
                             </div>
                             <div>
                               <span className="text-neutral-400">Version:</span>
@@ -1392,7 +1399,7 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                           <div className="text-sm text-neutral-400 truncate">{asset.description || 'No description'}</div>
                         </div>
                         <div className="col-span-2 text-blue-400">{asset.category}</div>
-                        <div className="col-span-2 text-green-400">{asset.artist || 'Unknown'}</div>
+                        <div className="col-span-2 text-green-400">{asset.metadata?.ingested_by || 'Unknown'}</div>
                         <div className="col-span-2 text-neutral-300">
                           {Math.round(Object.values(asset.file_sizes || {}).reduce((sum, size) => sum + (typeof size === 'number' ? size : 0), 0) / 1024)} KB
                         </div>
