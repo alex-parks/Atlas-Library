@@ -69,7 +69,7 @@ class AtlasDatabaseService:
             
             # Get collections
             self.collections = {
-                'assets': self.db.collection('Asset_Library'),
+                'assets': self.db.collection('Atlas_Library'),
                 'relationships': self.db.collection('asset_relationships'),
                 'projects': self.db.collection('projects'),
                 'tags': self.db.collection('tags'),
@@ -93,7 +93,7 @@ class AtlasDatabaseService:
                 print("Database not connected")
                 return None
                 
-            collection = self.db.collection('Asset_Library')
+            collection = self.db.collection('Atlas_Library')
             
             # Add default fields if not present
             asset_data.setdefault('created_at', datetime.now().isoformat())
@@ -114,7 +114,7 @@ class AtlasDatabaseService:
                 print("Database not connected")
                 return None
                 
-            collection = self.db.collection('Asset_Library')  # Store textures as assets with type='texture'
+            collection = self.db.collection('Atlas_Library')  # Store textures as assets with type='texture'
             
             # Add default fields
             texture_data.setdefault('created_at', datetime.now().isoformat())
@@ -171,7 +171,7 @@ class AtlasDatabaseService:
         try:
             # Build AQL query
             aql_query = """
-            FOR asset IN Asset_Library
+            FOR asset IN Atlas_Library
             FILTER asset.status == "active"
             """
             
@@ -268,7 +268,7 @@ class AtlasDatabaseService:
         try:
             # Count assets by category
             aql_query = """
-            FOR asset IN Asset_Library
+            FOR asset IN Atlas_Library
             FILTER asset._type == "Asset3D"
             COLLECT category = asset.category WITH COUNT INTO count
             RETURN {category: category, count: count}
@@ -278,7 +278,7 @@ class AtlasDatabaseService:
             by_category = list(cursor)
             
             # Total count
-            total_query = "RETURN LENGTH(FOR asset IN Asset_Library FILTER asset._type == 'Asset3D' RETURN 1)"
+            total_query = "RETURN LENGTH(FOR asset IN Atlas_Library FILTER asset._type == 'Asset3D' RETURN 1)"
             total_cursor = self.db.aql.execute(total_query)
             total_assets = list(total_cursor)[0]
             

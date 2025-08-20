@@ -411,8 +411,8 @@ class AssetDependency(BaseRelationship):
     @validator('_from', '_to')
     def validate_asset_references(cls, v):
         """Ensure proper asset document references"""
-        if not v.startswith('Asset_Library/'):
-            return f'Asset_Library/{v}'
+        if not v.startswith('Atlas_Library/'):
+            return f'Atlas_Library/{v}'
         return v
 
 
@@ -433,8 +433,8 @@ class ProjectAssetRelationship(BaseRelationship):
     @validator('_to')
     def validate_asset_reference(cls, v):
         """Ensure proper asset document reference"""
-        if not v.startswith('Asset_Library/'):
-            return f'Asset_Library/{v}'
+        if not v.startswith('Atlas_Library/'):
+            return f'Atlas_Library/{v}'
         return v
 
 

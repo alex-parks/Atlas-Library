@@ -34,9 +34,13 @@ class TemplateAssetExporter:
         self.render_engine = render_engine or "Redshift"
         self.metadata = metadata or ""
         
-        # Generate unique asset ID
+        # Generate unique asset ID (8 character UID)
         import uuid
         self.asset_id = str(uuid.uuid4())[:8].upper()
+        
+        # Sanitize asset name for folder/key generation
+        import re
+        self.sanitized_asset_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
         
         # Set up paths based on hierarchy structure
         self.library_root = Path("/net/library/atlaslib/3D")
@@ -59,11 +63,13 @@ class TemplateAssetExporter:
         
         subcategory_folder = subcategory_folder_map.get(subcategory, subcategory.replace(" ", ""))
         
-        self.asset_folder = self.library_root / asset_type / subcategory_folder / f"{self.asset_id}_{asset_name}"
+        self.asset_folder = self.library_root / asset_type / subcategory_folder / f"{self.asset_id}_{self.sanitized_asset_name}"
         self.data_folder = self.asset_folder / "Data"
         self.textures_folder = self.asset_folder / "Textures"
         self.geometry_folder = self.asset_folder / "Geometry"
-        self.clipboard_folder = self.asset_folder / "Clipboard"
+        
+        # Database key in UID_Name format (matching folder name)
+        self.database_key = f"{self.asset_id}_{self.sanitized_asset_name}"
     
     def export_as_template(self, parent_node, nodes_to_export):
         """Export nodes as template using saveChildrenToFile"""
@@ -105,11 +111,6 @@ class TemplateAssetExporter:
             print(f"   📋 Creating metadata...")
             metadata = self.create_asset_metadata(template_file, nodes_to_export, texture_info, geometry_info)
             print(f"   ✅ Metadata created successfully")
-            
-            # Create HCOPY clipboard version with remapped paths
-            print(f"   📋 Creating HCOPY clipboard version...")
-            self.create_clipboard_version(parent_node, nodes_to_export)
-            print(f"   ✅ Clipboard version created successfully")
             
             print(f"✅ Export complete: {self.asset_folder}")
             return True
@@ -434,6 +435,16 @@ class TemplateAssetExporter:
                             print(f"         📁 GEOMETRY FILE PARAMETER: {parm.name()} = '{parm_value}'")
                             print(f"            EXPANDED TO: '{expanded_path}'")
                             
+                            # Check for BGEO sequences with Houdini variables
+                            if (file_extension := Path(expanded_path).suffix.lower()) in ['.bgeo', '.bgeo.sc']:
+                                # Special handling for BGEO sequences
+                                if any(var in parm_value for var in ['${F4}', '${F}', '${FF}', '$F4', '$F']):
+                                    print(f"            🎬 BGEO SEQUENCE DETECTED: {parm_value}")
+                                    sequence_info = self._process_bgeo_sequence(node, parm, parm_value, expanded_path)
+                                    if sequence_info:
+                                        geometry_info.extend(sequence_info)
+                                    continue
+                            
                             if os.path.exists(expanded_path):
                                 # Determine file type and subfolder
                                 file_extension = Path(expanded_path).suffix.lower()
@@ -444,7 +455,10 @@ class TemplateAssetExporter:
                                 elif file_extension in ['.obj']:
                                     subfolder = 'OBJ'
                                 elif file_extension in ['.bgeo', '.bgeo.sc']:
-                                    subfolder = 'Houdini_Geo'
+                                    subfolder = 'BGEO'
+                                    # For individual BGEO files, use node-based subfolder
+                                    node_name = node.name()
+                                    subfolder = f'BGEO/{node_name}'
                                 elif file_extension in ['.vdb']:
                                     subfolder = 'VDB'
                                 else:
@@ -452,12 +466,14 @@ class TemplateAssetExporter:
                                 
                                 geometry_info.append({
                                     'node': node.path(),
+                                    'node_name': node.name(),
                                     'parameter': parm.name(),
                                     'file': expanded_path,
                                     'filename': os.path.basename(expanded_path),
                                     'original_path': parm_value,
                                     'file_type': subfolder,
-                                    'extension': file_extension
+                                    'extension': file_extension,
+                                    'is_sequence': False
                                 })
                                 print(f"            ✅ GEOMETRY FILE FOUND: {os.path.basename(expanded_path)} ({subfolder})")
                             else:
@@ -489,43 +505,13 @@ class TemplateAssetExporter:
                 # Copy geometry files organized by type
                 copied_files = []
                 for file_type, files in files_by_type.items():
-                    # Create type subfolder
-                    type_folder = geometry_folder / file_type
-                    type_folder.mkdir(exist_ok=True)
-                    print(f"   📁 Created geometry type folder: {type_folder}")
-                    
-                    # Copy files for this type
-                    for geo_info in files:
-                        try:
-                            source_file = Path(geo_info['file'])
-                            if source_file.exists():
-                                # Create destination filename in type folder
-                                dest_file = type_folder / source_file.name
-                                
-                                # Handle duplicate filenames
-                                counter = 1
-                                original_dest = dest_file
-                                while dest_file.exists():
-                                    stem = original_dest.stem
-                                    suffix = original_dest.suffix
-                                    dest_file = type_folder / f"{stem}_{counter}{suffix}"
-                                    counter += 1
-                                
-                                # Copy the geometry file
-                                shutil.copy2(source_file, dest_file)
-                                
-                                print(f"      ✅ Copied: {source_file.name} -> {file_type}/{dest_file.name}")
-                                
-                                # Update geometry info with new relative path
-                                geo_info['copied_file'] = str(dest_file)
-                                geo_info['relative_path'] = f"Geometry/{file_type}/{dest_file.name}"
-                                copied_files.append(geo_info)
-                                
-                            else:
-                                print(f"      ⚠️ Geometry file not found: {source_file}")
-                        
-                        except Exception as e:
-                            print(f"      ❌ Error copying geometry file {geo_info['file']}: {e}")
+                    # Handle BGEO sequences specially
+                    if file_type.startswith('BGEO/'):
+                        # This is a BGEO sequence with node-specific subfolder
+                        self._copy_bgeo_sequence(geometry_folder, file_type, files, copied_files)
+                    else:
+                        # Standard file copying for other types
+                        self._copy_standard_geometry_files(geometry_folder, file_type, files, copied_files)
                 
                 print(f"   ✅ Copied {len(copied_files)} geometry files organized by type")
                 geometry_info = copied_files
@@ -539,6 +525,202 @@ class TemplateAssetExporter:
             traceback.print_exc()
         
         return geometry_info
+
+    def _process_bgeo_sequence(self, node, parm, parm_value, expanded_path):
+        """Process BGEO sequence and discover all files in the sequence"""
+        try:
+            print(f"            🎬 Processing BGEO sequence from node: {node.name()}")
+            
+            # Extract base path and pattern from the original parameter value
+            base_path = Path(expanded_path).parent
+            original_filename = Path(parm_value).name  # Use original parm_value, not expanded
+            
+            print(f"            📂 Base path: {base_path}")
+            print(f"            📄 Original pattern: {original_filename}")
+            
+            # Extract the base filename pattern by removing frame variables
+            # Example: Library_LibraryExport_v001.$F.bgeo.sc -> Library_LibraryExport_v001 and .bgeo.sc
+            base_filename = original_filename
+            file_extension = ""
+            
+            # Find and extract the frame variable and extension
+            frame_vars = ['${F4}', '${F}', '${FF}', '$F4', '$F']
+            frame_var_used = None
+            
+            for var in frame_vars:
+                if var in base_filename:
+                    frame_var_used = var
+                    # Split around the frame variable
+                    parts = base_filename.split(var)
+                    if len(parts) == 2:
+                        prefix = parts[0]  # e.g., "Library_LibraryExport_v001."
+                        suffix = parts[1]  # e.g., ".bgeo.sc"
+                        break
+            
+            if not frame_var_used:
+                print(f"            ⚠️ No frame variable found in: {original_filename}")
+                return None
+            
+            print(f"            🔍 Frame variable: {frame_var_used}")
+            print(f"            📋 Prefix: '{prefix}'")
+            print(f"            📋 Suffix: '{suffix}'")
+            
+            # Look for all files in the directory that match the pattern
+            sequence_files = []
+            
+            if base_path.exists():
+                print(f"            🔍 Scanning directory: {base_path}")
+                
+                # Find all files that start with prefix and end with suffix
+                for file_path in base_path.iterdir():
+                    if file_path.is_file():
+                        filename = file_path.name
+                        # Check if it matches our pattern
+                        if filename.startswith(prefix) and filename.endswith(suffix):
+                            # Additional check: make sure there's a frame number in between
+                            middle_part = filename[len(prefix):-len(suffix)] if suffix else filename[len(prefix):]
+                            # Check if middle part looks like a frame number
+                            if middle_part.isdigit() or (middle_part and all(c.isdigit() or c == '.' for c in middle_part)):
+                                sequence_files.append(str(file_path))
+                                print(f"               ✅ Found: {filename}")
+            
+            if not sequence_files:
+                print(f"            ❌ No sequence files found matching pattern in: {base_path}")
+                print(f"            🔍 Looking for files starting with: '{prefix}' and ending with: '{suffix}'")
+                return None
+            
+            # Sort files to ensure proper sequence order
+            sequence_files.sort()
+            
+            print(f"            ✅ Found {len(sequence_files)} files in BGEO sequence")
+            print(f"            📋 First file: {os.path.basename(sequence_files[0])}")
+            print(f"            📋 Last file: {os.path.basename(sequence_files[-1])}")
+            
+            # Create geometry info entries for the sequence
+            sequence_info = []
+            node_name = node.name()
+            
+            for seq_file in sequence_files:
+                sequence_info.append({
+                    'node': node.path(),
+                    'node_name': node_name,
+                    'parameter': parm.name(),
+                    'file': seq_file,
+                    'filename': os.path.basename(seq_file),
+                    'original_path': parm_value,
+                    'file_type': f'BGEO/{node_name}',
+                    'extension': Path(seq_file).suffix.lower(),
+                    'is_sequence': True,
+                    'sequence_pattern': parm_value,
+                    'sequence_total': len(sequence_files)
+                })
+            
+            print(f"            ✅ Created sequence info for {len(sequence_info)} files")
+            return sequence_info
+            
+        except Exception as e:
+            print(f"            ❌ Error processing BGEO sequence: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _copy_bgeo_sequence(self, geometry_folder, file_type, files, copied_files):
+        """Copy BGEO sequence files to node-specific subfolders"""
+        try:
+            # Create the BGEO/NodeName folder structure
+            type_folder = geometry_folder / file_type
+            type_folder.mkdir(parents=True, exist_ok=True)
+            print(f"   📁 Created BGEO sequence folder: {type_folder}")
+            
+            # Group files by sequence pattern
+            sequences = {}
+            for geo_info in files:
+                sequence_pattern = geo_info.get('sequence_pattern', geo_info['original_path'])
+                if sequence_pattern not in sequences:
+                    sequences[sequence_pattern] = []
+                sequences[sequence_pattern].append(geo_info)
+            
+            # Process each sequence
+            for sequence_pattern, sequence_files in sequences.items():
+                print(f"      🎬 Processing BGEO sequence: {sequence_pattern}")
+                print(f"         📁 Copying {len(sequence_files)} files to {file_type}/")
+                
+                copied_in_sequence = 0
+                
+                for geo_info in sequence_files:
+                    source_file = Path(geo_info['file'])
+                    if source_file.exists():
+                        # Create destination filename in type folder
+                        dest_file = type_folder / source_file.name
+                        
+                        # Copy the geometry file
+                        shutil.copy2(source_file, dest_file)
+                        
+                        # Update geometry info with new relative path
+                        geo_info['copied_file'] = str(dest_file)
+                        geo_info['relative_path'] = f"Geometry/{file_type}/{dest_file.name}"
+                        copied_files.append(geo_info)
+                        copied_in_sequence += 1
+                        
+                        if copied_in_sequence <= 3 or copied_in_sequence == len(sequence_files):
+                            # Show first 3 and last file
+                            print(f"         ✅ {source_file.name}")
+                        elif copied_in_sequence == 4:
+                            print(f"         ... copying {len(sequence_files) - 3} more files ...")
+                        
+                    else:
+                        print(f"         ⚠️ BGEO file not found: {source_file}")
+                
+                print(f"      ✅ Sequence complete: {copied_in_sequence}/{len(sequence_files)} files copied")
+                    
+        except Exception as e:
+            print(f"      ❌ Error copying BGEO sequence: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _copy_standard_geometry_files(self, geometry_folder, file_type, files, copied_files):
+        """Copy standard geometry files (ABC, FBX, OBJ, etc.)"""
+        try:
+            # Create type subfolder
+            type_folder = geometry_folder / file_type
+            type_folder.mkdir(exist_ok=True)
+            print(f"   📁 Created geometry type folder: {type_folder}")
+            
+            # Copy files for this type
+            for geo_info in files:
+                try:
+                    source_file = Path(geo_info['file'])
+                    if source_file.exists():
+                        # Create destination filename in type folder
+                        dest_file = type_folder / source_file.name
+                        
+                        # Handle duplicate filenames
+                        counter = 1
+                        original_dest = dest_file
+                        while dest_file.exists():
+                            stem = original_dest.stem
+                            suffix = original_dest.suffix
+                            dest_file = type_folder / f"{stem}_{counter}{suffix}"
+                            counter += 1
+                        
+                        # Copy the geometry file
+                        shutil.copy2(source_file, dest_file)
+                        
+                        print(f"      ✅ Copied: {source_file.name} -> {file_type}/{dest_file.name}")
+                        
+                        # Update geometry info with new relative path
+                        geo_info['copied_file'] = str(dest_file)
+                        geo_info['relative_path'] = f"Geometry/{file_type}/{dest_file.name}"
+                        copied_files.append(geo_info)
+                        
+                    else:
+                        print(f"      ⚠️ Geometry file not found: {source_file}")
+                
+                except Exception as e:
+                    print(f"      ❌ Error copying geometry file {geo_info['file']}: {e}")
+                    
+        except Exception as e:
+            print(f"      ❌ Error in standard geometry file copying: {e}")
 
     def extract_textures_from_material(self, material_node):
         """Extract texture file paths from a material node using comprehensive scanning"""
@@ -684,7 +866,7 @@ class TemplateAssetExporter:
         return texture_info
     
     def create_asset_metadata(self, template_file, nodes_exported, texture_info=None, geometry_info=None):
-        """Create metadata JSON for the asset (for database/search purposes) and store in ArangoDB"""
+        """Create metadata JSON for the asset"""
         try:
             if texture_info is None:
                 texture_info = []
@@ -713,7 +895,7 @@ class TemplateAssetExporter:
             
             # Create metadata structure with hierarchy data for frontend filtering
             metadata = {
-                "id": self.asset_id,
+                "id": self.database_key,  # Use UID_Name format for database key
                 "name": self.asset_name,
                 "asset_type": self.asset_type,
                 "subcategory": self.subcategory,
@@ -750,7 +932,7 @@ class TemplateAssetExporter:
                 "export_method": "template_based",
                 "export_version": "1.0",
                 
-                # For database searches
+                # For search functionality
                 "search_keywords": self._generate_search_keywords(),
                 
                 # Texture info with detailed mapping
@@ -771,9 +953,6 @@ class TemplateAssetExporter:
                 "folder_path": str(self.asset_folder)
             }
             
-            # Note: Database operations are handled separately via Docker auto-insert
-            print(f"   🗄️ Database sync will be handled via Docker auto-insert...")
-            
             # Write metadata to file
             metadata_file = self.asset_folder / "metadata.json"
             import json
@@ -782,118 +961,8 @@ class TemplateAssetExporter:
             
             print(f"   📋 Created metadata: {metadata_file}")
             
-            # Auto-insert into ArangoDB using enhanced HoudiniArangoInserter
-            try:
-                print(f"   🗄️ Syncing to ArangoDB database...")
-                
-                success = False
-                error_message = ""
-                
-                # Method 1: Try direct integration with HoudiniArangoInserter
-                try:
-                    # Import with absolute path to avoid import issues from Houdini
-                    import sys
-                    from pathlib import Path
-                    script_dir = Path(__file__).parent
-                    tools_dir = script_dir / "tools"
-                    sys.path.insert(0, str(tools_dir))
-                    sys.path.insert(0, str(script_dir.parent))  # For config imports
-                    
-                    from houdini_arango_insert import HoudiniArangoInserter
-                    
-                    # Initialize inserter and process the exported asset
-                    inserter = HoudiniArangoInserter(environment='development')
-                    
-                    if inserter.is_connected():
-                        success = inserter.process_exported_asset(str(self.asset_folder))
-                        if success:
-                            print(f"   ✅ Direct database integration successful")
-                        else:
-                            error_message = "HoudiniArangoInserter processing failed"
-                            print(f"   ❌ Direct integration failed: {error_message}")
-                    else:
-                        error_message = "Database connection failed"
-                        print(f"   ⚠️ Database not connected: {error_message}")
-                    
-                except Exception as direct_error:
-                    error_message = f"Direct integration error: {str(direct_error)}"
-                    print(f"   ⚠️ Direct integration failed: {error_message}")
-                    
-                    # Method 2: Fallback to containerized execution
-                    try:
-                        print(f"   🔄 Trying containerized fallback...")
-                        import subprocess
-                        
-                        # Execute database insertion in Docker container
-                        cmd = [
-                            "docker", "exec", "blacksmith-atlas-backend",
-                            "python", "-c", f"""
-import sys
-sys.path.insert(0, '/app/backend')
-
-try:
-    from assetlibrary.houdini.tools.houdini_arango_insert import HoudiniArangoInserter
-    
-    # Convert host path to container path if needed
-    host_path = '{str(self.asset_folder)}'
-    container_path = host_path.replace('/net/library/atlaslib', '/app/assets')
-    
-    inserter = HoudiniArangoInserter(environment='development')
-    
-    if inserter.is_connected():
-        success = inserter.process_exported_asset(container_path)
-        if success:
-            print('SUCCESS: Database sync completed')
-        else:
-            print('ERROR: Processing failed')
-    else:
-        print('ERROR: Database connection failed')
-        
-except Exception as e:
-    print(f'ERROR: {{str(e)}}')
-    import traceback
-    traceback.print_exc()
-"""
-                        ]
-                        
-                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                        
-                        if result.returncode == 0 and "SUCCESS:" in result.stdout:
-                            success = True
-                            print(f"   ✅ Containerized database sync successful")
-                        else:
-                            error_message = f"Container execution failed: {result.stderr or result.stdout}"
-                            print(f"   ❌ Containerized sync failed: {error_message}")
-                            
-                    except subprocess.TimeoutExpired:
-                        error_message = "Database sync timeout (60s)"
-                        print(f"   ⏰ Database sync timed out")
-                    except Exception as container_error:
-                        error_message = f"Container fallback error: {str(container_error)}"
-                        print(f"   ❌ Container fallback failed: {error_message}")
-                
-                # Update metadata with sync status
-                if success:
-                    print(f"   ✅ Successfully inserted into ArangoDB: {self.asset_name}")
-                    metadata["database_synced"] = True
-                    metadata["database_sync_time"] = datetime.now().isoformat()
-                    metadata["database_sync_method"] = "docker_auto_insert"
-                else:
-                    print(f"   ⚠️ ArangoDB insertion failed (export continues)")
-                    metadata["database_synced"] = False
-                    metadata["database_sync_error"] = "Both import and subprocess methods failed"
-                
-                # Update metadata file with sync status
-                with open(metadata_file, 'w') as f:
-                    json.dump(metadata, f, indent=2)
-                    
-            except Exception as arango_error:
-                print(f"   ❌ ArangoDB auto-insert error: {arango_error}")
-                import traceback
-                traceback.print_exc()
-                metadata["database_synced"] = False
-                metadata["database_sync_error"] = str(arango_error)
-                # Don't fail the entire export due to database issues
+            # Automatically ingest into database via API
+            self._ingest_to_database(metadata_file, metadata)
             
             return metadata
             
@@ -1081,543 +1150,6 @@ except Exception as e:
         
         return keywords
 
-    def create_clipboard_version(self, parent_node, nodes_to_export):
-        """Create Atlas clipboard version with copy string embedded in asset folder"""
-        try:
-            print(f"   📋 Creating Atlas clipboard system files...")
-            
-            # Create clipboard folder (now called templates to match Atlas clipboard system)
-            templates_folder = self.asset_folder / "templates"
-            templates_folder.mkdir(exist_ok=True)
-            
-            # Generate Atlas copy string components
-            print(f"   � Generating Atlas copy string...")
-            
-            # Generate encryption key (16 characters like HPasteWeb)
-            import random
-            import string
-            encryption_key = ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(16)])
-            
-            # Create Atlas copy string format: AtlasAsset_AssetName_UID!encryption_key
-            copy_string = f"AtlasAsset_{self.asset_name}_{self.asset_id}!{encryption_key}"
-            
-            print(f"   📋 Copy String: {copy_string}")
-            
-            # Create a temporary subnet to work with
-            temp_subnet_name = f"temp_template_{self.asset_id}"
-            temp_subnet = parent_node.createNode("subnet", temp_subnet_name)
-            temp_subnet.setColor(hou.Color(1.0, 0.8, 0.2))  # Orange for temp
-            
-            try:
-                # Copy all the nodes into the temporary subnet
-                print(f"   📋 Copying {len(nodes_to_export)} nodes to temporary subnet...")
-                copied_nodes = []
-                for node in nodes_to_export:
-                    copied_node = temp_subnet.copyItems([node])[0]
-                    copied_nodes.append(copied_node)
-                
-                print(f"   🔄 Remapping file paths in temporary subnet...")
-                
-                # Now remap all file paths in the temporary subnet to library locations
-                self._remap_paths_for_clipboard(temp_subnet)
-                
-                # Create the Atlas clipboard template file (using new naming convention)
-                template_file = templates_folder / f"{self.asset_name}_clipboard.hip"
-                print(f"   💾 Saving Atlas template file: {template_file}")
-                
-                # Use the simple saveChildrenToFile approach
-                temp_subnet.saveChildrenToFile(copied_nodes, temp_subnet.networkBoxes(), str(template_file))
-                
-                print(f"   ✅ Atlas template file created: {template_file}")
-                print(f"   📏 Template file size: {template_file.stat().st_size / 1024:.1f} KB")
-                
-                # Create Atlas clipboard metadata
-                import json
-                import hashlib
-                
-                # Read template file for metadata
-                with open(template_file, 'rb') as f:
-                    template_data = f.read()
-                
-                metadata = {
-                    'asset_name': self.asset_name,
-                    'uid': self.asset_id,
-                    'subcategory': self.subcategory,
-                    'asset_path': str(self.asset_folder),
-                    'template_filename': f"{self.asset_name}_clipboard.hip",
-                    'encrypted': True,  # We'll add encryption later
-                    'encryption_key': encryption_key,
-                    'node_count': len(nodes_to_export),
-                    'context': self._get_node_context(parent_node),
-                    'checksum': hashlib.sha256(template_data).hexdigest(),
-                    'created_date': datetime.now().isoformat(),
-                    'description': self.description,
-                    'tags': self.tags
-                }
-                
-                # Save metadata
-                metadata_file = templates_folder / f"{self.asset_name}_clipboard.json"
-                with open(metadata_file, 'w') as f:
-                    json.dump(metadata, f, indent=2)
-                
-                print(f"   📋 Atlas metadata created: {metadata_file}")
-                
-                # Save the Atlas copy string for easy access
-                copy_string_file = templates_folder / "ATLAS_COPY_STRING.txt"
-                with open(copy_string_file, 'w') as f:
-                    f.write(f"ATLAS COPY STRING\n")
-                    f.write(f"=" * 40 + "\n\n")
-                    f.write(f"{copy_string}\n\n")
-                    f.write(f"USAGE:\n")
-                    f.write(f"1. Copy the string above to clipboard\n")
-                    f.write(f"2. Share with others or use Atlas Paste to import\n")
-                    f.write(f"3. Atlas Paste will automatically find this asset in library\n\n")
-                    f.write(f"ASSET DETAILS:\n")
-                    f.write(f"- Name: {self.asset_name}\n")
-                    f.write(f"- UID: {self.asset_id}\n")
-                    f.write(f"- Category: {self.subcategory}\n")
-                    f.write(f"- Encryption: Yes (key embedded)\n")
-                    f.write(f"- Library Path: {self.asset_folder}\n")
-                
-                print(f"   📋 Copy string saved: {copy_string_file}")
-                print(f"   🎯 Atlas Copy String: {copy_string}")
-                
-                # Also create simple usage instructions (backward compatibility)
-                instructions_file = templates_folder / "MERGE_INSTRUCTIONS.txt"
-                with open(instructions_file, 'w') as f:
-                    f.write(f"Blacksmith Atlas Asset: {self.asset_name}\n")
-                    f.write(f"=" * 40 + "\n\n")
-                    f.write(f"ATLAS CLIPBOARD USAGE (Recommended):\n")
-                    f.write(f"------------------------------------\n")
-                    f.write(f"Copy this string to clipboard:\n")
-                    f.write(f"{copy_string}\n\n")
-                    f.write(f"Then use Atlas Paste shelf button to import anywhere!\n\n")
-                    f.write(f"MANUAL MERGE (Alternative):\n")
-                    f.write(f"---------------------------\n")
-                    f.write(f"Method 1 - Python Console:\n")
-                    f.write(f'parent_node = hou.pwd()  # Navigate to desired context first\n')
-                    f.write(f'parent_node.loadChildrenFromFile("{template_file.name}")\n\n')
-                    f.write(f"Method 2 - File > Merge:\n")
-                    f.write(f"1. Navigate to desired context (e.g., inside a geometry node)\n")
-                    f.write(f"2. File > Merge\n")
-                    f.write(f"3. Select: {template_file.name}\n\n")
-                    f.write(f"✅ All texture and geometry paths are pre-mapped to library locations!\n")
-                    f.write(f"✅ Atlas Copy/Paste system ready for sharing!\n")
-                
-                print(f"   📋 Atlas clipboard system ready!")
-                
-            finally:
-                # Clean up temporary subnet
-                temp_subnet.destroy()
-                print(f"   🗑️ Cleaned up temporary subnet")
-            
-        except Exception as e:
-            print(f"   ❌ Error creating template file: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def _get_node_context(self, node):
-        """Get node context like HPaste"""
-        try:
-            houver = hou.applicationVersion()
-            if houver[0] >= 16:
-                return node.type().childTypeCategory().name()
-            else:
-                return node.childTypeCategory().name()
-        except:
-            return "Object"  # Default fallback
-
-    def _create_hip_file(self, temp_subnet, copied_nodes):
-        """Create a .hip file with pre-remapped paths for easy merging"""
-        try:
-            print(f"   📄 Creating .hip file for merging...")
-            
-            # Save the hip file
-            hip_file = self.clipboard_folder / f"{self.asset_name}_atlas.hip"
-            
-            # Save current scene
-            current_hip = hou.hipFile.path()
-            print(f"   💾 Current scene: {current_hip}")
-            
-            # Create a new scene temporarily
-            hou.hipFile.clear(suppress_save_prompt=True)
-            
-            try:
-                # Move our pre-remapped nodes to the root /obj context
-                obj_context = hou.node('/obj')
-                
-                # Create a subnet in /obj to hold our nodes
-                asset_subnet = obj_context.createNode('subnet', f"{self.asset_name}_Atlas")
-                asset_subnet.setComment(f"Blacksmith Atlas Asset: {self.asset_name}")
-                asset_subnet.setColor(hou.Color(0.2, 0.6, 1.0))  # Blue
-                
-                # Copy nodes into the asset subnet
-                final_nodes = []
-                for node in copied_nodes:
-                    copied_node = asset_subnet.copyItems([node])[0]
-                    final_nodes.append(copied_node)
-                
-                # Position the subnet nicely
-                asset_subnet.setPosition(hou.Vector2(0, 0))
-                
-                # Add metadata parameters to the subnet
-                self._add_metadata_to_subnet(asset_subnet)
-                
-                # Save the hip file
-                hou.hipFile.save(str(hip_file))
-                
-                print(f"   ✅ Hip file created: {hip_file}")
-                print(f"   📏 Hip file size: {hip_file.stat().st_size / 1024:.1f} KB")
-                
-                # Also create a simple text file with merge instructions
-                instructions_file = self.clipboard_folder / "README.txt"
-                with open(instructions_file, 'w') as f:
-                    f.write(f"Blacksmith Atlas Asset: {self.asset_name}\n")
-                    f.write(f"================================\n\n")
-                    f.write(f"To use this asset:\n")
-                    f.write(f"1. Open your Houdini scene\n")
-                    f.write(f"2. Go to File > Merge\n")
-                    f.write(f"3. Select: {hip_file.name}\n")
-                    f.write(f"4. The asset will appear as a subnet with all paths pre-mapped!\n\n")
-                    f.write(f"Asset Details:\n")
-                    f.write(f"- ID: {self.asset_id}\n")
-                    f.write(f"- Category: {self.subcategory}\n")
-                    f.write(f"- Location: {self.asset_folder}\n\n")
-                    f.write(f"All texture and geometry paths are already mapped to library locations.\n")
-                    f.write(f"No additional setup required!\n")
-                
-                print(f"   � Instructions created: {instructions_file}")
-                
-            finally:
-                # Restore the original scene
-                if current_hip and current_hip != "untitled.hip":
-                    hou.hipFile.load(current_hip, suppress_save_prompt=True)
-                else:
-                    hou.hipFile.clear(suppress_save_prompt=True)
-                    
-        except Exception as e:
-            print(f"   ❌ Error creating hip file: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def _add_metadata_to_subnet(self, subnet):
-        """Add Atlas metadata parameters to the subnet"""
-        try:
-            ptg = subnet.parmTemplateGroup()
-            
-            # Create metadata parameters
-            asset_id_parm = hou.StringParmTemplate("atlas_asset_id", "Atlas Asset ID", 1)
-            asset_id_parm.setDefaultValue([self.asset_id])
-            asset_id_parm.setTags({"editor": "readonly"})
-            
-            asset_name_parm = hou.StringParmTemplate("atlas_asset_name", "Asset Name", 1)
-            asset_name_parm.setDefaultValue([self.asset_name])
-            asset_name_parm.setTags({"editor": "readonly"})
-            
-            subcategory_parm = hou.StringParmTemplate("atlas_subcategory", "Category", 1)
-            subcategory_parm.setDefaultValue([self.subcategory])
-            subcategory_parm.setTags({"editor": "readonly"})
-            
-            library_path_parm = hou.StringParmTemplate("atlas_library_path", "Library Path", 1)
-            library_path_parm.setDefaultValue([str(self.asset_folder)])
-            library_path_parm.setTags({"editor": "readonly"})
-            
-            # Create folder with metadata
-            parm_list = [asset_id_parm, asset_name_parm, subcategory_parm, library_path_parm]
-            atlas_folder = hou.FolderParmTemplate("atlas_info", "🏭 Atlas Asset Info", parm_list, hou.folderType.Collapsible)
-            
-            ptg.addParmTemplate(atlas_folder)
-            subnet.setParmTemplateGroup(ptg)
-            
-        except Exception as e:
-            print(f"   ⚠️ Could not add metadata parameters: {e}")
-
-        except Exception as e:
-            print(f"   ⚠️ Could not add metadata parameters: {e}")
-
-    def _remap_paths_for_clipboard(self, subnet):
-        """Remap all texture and geometry file paths to library locations for clipboard version"""
-        try:
-            print(f"   🔄 Comprehensive path remapping for clipboard...")
-            
-            # Get all nodes recursively
-            all_nodes = []
-            
-            def collect_all_nodes(parent_node):
-                for child in parent_node.children():
-                    all_nodes.append(child)
-                    collect_all_nodes(child)
-            
-            collect_all_nodes(subnet)
-            
-            print(f"   📋 Remapping paths in {len(all_nodes)} nodes...")
-            
-            texture_remaps = 0
-            geometry_remaps = 0
-            
-            # Extensions to look for
-            texture_extensions = ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.exr', '.hdr', '.pic', '.rat', '.tx']
-            geometry_extensions = ['.abc', '.fbx', '.obj', '.bgeo', '.bgeo.sc', '.ply', '.vdb', '.sim', '.geo']
-            
-            # Scan all nodes for file parameters
-            for node in all_nodes:
-                all_parms = node.parms()
-                
-                for parm in all_parms:
-                    try:
-                        parm_value = parm.eval()
-                        
-                        if isinstance(parm_value, str) and parm_value.strip():
-                            # Check for texture files
-                            if any(ext in parm_value.lower() for ext in texture_extensions):
-                                new_path = self._find_library_texture_path_for_clipboard(parm_value)
-                                if new_path:
-                                    parm.set(new_path)
-                                    texture_remaps += 1
-                                    print(f"      🖼️ Texture remapped: {os.path.basename(parm_value)} -> library")
-                            
-                            # Check for geometry files
-                            elif any(ext in parm_value.lower() for ext in geometry_extensions):
-                                new_path = self._find_library_geometry_path_for_clipboard(parm_value)
-                                if new_path:
-                                    parm.set(new_path)
-                                    geometry_remaps += 1
-                                    print(f"      📁 Geometry remapped: {os.path.basename(parm_value)} -> library")
-                    
-                    except Exception as e:
-                        pass  # Skip parameters that can't be evaluated
-            
-            print(f"   ✅ Clipboard remapping complete: {texture_remaps} textures, {geometry_remaps} geometry files")
-            
-        except Exception as e:
-            print(f"   ❌ Error in clipboard path remapping: {e}")
-
-    def _find_library_texture_path_for_clipboard(self, original_path):
-        """Find the library path for a texture file for clipboard version"""
-        try:
-            original_filename = os.path.basename(original_path)
-            
-            # Search in textures folder
-            textures_folder = self.asset_folder / "Textures"
-            if textures_folder.exists():
-                for material_folder in textures_folder.iterdir():
-                    if material_folder.is_dir():
-                        # Look for exact filename match
-                        texture_file = material_folder / original_filename
-                        if texture_file.exists():
-                            return str(texture_file)
-                        
-                        # Look for UDIM pattern match
-                        import re
-                        if re.search(r'\.\d{4}\.', original_filename):
-                            # Convert specific UDIM tile to pattern
-                            udim_pattern = re.sub(r'\.\d{4}\.', '.<UDIM>.', original_filename)
-                            pattern_file = material_folder / udim_pattern
-                            if pattern_file.exists():
-                                return str(pattern_file)
-            
-            return None
-            
-        except Exception as e:
-            return None
-
-    def _find_library_geometry_path_for_clipboard(self, original_path):
-        """Find the library path for a geometry file for clipboard version"""
-        try:
-            original_filename = os.path.basename(original_path)
-            
-            # Search in geometry folder
-            geometry_folder = self.asset_folder / "Geometry"
-            if geometry_folder.exists():
-                for type_folder in geometry_folder.iterdir():
-                    if type_folder.is_dir():
-                        geometry_file = type_folder / original_filename
-                        if geometry_file.exists():
-                            return str(geometry_file)
-            
-            return None
-            
-        except Exception as e:
-            return None
-
-
-def paste_atlas_from_clipboard(target_parent=None, network_editor=None):
-    """Paste an Atlas asset from the system clipboard (Ctrl+V functionality)"""
-    try:
-        print(f"📋 BLACKSMITH ATLAS - PASTE FROM CLIPBOARD")
-        
-        # Get clipboard text
-        clipboard_text = hou.ui.getTextFromClipboard()
-        if not clipboard_text or not clipboard_text.startswith("BLATLAS:"):
-            print(f"   ❌ No Atlas asset found in clipboard")
-            hou.ui.displayMessage("No Blacksmith Atlas asset found in clipboard!\n\n"
-                                "Use 'Create Atlas Asset' to copy an asset to clipboard first.", 
-                                severity=hou.severityType.Warning)
-            return None
-        
-        print(f"   📋 Found Atlas clipboard data ({len(clipboard_text)} chars)")
-        
-        # Parse the clipboard data
-        import json
-        import base64
-        import bz2
-        import tempfile
-        import os
-        
-        # Remove Atlas prefix
-        data_text = clipboard_text[8:]  # Remove "BLATLAS:"
-        
-        # Decode and decompress
-        compressed = base64.urlsafe_b64decode(data_text.encode('UTF-8'))
-        json_data = bz2.decompress(compressed)
-        data = json.loads(json_data.decode('UTF-8'))
-        
-        print(f"   📋 Asset: {data['asset_name']} ({data['asset_id']})")
-        print(f"   📂 From: {data['subcategory']}")
-        print(f"   🎯 Pre-remapped: {data.get('pre_remapped', False)}")
-        
-        # Verify format
-        if data.get('format') != 'BlacksmithAtlas':
-            raise RuntimeError("Invalid Atlas clipboard format")
-        
-        # Get target context
-        if target_parent is None:
-            if network_editor is None:
-                # Find current network editor
-                network_editors = [x for x in hou.ui.paneTabs() if x.type() == hou.paneTabType.NetworkEditor]
-                if network_editors:
-                    network_editor = network_editors[0]
-                    target_parent = network_editor.pwd()
-                else:
-                    target_parent = hou.node('/obj')
-            else:
-                target_parent = network_editor.pwd()
-        
-        print(f"   📍 Pasting into: {target_parent.path()}")
-        
-        # Check context compatibility
-        houver = hou.applicationVersion()
-        required_context = data['context']
-        current_context = target_parent.type().childTypeCategory().name()
-        
-        if current_context != required_context:
-            print(f"   ⚠️ Context mismatch: {current_context} vs {required_context}")
-            # Try to handle context mismatch (like hpaste does)
-            if required_context == 'Sop' and current_context == 'Object':
-                # Create a geo node for SOP context
-                response = hou.ui.displayMessage(f"Asset needs SOP context but you're in Object context.\n\n"
-                                               f"Create a Geometry node to paste into?",
-                                               buttons=("Create Geo Node", "Cancel"),
-                                               default_choice=0, close_choice=1)
-                if response == 0:
-                    geo_node = target_parent.createNode('geo', f"{data['asset_name']}_geo")
-                    target_parent = geo_node
-                    print(f"   📦 Created geo node: {geo_node.path()}")
-                else:
-                    return None
-            else:
-                hou.ui.displayMessage(f"Context mismatch!\n\n"
-                                    f"Asset context: {required_context}\n"
-                                    f"Current context: {current_context}\n\n"
-                                    f"Navigate to a compatible context to paste.",
-                                    severity=hou.severityType.Error)
-                return None
-        
-        # Decode the binary data
-        code = base64.b64decode(data['code'].encode('UTF-8'))
-        
-        # Verify checksum
-        import hashlib
-        if hashlib.sha1(code).hexdigest() != data['chsum']:
-            raise RuntimeError("Clipboard data checksum failed!")
-        
-        print(f"   ✅ Checksum verified")
-        
-        # Get current items for positioning
-        old_items = target_parent.allItems() if houver[0] >= 16 else target_parent.children()
-        
-        # Write to temp file and load
-        fd, temppath = tempfile.mkstemp()
-        try:
-            with open(temppath, "wb") as f:
-                f.write(code)
-            
-            print(f"   🔄 Loading nodes from clipboard...")
-            
-            # Load using Houdini's native deserialization
-            if data['algtype'] == 2:
-                target_parent.loadItemsFromFile(temppath)
-            elif data['algtype'] == 1:
-                target_parent.loadChildrenFromFile(temppath)
-            else:
-                raise RuntimeError(f"Unsupported algorithm type: {data['algtype']}")
-            
-        finally:
-            os.close(fd)
-            os.unlink(temppath)
-        
-        # Find newly created items
-        new_items = []
-        current_items = target_parent.allItems() if houver[0] >= 16 else target_parent.children()
-        for item in current_items:
-            if item not in old_items:
-                new_items.append(item)
-        
-        print(f"   ✅ Created {len(new_items)} items")
-        
-        # Position items if in network editor
-        if network_editor and new_items:
-            try:
-                # Calculate center position
-                cursor_pos = network_editor.cursorPosition()
-                
-                # Calculate bounding box of new items
-                if new_items:
-                    positions = [item.position() for item in new_items]
-                    min_x = min(pos.x() for pos in positions)
-                    min_y = min(pos.y() for pos in positions)
-                    center_x = sum(pos.x() for pos in positions) / len(positions)
-                    center_y = sum(pos.y() for pos in positions) / len(positions)
-                    
-                    # Offset to cursor position
-                    offset_x = cursor_pos.x() - center_x
-                    offset_y = cursor_pos.y() - center_y
-                    
-                    for item in new_items:
-                        current_pos = item.position()
-                        new_pos = hou.Vector2(current_pos.x() + offset_x, current_pos.y() + offset_y)
-                        item.setPosition(new_pos)
-                    
-                    print(f"   📍 Positioned items at cursor: {cursor_pos}")
-            except:
-                pass  # Positioning is optional
-        
-        # Select the first item
-        if new_items:
-            new_items[0].setSelected(True, clear_all_selected=True)
-        
-        # Show success message
-        hou.ui.displayMessage(f"✅ Atlas Asset pasted from clipboard!\n\n"
-                            f"Asset: {data['asset_name']}\n"
-                            f"ID: {data['asset_id']}\n"
-                            f"Category: {data['subcategory']}\n"
-                            f"Items: {len(new_items)}\n\n"
-                            f"🎯 All file paths are pre-mapped to library locations!\n"
-                            f"📋 Clipboard paste successful!", 
-                            title="Atlas Asset Pasted")
-        
-        print(f"   ✅ Successfully pasted Atlas asset: {data['asset_name']}")
-        return new_items
-        
-    except Exception as e:
-        print(f"   ❌ Clipboard paste error: {e}")
-        import traceback
-        traceback.print_exc()
-        hou.ui.displayMessage(f"❌ Failed to paste Atlas asset from clipboard!\n\n"
-                            f"Error: {e}\n\n"
-                            f"Make sure you have a valid Atlas asset in your clipboard.",
-                            severity=hou.severityType.Error)
-        return None
 
 
 class TemplateAssetImporter:
@@ -2091,4 +1623,145 @@ class TemplateAssetImporter:
             if os.path.basename(geometry_file) == original_filename:
                 return geometry_file
         
+        # BGEO sequence matching
+        if any(ext in original_filename.lower() for ext in ['.bgeo', '.bgeo.sc']):
+            # Check if original path has frame variables
+            if any(var in original_path for var in ['${F4}', '${F}', '${FF}', '$F4', '$F']):
+                # For sequence patterns, return the pattern itself to be used in remapping
+                for geometry_file in geometry_files:
+                    # Look for BGEO files in node-specific subfolders
+                    if 'BGEO/' in geometry_file and any(ext in geometry_file.lower() for ext in ['.bgeo', '.bgeo.sc']):
+                        # Check if this could be from the same sequence
+                        geo_basename = os.path.basename(geometry_file)
+                        original_basename = os.path.basename(original_path)
+                        
+                        # Remove frame variables for comparison
+                        original_pattern = original_basename
+                        for var in ['${F4}', '${F}', '${FF}', '$F4', '$F']:
+                            original_pattern = original_pattern.replace(var, '*')
+                        
+                        # Use glob-like matching
+                        import fnmatch
+                        if fnmatch.fnmatch(geo_basename, original_pattern):
+                            # Return the pattern with the correct library path structure
+                            library_pattern = geometry_file.replace(geo_basename, os.path.basename(original_path))
+                            return library_pattern
+        
         return None
+
+    def _ingest_to_database(self, metadata_file, metadata):
+        """Automatically ingest the exported asset into the database via API"""
+        try:
+            print(f"🔴 DEBUG: Starting auto-ingestion process...")
+            print(f"🔴 DEBUG: Metadata file: {metadata_file}")
+            print(f"🔴 DEBUG: Metadata keys: {list(metadata.keys()) if metadata else 'None'}")
+            
+            # Import subprocess for curl commands (no external dependencies needed)
+            import subprocess
+            import json
+            
+            # Define API endpoint
+            api_url = "http://localhost:8000/api/v1/assets"
+            print(f"🔴 DEBUG: API URL: {api_url}")
+            
+            # Prepare asset data for API (match AssetCreateRequest schema)
+            # Use the database key from metadata (UID_Name format)
+            database_key = metadata.get("id", self.database_key)
+            print(f"🔴 DEBUG: Using database key: {database_key}")
+            
+            asset_data = {
+                "name": metadata.get("name", self.asset_name),
+                "category": metadata.get("subcategory", self.subcategory),
+                "paths": {
+                    "asset_folder": str(self.asset_folder),
+                    "template_file": metadata.get("template_file", ""),
+                    "metadata": str(metadata_file)
+                },
+                "metadata": {
+                    # Include hierarchy for frontend filtering
+                    "hierarchy": metadata.get("hierarchy", {
+                        "dimension": "3D",
+                        "asset_type": metadata.get("asset_type", self.asset_type),
+                        "subcategory": metadata.get("subcategory", self.subcategory),
+                        "render_engine": metadata.get("render_engine", self.render_engine)
+                    }),
+                    # Include all original metadata
+                    **metadata,
+                    # Additional API-specific metadata
+                    "tags": metadata.get("tags", []),
+                    "created_at": metadata.get("created_at", ""),
+                    "created_by": metadata.get("created_by", "unknown"),
+                    "status": "active",
+                    "dimension": "3D"
+                },
+                "file_sizes": metadata.get("file_sizes", {})
+            }
+            
+            print(f"🔴 DEBUG: Asset data prepared:")
+            print(f"🔴 DEBUG:   Name: {asset_data['name']}")
+            print(f"🔴 DEBUG:   Category: {asset_data['category']}")
+            print(f"🔴 DEBUG:   Asset folder: {asset_data['paths']['asset_folder']}")
+            print(f"🔴 DEBUG:   Tags: {asset_data['tags']}")
+            print(f"🔴 DEBUG: Full asset_data keys: {list(asset_data.keys())}")
+            
+            # Make API request using curl
+            try:
+                print(f"🔴 DEBUG: Making POST request to {api_url} via curl")
+                print(f"🔴 DEBUG: Request headers: Content-Type: application/json")
+                
+                # Convert asset_data to JSON for curl
+                json_data = json.dumps(asset_data)
+                print(f"🔴 DEBUG: JSON data length: {len(json_data)} characters")
+                
+                # Use curl via subprocess
+                curl_cmd = [
+                    'curl', '-X', 'POST',
+                    api_url,
+                    '-H', 'Content-Type: application/json',
+                    '-H', 'User-Agent: Houdini-Atlas-Export/1.0',
+                    '-d', json_data,
+                    '--silent',  # Suppress progress output
+                    '--show-error'  # Show errors
+                ]
+                
+                result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=30)
+                
+                print(f"🔴 DEBUG: Curl return code: {result.returncode}")
+                print(f"🔴 DEBUG: Curl stdout (first 500 chars): {result.stdout[:500]}")
+                if result.stderr:
+                    print(f"🔴 DEBUG: Curl stderr: {result.stderr}")
+                
+                if result.returncode == 0:
+                    try:
+                        response_data = json.loads(result.stdout)
+                        asset_id = response_data.get("id", "unknown")
+                        print(f"   ✅ Asset successfully ingested into database!")
+                        print(f"      🆔 Database ID: {asset_id}")
+                        print(f"      📊 Asset available in Atlas frontend")
+                        return True
+                    except json.JSONDecodeError as e:
+                        print(f"   ❌ Invalid JSON response: {e}")
+                        print(f"      Raw response: {result.stdout}")
+                        return False
+                else:
+                    print(f"   ❌ Curl request failed with exit code: {result.returncode}")
+                    print(f"      Error output: {result.stderr}")
+                    return False
+                    
+            except subprocess.TimeoutExpired:
+                print(f"   ❌ API request timed out after 30 seconds")
+                print(f"   💡 Manual ingestion: python /net/dev/alex.parks/scm/int/Blacksmith-Atlas/scripts/utilities/ingest_metadata_curl.py {metadata_file}")
+                return False
+            
+            except Exception as e:
+                print(f"🔴 DEBUG: Request exception details: {e}")
+                print(f"   ❌ Request failed with error: {e}")
+                return False
+                
+        except Exception as e:
+            print(f"🔴 DEBUG: General exception in _ingest_to_database: {e}")
+            print(f"   ❌ Error during auto-ingestion: {e}")
+            print(f"   💡 Manual ingestion: python /net/dev/alex.parks/scm/int/Blacksmith-Atlas/scripts/utilities/ingest_metadata_curl.py {metadata_file}")
+            import traceback
+            traceback.print_exc()
+            return False

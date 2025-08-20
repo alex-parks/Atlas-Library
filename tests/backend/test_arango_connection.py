@@ -45,11 +45,11 @@ def test_direct_connection():
         info = db.properties()
         print(f"✅ Connected to database: {info.get('name')}")
         
-        # Check for Asset_Library collection
-        if db.has_collection('Asset_Library'):
-            collection = db.collection('Asset_Library')
+        # Check for Atlas_Library collection
+        if db.has_collection('Atlas_Library'):
+            collection = db.collection('Atlas_Library')
             count = collection.count()
-            print(f"✅ Asset_Library collection found with {count} documents")
+            print(f"✅ Atlas_Library collection found with {count} documents")
             
             # Show some sample documents
             if count > 0:
@@ -59,7 +59,7 @@ def test_direct_connection():
             
             return True, collection
         else:
-            print("❌ Asset_Library collection not found")
+            print("❌ Atlas_Library collection not found")
             return False, None
             
     except Exception as e:
@@ -250,7 +250,7 @@ def main():
         
         if not manager_success:
             print("   • Check if collection manager imports are working")
-            print("   • Verify Asset_Library collection exists")
+            print("   • Verify Atlas_Library collection exists")
         
         if not insert_success:
             print("   • Check auto-insert module dependencies")

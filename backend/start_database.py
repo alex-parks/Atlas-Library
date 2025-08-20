@@ -181,7 +181,7 @@ def initialize_arangodb_database(settings):
         db = setup_database()
 
         # Check if database needs initialization
-        assets_collection = db.collection('Asset_Library')
+        assets_collection = db.collection('Atlas_Library')
         
         try:
             existing_assets_count = assets_collection.count()

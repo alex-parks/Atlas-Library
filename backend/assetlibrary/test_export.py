@@ -11,7 +11,7 @@ from pathlib import Path
 backend_path = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_path))
 
-from assetlibrary._3D.houdiniae import HoudiniAssetExporter
+from assetlibrary.houdini.houdiniae import TemplateAssetExporter
 from assetlibrary.config import BlacksmithAtlasConfig
 import json
 import yaml
@@ -42,7 +42,7 @@ def test_yaml_export():
     print("=" * 60)
 
     # Create test exporter
-    exporter = HoudiniAssetExporter("TestAsset_YAML", "Test")
+    exporter = TemplateAssetExporter("TestAsset_YAML", "Test")
 
     # Create test document
     test_doc = {
@@ -88,7 +88,7 @@ def test_json_export():
 
     try:
         # Create test exporter
-        exporter = HoudiniAssetExporter("TestAsset_JSON", "Test")
+        exporter = TemplateAssetExporter("TestAsset_JSON", "Test")
 
         # Create test document
         test_doc = {
@@ -173,7 +173,7 @@ def test_folder_creation():
     print("=" * 60)
 
     # Create test exporter
-    exporter = HoudiniAssetExporter("TestAsset_Folders", "Test")
+    exporter = TemplateAssetExporter("TestAsset_Folders", "Test")
 
     # Don't actually create folders, just show what would be created
     print(f"Would create folder structure:")

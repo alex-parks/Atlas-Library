@@ -5,7 +5,7 @@ Reset ArangoDB for Blacksmith Atlas
 
 This script will:
 1. Delete all existing collections from blacksmith_atlas database
-2. Create a single Asset_Library collection
+2. Create a single Atlas_Library collection
 3. Set up proper indexes for performance
 
 Usage: python reset_arangodb.py
@@ -58,11 +58,11 @@ def main():
         else:
             print("\n📭 No existing collections found")
         
-        # Create the Asset_Library collection
-        print(f"\n📦 Creating Asset_Library collection...")
+        # Create the Atlas_Library collection
+        print(f"\n📦 Creating Atlas_Library collection...")
         try:
-            collection = db.create_collection('Asset_Library')
-            print("   ✅ Created Asset_Library collection")
+            collection = db.create_collection('Atlas_Library')
+            print("   ✅ Created Atlas_Library collection")
             
             # Create indexes for performance
             print("   📊 Creating indexes...")
@@ -129,7 +129,7 @@ def main():
                 print(f"   ⚠️ Query test failed - no documents found")
             
         except Exception as e:
-            print(f"   ❌ Failed to create Asset_Library collection: {e}")
+            print(f"   ❌ Failed to create Atlas_Library collection: {e}")
             return 1
         
         # Show final status
@@ -143,7 +143,7 @@ def main():
         print(f"   Password: atlas_password")
         
         print(f"\n✅ ArangoDB reset complete!")
-        print(f"💡 You can now use the Asset_Library collection for all assets")
+        print(f"💡 You can now use the Atlas_Library collection for all assets")
         
         return 0
         

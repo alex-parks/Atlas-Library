@@ -34,8 +34,8 @@ def init_database():
         # Connect to the new database
         db = client.db(database_name, username=username, password=password)
         
-        # Create collections
-        collections = ['assets', 'asset_relationships', 'projects', 'tags', 'users', 'todos']
+        # Create Atlas_Library collection only
+        collections = ['Atlas_Library']
         
         for collection_name in collections:
             if not db.has_collection(collection_name):
@@ -45,11 +45,7 @@ def init_database():
             else:
                 print(f"Collection '{collection_name}' already exists.")
         
-        # Create edge collection for relationships
-        if not db.has_collection('asset_relationships'):
-            print("Creating edge collection 'asset_relationships'...")
-            db.create_collection('asset_relationships', edge=True)
-            print("Edge collection 'asset_relationships' created successfully!")
+        # Only using Atlas_Library collection for assets
         
         print("\nDatabase initialization completed successfully!")
         return True

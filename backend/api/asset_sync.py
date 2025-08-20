@@ -429,7 +429,7 @@ async def get_graph_statistics():
         
         # Query collection counts
         collection_stats = {}
-        collections = ['Asset_Library', 'textures', 'materials', 'geometry', 'projects', 'users']
+        collections = ['Atlas_Library', 'textures', 'materials', 'geometry', 'projects', 'users']
         edge_collections = ['asset_uses_texture', 'asset_has_material', 'material_uses_texture', 
                           'asset_uses_geometry', 'project_contains_asset', 'user_created_asset']
         
@@ -458,7 +458,7 @@ async def get_graph_statistics():
         try:
             # Most connected assets
             most_connected_query = """
-            FOR asset IN Asset_Library
+            FOR asset IN Atlas_Library
                 LET texture_count = LENGTH(FOR v IN OUTBOUND asset asset_uses_texture RETURN 1)
                 LET material_count = LENGTH(FOR v IN OUTBOUND asset asset_has_material RETURN 1)
                 LET geometry_count = LENGTH(FOR v IN OUTBOUND asset asset_uses_geometry RETURN 1)

@@ -35,7 +35,7 @@ def reload_modules():
         
         # List of modules to reload
         modules_to_reload = [
-            'assetlibrary._3D.houdiniae',
+            'assetlibrary.houdini.houdiniae',
             'assetlibrary.config',
             'assetlibrary.models'
         ]
@@ -70,7 +70,7 @@ def ensure_fresh_import():
     reload_modules()
     
     # Now import fresh
-    from assetlibrary._3D.houdiniae import (
+    from assetlibrary.houdini.houdiniae import (
         TemplateAssetExporter,
         list_available_subcategories, 
         search_assets_in_library

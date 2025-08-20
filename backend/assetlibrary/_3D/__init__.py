@@ -10,19 +10,19 @@ Main modules:
 - demo_template_workflow: Example usage and demonstration
 """
 
-from .houdiniae import (
+from ..houdini.houdiniae import (
     TemplateAssetExporter,
     TemplateAssetImporter
 )
 
 # Additional imports if available
 try:
-    from .houdiniae import save_template, load_template
+    from ..houdini.houdiniae import save_template, load_template
 except ImportError:
     pass
 
 try:
-    from .houdiniae import export_asset_as_template, import_asset_from_template  
+    from ..houdini.houdiniae import export_asset_as_template, import_asset_from_template  
 except ImportError:
     pass
 

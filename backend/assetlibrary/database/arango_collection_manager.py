@@ -64,9 +64,9 @@ class ArangoAssetCollectionManager:
         self.connected = False
         self.library_root = Path("/net/library/atlaslib/3D")
         
-        # Single collection schema - Asset_Library only
+        # Single collection schema - Atlas_Library only
         self.collection_schemas = {
-            'Asset_Library': {
+            'Atlas_Library': {
                 'type': 'document',
                 'description': 'Single unified collection for all Blacksmith Atlas assets',
                 'indexes': [
@@ -237,13 +237,13 @@ class ArangoAssetCollectionManager:
                 logger.error("❌ Database not connected")
                 return []
             
-            assets_collection = self.collections.get('Asset_Library')
+            assets_collection = self.collections.get('Atlas_Library')
             if not assets_collection:
-                logger.error("❌ Asset_Library collection not available")
+                logger.error("❌ Atlas_Library collection not available")
                 return []
             
             # Simple query to get all assets
-            query = "FOR asset IN Asset_Library RETURN asset"
+            query = "FOR asset IN Atlas_Library RETURN asset"
             cursor = self.db.aql.execute(query)
             assets = list(cursor)
             
@@ -266,9 +266,9 @@ class ArangoAssetCollectionManager:
         try:
             logger.info("🗄️ Fetching assets from database...")
             
-            assets_collection = self.collections.get('Asset_Library')
+            assets_collection = self.collections.get('Atlas_Library')
             if not assets_collection:
-                logger.error("❌ Asset_Library collection not available")
+                logger.error("❌ Atlas_Library collection not available")
                 return {}
             
             # Query all assets
@@ -293,7 +293,7 @@ class ArangoAssetCollectionManager:
             return False
         
         try:
-            assets_collection = self.collections.get('Asset_Library')
+            assets_collection = self.collections.get('Atlas_Library')
             if not assets_collection:
                 return False
             
@@ -362,7 +362,7 @@ class ArangoAssetCollectionManager:
             return False
         
         try:
-            assets_collection = self.collections.get('Asset_Library')
+            assets_collection = self.collections.get('Atlas_Library')
             if not assets_collection:
                 return False
             
@@ -393,7 +393,7 @@ class ArangoAssetCollectionManager:
             return False
         
         try:
-            assets_collection = self.collections.get('Asset_Library')
+            assets_collection = self.collections.get('Atlas_Library')
             if not assets_collection:
                 return False
             

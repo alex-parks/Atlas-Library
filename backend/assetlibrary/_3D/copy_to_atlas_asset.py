@@ -6,7 +6,86 @@ Enhanced version with full parameter interface and simplified export
 
 import os
 import sys
+import subprocess
+import json
 from pathlib import Path
+
+def call_atlas_api_ingestion(metadata_file_path):
+    """
+    Call the Atlas API ingestion script to submit metadata.json via REST API
+    """
+    try:
+        print(f"📡 Starting API ingestion for: {metadata_file_path}")
+        
+        # Path to the ingestion script
+        ingestion_script = "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/scripts/utilities/ingest_metadata.py"
+        
+        # Check if ingestion script exists
+        if not os.path.exists(ingestion_script):
+            print(f"❌ Ingestion script not found: {ingestion_script}")
+            return False
+        
+        # Check if metadata file exists
+        if not os.path.exists(metadata_file_path):
+            print(f"❌ Metadata file not found: {metadata_file_path}")
+            return False
+            
+        print(f"✅ Found ingestion script: {ingestion_script}")
+        print(f"✅ Found metadata file: {metadata_file_path}")
+        
+        # Use the backend's virtual environment Python
+        backend_venv_python = "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend/venv/bin/python"
+        
+        # Check if venv python exists, fallback to system python3
+        if os.path.exists(backend_venv_python):
+            python_exec = backend_venv_python
+            print(f"✅ Using backend virtual environment: {python_exec}")
+        else:
+            python_exec = "python3"
+            print(f"⚠️ Backend venv not found, using system python3")
+        
+        # Prepare the command to run the ingestion script
+        cmd = [
+            python_exec,
+            ingestion_script,
+            metadata_file_path,
+            "--api-url", "http://localhost:8000",
+            "--verbose"
+        ]
+        
+        print(f"🚀 Running command: {' '.join(cmd)}")
+        
+        # Run the ingestion script
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60  # 60 second timeout
+        )
+        
+        # Log the output
+        if result.stdout:
+            print(f"📄 STDOUT:\\n{result.stdout}")
+        
+        if result.stderr:
+            print(f"⚠️ STDERR:\\n{result.stderr}")
+            
+        # Check if the command was successful
+        if result.returncode == 0:
+            print("✅ API ingestion completed successfully!")
+            return True
+        else:
+            print(f"❌ API ingestion failed with return code: {result.returncode}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("❌ API ingestion timed out after 60 seconds")
+        return False
+    except Exception as e:
+        print(f"❌ API ingestion error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def copy_selected_to_atlas_asset():
     """
@@ -305,7 +384,7 @@ try:
     
     # Force reload for development
     import importlib
-    modules_to_reload = ['assetlibrary._3D.houdiniae']
+    modules_to_reload = ['assetlibrary.houdini.houdiniae']
     for module_name in modules_to_reload:
         if module_name in sys.modules:
             importlib.reload(sys.modules[module_name])
@@ -406,9 +485,9 @@ try:
             if success:
                 subnet.parm("export_status").set("✅ Export completed!")
                 
-                # Add to ArangoDB Atlas_Library collection
+                # Add to ArangoDB Atlas_Library collection via REST API
                 try:
-                    print("\\n🗄️ ADDING TO ARANGODB...")
+                    print("\\n🗄️ ADDING TO ATLAS API...")
                     print(f"🔍 Looking for metadata in: {exporter.asset_folder}")
                     
                     # Find the metadata.json file in the exported asset folder
@@ -423,15 +502,14 @@ try:
                             metadata_content = f.read()
                         print(f"📄 Metadata content (first 500 chars): {metadata_content[:500]}...")
                         
-                        # Import and call the database insertion
-                        from assetlibrary.houdini.auto_arango_insert import auto_insert_on_export
-                        print("✅ Imported auto_insert_on_export function")
+                        # Use the Atlas REST API ingestion script
+                        print("🚀 Calling Atlas API ingestion script...")
+                        api_success = call_atlas_api_ingestion(metadata_file)
                         
-                        db_success = auto_insert_on_export(metadata_file)
-                        if db_success:
-                            print("✅ Successfully added to ArangoDB Atlas_Library collection!")
+                        if api_success:
+                            print("✅ Successfully added to Atlas Library via REST API!")
                         else:
-                            print("❌ Failed to add to ArangoDB (check database connection)")
+                            print("❌ Failed to add to Atlas Library via API (check API connection)")
                     else:
                         print(f"❌ Metadata file not found: {metadata_file}")
                         
@@ -442,11 +520,11 @@ try:
                         except:
                             print(f"📁 Could not list folder contents")
                         
-                except Exception as db_error:
-                    print(f"❌ Database insertion error: {db_error}")
+                except Exception as api_error:
+                    print(f"❌ API ingestion error: {api_error}")
                     import traceback
                     traceback.print_exc()
-                    # Don't fail the export if database fails - just log it
+                    # Don't fail the export if API fails - just log it
                 
                 success_msg = f"""✅ ATLAS ASSET EXPORT SUCCESSFUL!
                 
@@ -456,7 +534,7 @@ try:
 📍 Location: {exporter.asset_folder}
 
 🎯 The asset is now in the Atlas library!
-🗄️ Added to ArangoDB Atlas_Library collection"""
+🗄️ Added to Atlas Library via REST API"""
                 
                 hou.ui.displayMessage(success_msg, title="🎉 Atlas Export Complete")
                 print("🎉 EXPORT SUCCESS!")

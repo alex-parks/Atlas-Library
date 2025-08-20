@@ -36,9 +36,9 @@ def setup_database(environment: str = 'development'):
     # Connect to our database
     db = client.db(db_name, username=db_config['username'], password=db_config['password'])
 
-    # Create collections
+    # Create Atlas_Library collection only
     collections = {
-        'assets': {
+        'Atlas_Library': {
             'type': 'document',
             'schema': {
                 'rule': {
@@ -48,6 +48,8 @@ def setup_database(environment: str = 'development'):
                         'name': {'type': 'string'},
                         'category': {'type': 'string'},
                         'asset_type': {'type': 'string'},
+                        'dimension': {'type': 'string'},
+                        'hierarchy': {'type': 'object'},
                         'paths': {'type': 'object'},
                         'metadata': {'type': 'object'},
                         'tags': {'type': 'array'},
@@ -57,26 +59,6 @@ def setup_database(environment: str = 'development'):
                     'required': ['name', 'category', 'asset_type']
                 }
             }
-        },
-        'asset_relationships': {
-            'type': 'edge',
-            'schema': None
-        },
-        'projects': {
-            'type': 'document',
-            'schema': None
-        },
-        'tags': {
-            'type': 'document',
-            'schema': None
-        },
-        'users': {
-            'type': 'document',
-            'schema': None
-        },
-        'export_jobs': {
-            'type': 'document',
-            'schema': None
         }
     }
 
@@ -94,7 +76,7 @@ def setup_database(environment: str = 'development'):
             print(f"ℹ️ Collection '{coll_name}' already exists")
 
     # Create indexes
-    assets = db.collection('assets')
+    assets = db.collection('Atlas_Library')
 
     # Create indexes for better query performance
     indexes = [
@@ -113,24 +95,7 @@ def setup_database(environment: str = 'development'):
             if 'duplicate' not in str(e).lower():
                 print(f"⚠️ Failed to create index on {index['fields']}: {e}")
 
-    # Create some initial tags
-    tags_collection = db.collection('tags')
-    default_tags = [
-        {'_key': 'hero', 'name': 'Hero', 'category': 'quality', 'color': '#FF6B6B'},
-        {'_key': 'background', 'name': 'Background', 'category': 'usage', 'color': '#4ECDC4'},
-        {'_key': 'wip', 'name': 'Work in Progress', 'category': 'status', 'color': '#FFE66D'},
-        {'_key': 'approved', 'name': 'Approved', 'category': 'status', 'color': '#95E1D3'},
-        {'_key': 'highres', 'name': 'High Resolution', 'category': 'technical', 'color': '#C7CEEA'},
-        {'_key': 'lowres', 'name': 'Low Resolution', 'category': 'technical', 'color': '#FECA57'}
-    ]
-
-    for tag in default_tags:
-        try:
-            tags_collection.insert(tag)
-            print(f"✅ Created tag: {tag['name']}")
-        except Exception as e:
-            if 'unique constraint violated' not in str(e).lower():
-                print(f"⚠️ Failed to create tag {tag['name']}: {e}")
+    # No additional collections needed - using Atlas_Library only
 
     print("\n✅ Database setup complete!")
     return db
@@ -155,7 +120,7 @@ def migrate_json_to_arango():
 
     print(f"\n📦 Migrating {len(json_assets)} assets from JSON to ArangoDB...")
 
-    assets_collection = db.collection('assets')
+    assets_collection = db.collection('Atlas_Library')
     migrated = 0
     skipped = 0
 
@@ -211,13 +176,12 @@ def test_connection(environment: str = 'development'):
         print(f"   Database: {db_config['database']}")
         print(f"\n📊 Database Statistics:")
 
-        for coll_name in ['assets', 'projects', 'tags', 'users']:
-            if db.has_collection(coll_name):
-                count = db.collection(coll_name).count()
-                print(f"   {coll_name}: {count} documents")
+        if db.has_collection('Atlas_Library'):
+            count = db.collection('Atlas_Library').count()
+            print(f"   Atlas_Library: {count} documents")
 
         # Show some sample assets
-        assets = db.collection('assets')
+        assets = db.collection('Atlas_Library')
         print(f"\n📦 Sample Assets:")
         for asset in assets.all(limit=5):
             print(f"   - {asset['name']} ({asset['category']}) - ID: {asset['_key']}")

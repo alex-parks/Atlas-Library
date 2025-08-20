@@ -272,7 +272,7 @@ class AssetQueries:
     def find_by_name(name: str) -> str:
         """AQL query to find assets by name"""
         return """
-        FOR asset IN Asset_Library
+        FOR asset IN Atlas_Library
             FILTER asset.name == @name
             RETURN asset
         """
@@ -281,7 +281,7 @@ class AssetQueries:
     def find_by_category(category: str) -> str:
         """AQL query to find assets by category"""
         return """
-        FOR asset IN Asset_Library
+        FOR asset IN Atlas_Library
             FILTER asset.category == @category
             SORT asset.created_at DESC
             RETURN asset
@@ -313,7 +313,7 @@ class AssetQueries:
     def find_unused_assets() -> str:
         """AQL query to find assets not used in any project"""
         return """
-        FOR asset IN Asset_Library
+        FOR asset IN Atlas_Library
             LET usage = LENGTH(
                 FOR v IN 1..1 INBOUND asset asset_relationships
                     RETURN v
@@ -327,19 +327,19 @@ class AssetQueries:
         """AQL query to get asset library statistics"""
         return """
         RETURN {
-            total_assets: LENGTH(Asset_Library),
+            total_assets: LENGTH(Atlas_Library),
             by_category: (
-                FOR asset IN Asset_Library
+                FOR asset IN Atlas_Library
                     COLLECT category = asset.category WITH COUNT INTO count
                     RETURN {category: category, count: count}
             ),
             by_type: (
-                FOR asset IN Asset_Library
+                FOR asset IN Atlas_Library
                     COLLECT type = asset._type WITH COUNT INTO count
                     RETURN {type: type, count: count}
             ),
             total_size: SUM(
-                FOR asset IN Asset_Library
+                FOR asset IN Atlas_Library
                     RETURN SUM(VALUES(asset.file_sizes))
             )
         }

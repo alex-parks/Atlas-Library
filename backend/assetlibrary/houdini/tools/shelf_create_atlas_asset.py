@@ -209,7 +209,7 @@ try:
     
     # Remove from cache if exists
     modules_to_remove = [
-        'assetlibrary._3D.houdiniae',
+        'assetlibrary.houdini.houdiniae',
         'houdiniae'
     ]
     for mod in modules_to_remove:

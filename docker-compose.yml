@@ -21,6 +21,23 @@ services:
       timeout: 10s
       retries: 3
 
+  # Redis Cache (for performance optimization)
+  redis:
+    image: redis:7-alpine
+    container_name: blacksmith-atlas-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - atlas-network
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # Backend API
   backend:
     build:
@@ -44,6 +61,7 @@ services:
       - ${LOG_PATH:-./logs}:/app/logs
     depends_on:
       - arangodb
+      - redis
     networks:
       - atlas-network
     restart: unless-stopped
@@ -70,6 +88,7 @@ services:
 volumes:
   arango_data:
   arango_apps:
+  redis_data:
 
 networks:
   atlas-network:

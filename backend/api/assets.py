@@ -140,43 +140,63 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
         folder_path=asset_data.get('folder_path', asset_data.get('paths', {}).get('folder_path'))
     )
 
-@router.get("/assets", response_model=List[AssetResponse])
+class PaginationResponse(BaseModel):
+    items: List[AssetResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+@router.get("/assets", response_model=PaginationResponse)
 async def list_assets(
         search: Optional[str] = Query(None, description="Search term"),
         category: Optional[str] = Query(None, description="Filter by category"),
         tags: Optional[List[str]] = Query(None, description="Filter by tags"),
-        limit: int = Query(100, description="Maximum number of results")
+        limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
+        offset: int = Query(0, ge=0, description="Number of items to skip")
 ):
-    """List all assets from ArangoDB"""
+    """List all assets from ArangoDB with pagination"""
     asset_queries = get_asset_queries()
     if not asset_queries:
         logger.error("❌ Database connection failed in list_assets")
-        return []
+        return PaginationResponse(items=[], total=0, limit=limit, offset=offset, has_more=False)
     
     try:
-        logger.info(f"🔍 Searching assets: search='{search}', category='{category}', tags={tags}")
-        logger.info(f"📊 Asset queries object: {asset_queries}")
-        logger.info(f"📊 DB object: {asset_queries.db if asset_queries else 'None'}")
+        logger.info(f"🔍 Searching assets: search='{search}', category='{category}', tags={tags}, limit={limit}, offset={offset}")
+        
+        # Get all matching assets
         raw_assets = asset_queries.search_assets(
             search_term=search or "",
             category=category,
             tags=tags
         )
-        logger.info(f"✅ Found {len(raw_assets)} raw assets")
-        logger.info(f"📊 Raw assets data: {raw_assets}")
+        
+        total_count = len(raw_assets)
+        logger.info(f"✅ Found {total_count} total assets")
+        
+        # Apply pagination
+        paginated_assets = raw_assets[offset:offset + limit]
         
         assets = []
-        for asset_data in raw_assets[:limit]:
+        for asset_data in paginated_assets:
             try:
                 asset_response = convert_asset_to_response(asset_data)
                 assets.append(asset_response)
-                logger.info(f"✅ Converted asset: {asset_response.name}")
             except Exception as e:
                 logger.error(f"❌ Failed to convert asset: {e}")
                 continue
         
-        logger.info(f"✅ Returning {len(assets)} assets")
-        return assets
+        has_more = (offset + limit) < total_count
+        
+        logger.info(f"✅ Returning {len(assets)} assets (page {offset//limit + 1})")
+        
+        return PaginationResponse(
+            items=assets,
+            total=total_count,
+            limit=limit,
+            offset=offset,
+            has_more=has_more
+        )
         
     except Exception as e:
         logger.error(f"❌ Error in list_assets: {e}")
@@ -206,7 +226,23 @@ async def create_asset(asset_request: AssetCreateRequest):
     
     try:
         import uuid
-        asset_id = f"{asset_request.name}_{uuid.uuid4().hex[:8]}"
+        import re
+        
+        # Check if metadata contains an ID in UID_Name format (from Houdini export)
+        existing_id = asset_request.metadata.get('id') if asset_request.metadata else None
+        print(f"🔴 DEBUG: asset_request.metadata = {asset_request.metadata}")
+        print(f"🔴 DEBUG: existing_id from metadata = {existing_id}")
+        
+        if existing_id and '_' in existing_id and len(existing_id.split('_')[0]) == 8:
+            # Use existing ID from Houdini export (already in UID_Name format)
+            asset_id = existing_id
+            print(f"🔴 DEBUG: Using existing asset ID from metadata: {asset_id}")
+        else:
+            # Generate new asset ID in UID_Name format
+            sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_request.name)
+            uid = uuid.uuid4().hex[:8].upper()
+            asset_id = f"{uid}_{sanitized_name}"
+            print(f"🔴 DEBUG: Generated new asset ID: {asset_id}")
         
         # Create asset document for ArangoDB
         asset_data = {
@@ -240,6 +276,187 @@ async def create_asset(asset_request: AssetCreateRequest):
         return convert_asset_to_response(asset_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating asset: {str(e)}")
+
+@router.put("/assets/{asset_id}", response_model=AssetResponse)
+async def update_asset(asset_id: str, asset_request: AssetCreateRequest):
+    """Full update of an asset - replaces entire document"""
+    asset_queries = get_asset_queries()
+    if not asset_queries:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        # Check if asset exists
+        collection = asset_queries.db.collection('Atlas_Library')
+        if not collection.has(asset_id):
+            raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
+        
+        # Get existing asset for metadata preservation
+        existing_asset = collection.get(asset_id)
+        
+        # Create updated asset document
+        asset_data = {
+            '_key': asset_id,
+            'id': asset_id,
+            'name': asset_request.name,
+            'category': asset_request.category,
+            'asset_type': asset_request.metadata.get('hierarchy', {}).get('asset_type', 'Assets'),
+            'dimension': '3D',
+            'hierarchy': asset_request.metadata.get('hierarchy', {}),
+            'metadata': asset_request.metadata,
+            'paths': asset_request.paths,
+            'file_sizes': asset_request.file_sizes,
+            'tags': asset_request.tags if hasattr(asset_request, 'tags') else [],
+            'created_at': existing_asset.get('created_at', datetime.now().isoformat()),
+            'created_by': existing_asset.get('created_by', 'unknown'),
+            'updated_at': datetime.now().isoformat(),
+            'status': 'active'
+        }
+        
+        # Replace document in ArangoDB
+        result = collection.replace(asset_id, asset_data)
+        
+        logger.info(f"✅ Asset {asset_id} updated successfully")
+        
+        return convert_asset_to_response(asset_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating asset: {str(e)}")
+
+@router.patch("/assets/{asset_id}", response_model=AssetResponse)
+async def patch_asset(asset_id: str, asset_update: dict):
+    """Partial update of an asset - updates only provided fields"""
+    asset_queries = get_asset_queries()
+    if not asset_queries:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        # Check if asset exists
+        collection = asset_queries.db.collection('Atlas_Library')
+        if not collection.has(asset_id):
+            raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
+        
+        # Add update timestamp
+        asset_update['updated_at'] = datetime.now().isoformat()
+        
+        # Update document in ArangoDB
+        result = collection.update(asset_id, asset_update)
+        
+        # Get updated document
+        updated_asset = collection.get(asset_id)
+        
+        logger.info(f"✅ Asset {asset_id} partially updated")
+        
+        return convert_asset_to_response(updated_asset)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating asset: {str(e)}")
+
+@router.delete("/assets/{asset_id}")
+async def delete_asset(asset_id: str):
+    """Delete an asset from the database"""
+    asset_queries = get_asset_queries()
+    if not asset_queries:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        # Check if asset exists
+        collection = asset_queries.db.collection('Atlas_Library')
+        if not collection.has(asset_id):
+            raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
+        
+        # Delete document from ArangoDB
+        result = collection.delete(asset_id)
+        
+        logger.info(f"✅ Asset {asset_id} deleted successfully")
+        
+        return {
+            "success": True,
+            "message": f"Asset {asset_id} deleted successfully",
+            "deleted_id": asset_id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting asset: {str(e)}")
+
+@router.get("/assets/{asset_id}/expand")
+async def expand_asset(
+    asset_id: str,
+    relations: Optional[List[str]] = Query(None, description="Relations to expand (e.g., dependencies, materials, textures)"),
+    depth: int = Query(1, ge=1, le=3, description="Depth of graph traversal")
+):
+    """Get asset with expanded relationships using ArangoDB graph traversal"""
+    asset_queries = get_asset_queries()
+    if not asset_queries:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        # Get the main asset
+        asset_data = asset_queries.get_asset_with_dependencies(asset_id)
+        if not asset_data or not asset_data.get('asset'):
+            raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
+        
+        expanded_result = {
+            "asset": convert_asset_to_response(asset_data['asset']),
+            "relations": {}
+        }
+        
+        # If no specific relations requested, return all available
+        if not relations:
+            relations = ["dependencies", "materials", "textures", "geometry"]
+        
+        # Get related assets based on requested relations
+        for relation in relations:
+            if relation == "dependencies" and asset_data.get('dependencies'):
+                expanded_result["relations"]["dependencies"] = [
+                    convert_asset_to_response(dep) for dep in asset_data['dependencies']
+                ]
+            
+            elif relation in ["materials", "textures", "geometry"]:
+                # Query for related assets based on paths or metadata
+                query = f"""
+                FOR related IN Atlas_Library
+                    FILTER related.category == @relation OR 
+                           related.asset_type == @relation OR
+                           CONTAINS(related.tags, @relation)
+                    FILTER related._key IN @asset.metadata.related_assets OR
+                           @asset._key IN related.metadata.parent_assets
+                    LIMIT 50
+                    RETURN related
+                """
+                
+                cursor = asset_queries.db.aql.execute(
+                    query,
+                    bind_vars={
+                        'relation': relation,
+                        'asset': asset_data['asset']
+                    }
+                )
+                
+                related_assets = list(cursor)
+                if related_assets:
+                    expanded_result["relations"][relation] = [
+                        convert_asset_to_response(asset) for asset in related_assets
+                    ]
+        
+        # Add graph statistics
+        expanded_result["graph_info"] = {
+            "depth": depth,
+            "relations_queried": relations,
+            "total_related_assets": sum(
+                len(assets) for assets in expanded_result["relations"].values()
+            )
+        }
+        
+        return expanded_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in expand_asset: {e}")
+        raise HTTPException(status_code=500, detail=f"Error expanding asset: {str(e)}")
 
 @router.get("/assets/stats/summary")
 async def get_asset_stats():
@@ -361,7 +578,7 @@ async def test_connection():
         )
         
         # Test query
-        query = "FOR asset IN Asset_Library RETURN asset"
+        query = "FOR asset IN Atlas_Library RETURN asset"
         cursor = db.aql.execute(query)
         assets = list(cursor)
         

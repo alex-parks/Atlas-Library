@@ -1,0 +1,282 @@
+{
+  "id": "9547BE2E",
+  "name": "atlas_asset",
+  "asset_type": "Assets",
+  "subcategory": "Blacksmith Asset",
+  "description": "",
+  "render_engine": "Redshift",
+  "tags": [
+    "assets",
+    "blacksmith_asset",
+    "redshift"
+  ],
+  "created_at": "2025-08-19T14:45:03.312029",
+  "created_by": "alex.parks",
+  "dimension": "3D",
+  "hierarchy": {
+    "dimension": "3D",
+    "asset_type": "Assets",
+    "subcategory": "Blacksmith Asset",
+    "render_engine": "Redshift"
+  },
+  "export_metadata": {
+    "dimension": "3D",
+    "asset_type": "Assets",
+    "subcategory": "Blacksmith Asset",
+    "render_engine": "Redshift",
+    "houdini_version": "20.5.445",
+    "export_time": "2025-08-19 14:45:03.024994",
+    "tags": [
+      "assets",
+      "blacksmith_asset",
+      "redshift"
+    ]
+  },
+  "template_file": "template.hipnc",
+  "template_size": 397796,
+  "source_hip_file": "/net/general/dev_alex.parks_1.1/vfx/asset/Library/lookdev/work/houdini/hip/Library_lookdev_LibraryExport_v001.hip",
+  "houdini_version": "20.5.445",
+  "node_summary": {
+    "total_nodes": 4,
+    "node_types": {
+      "matnet": 2,
+      "geo": 2
+    },
+    "categories": {
+      "Object": 4
+    }
+  },
+  "export_method": "template_based",
+  "export_version": "1.0",
+  "search_keywords": [
+    "asset",
+    "atlas_asset",
+    "atlas",
+    "blacksmith asset",
+    "blacksmith_asset",
+    "assets",
+    "redshift"
+  ],
+  "textures": {
+    "count": 13,
+    "files": [
+      "Textures/Test/catalog.jpg",
+      "Textures/Test/RUST_01_hard__base_tiled.tif",
+      "Textures/Rear_Rotor/helicopter_BaseColor.1001.png",
+      "Textures/Body/helicopter_BaseColor.1001.png",
+      "Textures/Body/helicopter_Roughness.1004.png",
+      "Textures/Body/helicopter_Roughness.1001.png",
+      "Textures/Body/helicopter_Roughness.1012.png",
+      "Textures/Body/helicopter_Roughness.1006.png",
+      "Textures/Body/helicopter_Roughness.1011.png",
+      "Textures/Body/helicopter_Roughness.1002.png",
+      "Textures/Body/helicopter_Roughness.1013.png",
+      "Textures/Body/helicopter_Roughness.1003.png",
+      "Textures/Body/helicopter_Roughness.1005.png"
+    ],
+    "mapping": {
+      "/obj/atlas_asset/Test/Test/BC:tex0": {
+        "node_path": "/obj/atlas_asset/Test/Test/BC",
+        "parameter": "tex0",
+        "material_name": "Test",
+        "original_path": "/net/library/library/Surface Imperfection_ALPHAS/catalog.jpg",
+        "library_path": "Textures/Test/catalog.jpg",
+        "filename": "catalog.jpg",
+        "is_udim_sequence": false
+      },
+      "/obj/atlas_asset/Test/Test/NormalMap1:tex0": {
+        "node_path": "/obj/atlas_asset/Test/Test/NormalMap1",
+        "parameter": "tex0",
+        "material_name": "Test",
+        "original_path": "/net/library/library/Surface Imperfection_ALPHAS/Rust/RUST_01_hard__base_tiled.tif",
+        "library_path": "Textures/Test/RUST_01_hard__base_tiled.tif",
+        "filename": "RUST_01_hard__base_tiled.tif",
+        "is_udim_sequence": false
+      },
+      "/obj/atlas_asset/Helicopter_MatNet/Rear_Rotor/BC:tex0": {
+        "node_path": "/obj/atlas_asset/Helicopter_MatNet/Rear_Rotor/BC",
+        "parameter": "tex0",
+        "material_name": "Rear_Rotor",
+        "original_path": "/net/general/dev_alex.parks_1.1/Textures/Test/helicopter_BaseColor.1001.png",
+        "library_path": "Textures/Rear_Rotor/helicopter_BaseColor.1001.png",
+        "filename": "helicopter_BaseColor.1001.png",
+        "is_udim_sequence": false
+      },
+      "/obj/atlas_asset/Helicopter_MatNet/Body/BC:tex0": {
+        "node_path": "/obj/atlas_asset/Helicopter_MatNet/Body/BC",
+        "parameter": "tex0",
+        "material_name": "Body",
+        "original_path": "/net/general/dev_alex.parks_1.1/Textures/Test/helicopter_BaseColor.1001.png",
+        "library_path": "Textures/Body/helicopter_BaseColor.1001.png",
+        "filename": "helicopter_BaseColor.1001.png",
+        "is_udim_sequence": false
+      },
+      "/obj/atlas_asset/Helicopter_MatNet/Body/Roughness:tex0": {
+        "node_path": "/obj/atlas_asset/Helicopter_MatNet/Body/Roughness",
+        "parameter": "tex0",
+        "material_name": "Body",
+        "original_path": "/net/general/dev_alex.parks_1.1/Textures/Test/helicopter_Roughness.<UDIM>.png",
+        "library_path": "Textures/Body/helicopter_Roughness.<UDIM>.png",
+        "is_udim_sequence": true,
+        "udim_tiles": [
+          {
+            "tile": "1004",
+            "filename": "helicopter_Roughness.1004.png",
+            "library_path": "Textures/Body/helicopter_Roughness.1004.png"
+          },
+          {
+            "tile": "1001",
+            "filename": "helicopter_Roughness.1001.png",
+            "library_path": "Textures/Body/helicopter_Roughness.1001.png"
+          },
+          {
+            "tile": "1012",
+            "filename": "helicopter_Roughness.1012.png",
+            "library_path": "Textures/Body/helicopter_Roughness.1012.png"
+          },
+          {
+            "tile": "1006",
+            "filename": "helicopter_Roughness.1006.png",
+            "library_path": "Textures/Body/helicopter_Roughness.1006.png"
+          },
+          {
+            "tile": "1011",
+            "filename": "helicopter_Roughness.1011.png",
+            "library_path": "Textures/Body/helicopter_Roughness.1011.png"
+          },
+          {
+            "tile": "1002",
+            "filename": "helicopter_Roughness.1002.png",
+            "library_path": "Textures/Body/helicopter_Roughness.1002.png"
+          },
+          {
+            "tile": "1013",
+            "filename": "helicopter_Roughness.1013.png",
+            "library_path": "Textures/Body/helicopter_Roughness.1013.png"
+          },
+          {
+            "tile": "1003",
+            "filename": "helicopter_Roughness.1003.png",
+            "library_path": "Textures/Body/helicopter_Roughness.1003.png"
+          },
+          {
+            "tile": "1005",
+            "filename": "helicopter_Roughness.1005.png",
+            "library_path": "Textures/Body/helicopter_Roughness.1005.png"
+          }
+        ],
+        "tile_count": 9
+      }
+    }
+  },
+  "geometry_files": {
+    "count": 10,
+    "files": [
+      "Geometry/OBJ/male_1_v1_LOD1.obj",
+      "Geometry/FBX/Yeti_Ice_Chest.FBX",
+      "Geometry/Other/Library_LibraryExport_v001.1001.bgeo.sc",
+      "Geometry/Other/Library_LibraryExport_v001.1001.bgeo_1.sc",
+      "Geometry/Other/Library_LibraryExport_v001.1001.bgeo_2.sc",
+      "Geometry/Other/Library_LibraryExport_v001.1001.bgeo_3.sc",
+      "Geometry/Other/Library_LibraryExport_v001.1001.bgeo_4.sc",
+      "Geometry/Other/Library_LibraryExport_v001.1001.bgeo_5.sc",
+      "Geometry/Alembic/Helicopter_modeling_helicopter_v007.abc",
+      "Geometry/Alembic/male_1.abc"
+    ],
+    "mapping": {
+      "/obj/atlas_asset/Test_Geometry/file1:file": {
+        "node_path": "/obj/atlas_asset/Test_Geometry/file1",
+        "parameter": "file",
+        "original_path": "/net/library/library/3D/models/characters/humans/male/male_1/male_1_v1_LOD1.obj",
+        "library_path": "Geometry/OBJ/male_1_v1_LOD1.obj",
+        "filename": "male_1_v1_LOD1.obj",
+        "file_type": "OBJ",
+        "is_geometry_file": true
+      },
+      "/obj/atlas_asset/Test_Geometry/file2:file": {
+        "node_path": "/obj/atlas_asset/Test_Geometry/file2",
+        "parameter": "file",
+        "original_path": "/net/library/library/Props/Yeti_Ice_Chest.FBX",
+        "library_path": "Geometry/FBX/Yeti_Ice_Chest.FBX",
+        "filename": "Yeti_Ice_Chest.FBX",
+        "file_type": "FBX",
+        "is_geometry_file": true
+      },
+      "/obj/atlas_asset/Test_Geometry/BEGO_Squence:file": {
+        "node_path": "/obj/atlas_asset/Test_Geometry/BEGO_Squence",
+        "parameter": "file",
+        "original_path": "/net/general/dev_alex.parks_1.1/vfx/asset/Library/lookdev/work/houdini/cache/geo/LibraryExport/BEGO_Squence/v001/Library_LibraryExport_v001.1001.bgeo.sc",
+        "library_path": "Geometry/Other/Library_LibraryExport_v001.1001.bgeo.sc",
+        "filename": "Library_LibraryExport_v001.1001.bgeo.sc",
+        "file_type": "Other",
+        "is_geometry_file": true
+      },
+      "/obj/atlas_asset/Test_Geometry/BEGO_Squence:sopoutput": {
+        "node_path": "/obj/atlas_asset/Test_Geometry/BEGO_Squence",
+        "parameter": "sopoutput",
+        "original_path": "/net/general/dev_alex.parks_1.1/vfx/asset/Library/lookdev/work/houdini/cache/geo/LibraryExport/BEGO_Squence/v001/Library_LibraryExport_v001.1001.bgeo.sc",
+        "library_path": "Geometry/Other/Library_LibraryExport_v001.1001.bgeo_1.sc",
+        "filename": "Library_LibraryExport_v001.1001.bgeo.sc",
+        "file_type": "Other",
+        "is_geometry_file": true
+      },
+      "/obj/atlas_asset/Test_Geometry/BEGO_Squence/render:sopoutput": {
+        "node_path": "/obj/atlas_asset/Test_Geometry/BEGO_Squence/render",
+        "parameter": "sopoutput",
+        "original_path": "/net/general/dev_alex.parks_1.1/vfx/asset/Library/lookdev/work/houdini/cache/geo/LibraryExport/BEGO_Squence/v001/Library_LibraryExport_v001.1001.bgeo.sc",
+        "library_path": "Geometry/Other/Library_LibraryExport_v001.1001.bgeo_2.sc",
+        "filename": "Library_LibraryExport_v001.1001.bgeo.sc",
+        "file_type": "Other",
+        "is_geometry_file": true
+      },
+      "/obj/atlas_asset/Test_Geometry/BEGO_Squence/read_back:file": {
+        "node_path": "/obj/atlas_asset/Test_Geometry/BEGO_Squence/read_back",
+        "parameter": "file",
+        "original_path": "/net/general/dev_alex.parks_1.1/vfx/asset/Library/lookdev/work/houdini/cache/geo/LibraryExport/BEGO_Squence/v001/Library_LibraryExport_v001.1001.bgeo.sc",
+        "library_path": "Geometry/Other/Library_LibraryExport_v001.1001.bgeo_3.sc",
+        "filename": "Library_LibraryExport_v001.1001.bgeo.sc",
+        "file_type": "Other",
+        "is_geometry_file": true
+      },
+      "/obj/atlas_asset/Test_Geometry/BEGO_Squence/topnet1/ropgeometry1:sopoutput": {
+        "node_path": "/obj/atlas_asset/Test_Geometry/BEGO_Squence/topnet1/ropgeometry1",
+        "parameter": "sopoutput",
+        "original_path": "/net/general/dev_alex.parks_1.1/vfx/asset/Library/lookdev/work/houdini/cache/geo/LibraryExport/BEGO_Squence/v001/Library_LibraryExport_v001.1001.bgeo.sc",
+        "library_path": "Geometry/Other/Library_LibraryExport_v001.1001.bgeo_4.sc",
+        "filename": "Library_LibraryExport_v001.1001.bgeo.sc",
+        "file_type": "Other",
+        "is_geometry_file": true
+      },
+      "/obj/atlas_asset/Test_Geometry/BEGO_Squence/topnet1/ropgeometry1/ropnet1/geometry1:sopoutput": {
+        "node_path": "/obj/atlas_asset/Test_Geometry/BEGO_Squence/topnet1/ropgeometry1/ropnet1/geometry1",
+        "parameter": "sopoutput",
+        "original_path": "/net/general/dev_alex.parks_1.1/vfx/asset/Library/lookdev/work/houdini/cache/geo/LibraryExport/BEGO_Squence/v001/Library_LibraryExport_v001.1001.bgeo.sc",
+        "library_path": "Geometry/Other/Library_LibraryExport_v001.1001.bgeo_5.sc",
+        "filename": "Library_LibraryExport_v001.1001.bgeo.sc",
+        "file_type": "Other",
+        "is_geometry_file": true
+      },
+      "/obj/atlas_asset/helicopter_geo_placement/Helicopter_modeling_helicopter:fileName": {
+        "node_path": "/obj/atlas_asset/helicopter_geo_placement/Helicopter_modeling_helicopter",
+        "parameter": "fileName",
+        "original_path": "/net/general/250103_under_armour_7v7/vfx/asset/Helicopter/modeling/publish/maya/cache/geo/scene/Helicopter_modeling_helicopter_v007.abc",
+        "library_path": "Geometry/Alembic/Helicopter_modeling_helicopter_v007.abc",
+        "filename": "Helicopter_modeling_helicopter_v007.abc",
+        "file_type": "Alembic",
+        "is_geometry_file": true
+      },
+      "/obj/atlas_asset/helicopter_geo_placement/file2:file": {
+        "node_path": "/obj/atlas_asset/helicopter_geo_placement/file2",
+        "parameter": "file",
+        "original_path": "/net/library/library/3D/models/characters/humans/male/male_1/male_1.abc",
+        "library_path": "Geometry/Alembic/male_1.abc",
+        "filename": "male_1.abc",
+        "file_type": "Alembic",
+        "is_geometry_file": true
+      }
+    }
+  },
+  "folder_path": "/net/library/atlaslib/3D/Assets/BlacksmithAssets/9547BE2E_atlas_asset",
+  "database_synced": false,
+  "database_sync_error": "Both import and subprocess methods failed"
+}
