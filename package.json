@@ -19,7 +19,7 @@
     "docker:logs": "docker compose logs -f",
     "docker:status": "docker compose ps",
     "docker:build": "docker compose build --no-cache",
-    "docker:cleanup": "docker compose down --volumes --remove-orphans && docker system prune -f",
+    "docker:cleanup": "docker compose down --remove-orphans && docker system prune -f",
     "docker:setup-db": "docker compose exec backend python -m backend.assetlibrary.database.setup_arango_database",
     
     "dev:legacy": "npm run kill-atlas && npm run setup-database && concurrently --kill-others-on-fail --names \"BACKEND,FRONTEND\" --prefix-colors \"blue,green\" \"npm run backend\" \"npm run frontend\"",

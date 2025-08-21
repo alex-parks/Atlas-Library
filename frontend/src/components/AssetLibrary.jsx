@@ -1,6 +1,6 @@
 // New Asset Library with Navigation Structure
 import React, { useState, useEffect } from 'react';
-import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink } from 'lucide-react';
+import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench } from 'lucide-react';
 
 const AssetLibrary = () => {
   const [assets, setAssets] = useState([]);
@@ -68,6 +68,14 @@ const AssetLibrary = () => {
   // Preview modal state
   const [previewAsset, setPreviewAsset] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
+  
+  // Dropdown menu state for asset actions
+  const [activeDropdown, setActiveDropdown] = useState(null);
+  
+  // Edit modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingAsset, setEditingAsset] = useState(null);
+  const [editFormData, setEditFormData] = useState({});
 
   const [selectedFilters, setSelectedFilters] = useState({
     type: 'all',
@@ -315,7 +323,7 @@ const AssetLibrary = () => {
   };
 
   const filteredAssets = assets.filter(asset => {
-    const matchesSearch = asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = (asset.name && asset.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
                          (asset.description && asset.description.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesType = selectedFilters.type === 'all' ||
@@ -534,6 +542,57 @@ ${JSON.stringify(assetClipboardData, null, 2)}
     }
   };
 
+  const handleDeleteAsset = async (asset) => {
+    try {
+      // Show single confirmation dialog
+      const confirmMessage = `⚠️  MOVE TO TRASHBIN ⚠️\n\nAre you sure you want to move this asset to the TrashBin?\n\nAsset: "${asset.name}"\nID: ${asset.id}\nCategory: ${asset.category}\n\n🗑️ The asset will be moved to:\n/net/library/atlaslib/TrashBin/${asset.metadata?.dimension || '3D'}/\n\n✅ This is RECOVERABLE - the asset folder will be moved to TrashBin, not permanently deleted.\n\n❌ The database entry will be removed.`;
+      
+      if (!confirm(confirmMessage)) {
+        return;
+      }
+
+      // Show loading state
+      setLoading(true);
+      console.log(`🗑️ Deleting asset: ${asset.id} (${asset.name})`);
+
+      // Call delete API
+      const response = await fetch(`${settings.apiEndpoint}/${asset.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Delete response:', result);
+        
+        // Show success message with details
+        const successMessage = `✅ Asset Successfully Moved to TrashBin!\n\nAsset: "${result.deleted_name}"\nID: ${result.deleted_id}\nDimension: ${result.dimension}\n\n${result.folder_moved ? 
+          `📁 Folder moved to: /net/library/atlaslib/TrashBin/${result.dimension}/\n✅ Asset can be recovered from TrashBin if needed.` : 
+          '📝 Database entry removed (no folder found to move).'
+        }`;
+        
+        alert(successMessage);
+        
+        // Reload assets to update the UI
+        await loadAssets();
+        await checkDatabaseStatus();
+        
+      } else {
+        const error = await response.json();
+        console.error('❌ Delete failed:', error);
+        alert(`❌ Failed to delete asset:\n\n${error.detail || 'Unknown error occurred'}\n\nCheck console for details.`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error deleting asset:', error);
+      alert(`❌ Error deleting asset:\n\n${error.message}\n\nCheck console for details.`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const savedSettings = localStorage.getItem('blacksmith-atlas-settings');
     if (savedSettings) {
@@ -547,6 +606,20 @@ ${JSON.stringify(assetClipboardData, null, 2)}
       }
     }
   }, []);
+
+  // Click outside handler for dropdown menus
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (activeDropdown && !event.target.closest('.asset-dropdown-menu')) {
+        setActiveDropdown(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [activeDropdown]);
 
   const assetCategories = [...new Set(assets.map(asset => asset.category))];
   const creators = [...new Set(assets.map(asset => asset.metadata?.ingested_by).filter(Boolean))];
@@ -958,6 +1031,232 @@ ${JSON.stringify(assetClipboardData, null, 2)}
         </div>
       )}
 
+      {/* Edit Modal */}
+      {showEditModal && editingAsset && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral-800 border border-neutral-700 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-neutral-700">
+              <h2 className="text-xl font-semibold text-white">Edit Asset</h2>
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingAsset(null);
+                  setEditFormData({});
+                }}
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                
+                try {
+                  // Simplified approach - avoid complex metadata operations
+                  const updateData = {
+                    name: editFormData.name,
+                    description: editFormData.description,
+                    category: editFormData.category,
+                    tags: editFormData.tags ? editFormData.tags.split(',').map(t => t.trim()) : [],
+                    // Store these fields at the top level
+                    subcategory: editFormData.subcategory,
+                    render_engine: editFormData.render_engine
+                  };
+                  
+                  // Send PATCH request to update asset
+                  const response = await fetch(`${settings.apiEndpoint}/${editingAsset.id}`, {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(updateData)
+                  });
+                  
+                  if (response.ok) {
+                    // Close modal
+                    setShowEditModal(false);
+                    setEditingAsset(null);
+                    setEditFormData({});
+                    
+                    // Show success message
+                    alert('✅ Asset updated successfully!');
+                    
+                    // Reload assets to ensure consistency
+                    loadAssets();
+                  } else {
+                    const error = await response.json();
+                    console.error('Backend error response:', error);
+                    alert(`❌ Failed to update asset: ${error.detail || 'Unknown error'}`);
+                  }
+                } catch (error) {
+                  console.error('Error updating asset:', error);
+                  console.error('Full error object:', error);
+                  alert(`❌ Error updating asset: ${error.message}`);
+                }
+              }} className="space-y-4">
+                {/* Asset Name */}
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    Asset Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.name || ''}
+                    onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+                    className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                    placeholder="Enter asset name"
+                  />
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    Description
+                  </label>
+                  <textarea
+                    value={editFormData.description || ''}
+                    onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
+                    className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                    placeholder="Enter asset description"
+                    rows={3}
+                  />
+                </div>
+
+                {/* Category and Subcategory */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-300 mb-2">
+                      Category
+                    </label>
+                    <select
+                      value={editFormData.category || ''}
+                      onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
+                      className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="Assets">Assets</option>
+                      <option value="FX">FX</option>
+                      <option value="Materials">Materials</option>
+                      <option value="HDAs">HDAs</option>
+                      <option value="Textures">Textures</option>
+                      <option value="HDRI">HDRI</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-300 mb-2">
+                      Subcategory
+                    </label>
+                    <select
+                      value={editFormData.subcategory || ''}
+                      onChange={(e) => setEditFormData({...editFormData, subcategory: e.target.value})}
+                      className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                    >
+                      {/* Assets subcategories */}
+                      {editFormData.category === 'Assets' && (
+                        <>
+                          <option value="Blacksmith Asset">Blacksmith Asset</option>
+                          <option value="Megascans">Megascans</option>
+                          <option value="Kitbash">Kitbash</option>
+                        </>
+                      )}
+                      
+                      {/* FX subcategories */}
+                      {editFormData.category === 'FX' && (
+                        <>
+                          <option value="Blacksmith FX">Blacksmith FX</option>
+                          <option value="Atmosphere">Atmosphere</option>
+                          <option value="FLIP">FLIP</option>
+                          <option value="Pyro">Pyro</option>
+                        </>
+                      )}
+                      
+                      {/* Materials subcategories */}
+                      {editFormData.category === 'Materials' && (
+                        <>
+                          <option value="Blacksmith Materials">Blacksmith Materials</option>
+                          <option value="Redshift">Redshift</option>
+                          <option value="Karma">Karma</option>
+                        </>
+                      )}
+                      
+                      {/* HDAs subcategories */}
+                      {editFormData.category === 'HDAs' && (
+                        <>
+                          <option value="Blacksmith HDAs">Blacksmith HDAs</option>
+                        </>
+                      )}
+                      
+                      {/* Other categories - no subcategories */}
+                      {(editFormData.category === 'Textures' || editFormData.category === 'HDRI') && (
+                        <option value={editFormData.category}>{editFormData.category}</option>
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Tags */}
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    Tags (comma separated)
+                  </label>
+                  <textarea
+                    value={editFormData.tags || ''}
+                    onChange={(e) => setEditFormData({...editFormData, tags: e.target.value})}
+                    className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                    placeholder="tag1, tag2, tag3"
+                    rows={3}
+                  />
+                </div>
+
+                {/* Render Engine */}
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    Render Engine
+                  </label>
+                  <select
+                    value={editFormData.render_engine || ''}
+                    onChange={(e) => setEditFormData({...editFormData, render_engine: e.target.value})}
+                    className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="Redshift">Redshift</option>
+                    <option value="Karma">Karma</option>
+                    <option value="Mantra">Mantra</option>
+                    <option value="Octane">Octane</option>
+                    <option value="Arnold">Arnold</option>
+                  </select>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="submit"
+                    className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-6 rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <Save size={16} />
+                    Save Changes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditingAsset(null);
+                      setEditFormData({});
+                    }}
+                    className="bg-neutral-700 hover:bg-neutral-600 text-white py-2 px-4 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Preview Modal */}
       {showPreview && previewAsset && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 transition-all duration-300 ease-in-out">
@@ -1253,12 +1552,12 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                 {viewMode === 'grid' ? (
                   <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                     {filteredAssets.map(asset => (
-                      <div key={asset.id} className="group relative overflow-hidden">
-                        <div 
-                          className="bg-neutral-800 rounded-lg overflow-hidden border border-neutral-700 hover:border-blue-500 transition-all duration-200 hover:shadow-lg hover:shadow-blue-500/10 cursor-pointer"
-                          onClick={() => openPreview(asset)}
-                        >
-                          <div className="aspect-square bg-neutral-700 flex items-center justify-center relative overflow-hidden">
+                      <div key={asset.id} className="group relative">
+                        <div className="bg-neutral-800 rounded-lg overflow-hidden border border-neutral-700 hover:border-blue-500 transition-all duration-200 hover:shadow-lg hover:shadow-blue-500/10 relative">
+                          <div 
+                            className="aspect-square bg-neutral-700 flex items-center justify-center relative overflow-hidden cursor-pointer"
+                            onClick={() => openPreview(asset)}
+                          >
                             {asset.thumbnail_path && asset.thumbnail_path !== 'null' ? (
                               <img
                                 src={asset.thumbnail_path}
@@ -1280,11 +1579,6 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                                '🎨'}
                             </div>
 
-                            <div className="absolute top-2 right-2">
-                              <span className="px-2 py-1 text-xs rounded-full font-medium bg-blue-600/80 text-blue-100">
-                                {selectedDimension}
-                              </span>
-                            </div>
 
                             {/* Render Engine Tags - Bottom Right */}
                             <div className="absolute bottom-2 right-2 flex flex-col gap-1 items-end">
@@ -1336,8 +1630,85 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                             </div>
                           </div>
                         </div>
+                        
+                        {/* Position container for tag/menu interchange - OUTSIDE clickable area */}
+                        <div className="absolute top-2 right-2 pointer-events-none">
+                          {/* 3D Tag - visible by default, hidden on hover */}
+                          <span className="px-2 py-1 text-xs rounded-full font-medium bg-blue-600/80 text-blue-100 group-hover:opacity-0 transition-opacity duration-200 block">
+                            {selectedDimension}
+                          </span>
+                          
+                          {/* Three-dot menu button and dropdown container */}
+                          <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 asset-dropdown-menu pointer-events-auto">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveDropdown(activeDropdown === asset.id ? null : asset.id);
+                              }}
+                              className="bg-neutral-800/90 hover:bg-neutral-700 p-1.5 rounded-lg transition-colors backdrop-blur-sm border border-neutral-600"
+                              title="Asset options"
+                            >
+                              <MoreVertical size={16} className="text-white" />
+                            </button>
+                            
+                            {/* Dropdown menu */}
+                            {activeDropdown === asset.id && (
+                              <div 
+                                className="absolute right-0 top-8 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-50 w-48 py-1 pt-2"
+                                onMouseLeave={() => {
+                                  setActiveDropdown(null);
+                                }}
+                              >
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingAsset(asset);
+                                    setEditFormData({
+                                      name: asset.name,
+                                      description: asset.description || '',
+                                      category: asset.category,
+                                      subcategory: asset.metadata?.subcategory || asset.category,
+                                      tags: asset.tags?.join(', ') || '',
+                                      render_engine: asset.metadata?.render_engine || 'Redshift'
+                                    });
+                                    setShowEditModal(true);
+                                    setActiveDropdown(null);
+                                  }}
+                                  className="w-full px-4 py-2 text-left text-sm text-white hover:bg-neutral-700 transition-colors flex items-center gap-2"
+                                >
+                                  <Edit size={14} />
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteAsset(asset);
+                                    setActiveDropdown(null);
+                                  }}
+                                  className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-900/20 transition-colors flex items-center gap-2"
+                                >
+                                  <Trash2 size={14} />
+                                  Move to TrashBin
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    console.log('Modify asset:', asset.id);
+                                    setActiveDropdown(null);
+                                    // TODO: Open modify modal
+                                  }}
+                                  className="w-full px-4 py-2 text-left text-sm text-white hover:bg-neutral-700 transition-colors flex items-center gap-2"
+                                >
+                                  <Wrench size={14} />
+                                  Modify Asset
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
 
-                        <div className="absolute bottom-0 left-0 right-0 bg-neutral-800 border border-neutral-700 rounded-b-lg p-3 transform translate-y-full group-hover:translate-y-0 transition-transform duration-200 z-10 shadow-lg">
+                        {/* Asset information panel - only appears on hover */}
+                        <div className="absolute bottom-0 left-0 right-0 bg-neutral-800 border border-neutral-700 rounded-b-lg p-3 transform translate-y-full group-hover:translate-y-0 transition-transform duration-200 z-10 shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto">
                           <h3 className="text-white font-semibold text-sm mb-1 truncate">{asset.name}</h3>
                           <p className="text-neutral-400 text-xs mb-2 line-clamp-2">{asset.description || 'No description available'}</p>
 

@@ -116,13 +116,24 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
     
     # Add hierarchy data from top-level fields if metadata is structured
     if isinstance(metadata, dict):
-        metadata.update({
-            'dimension': asset_data.get('dimension', '3D'),
-            'asset_type': asset_data.get('asset_type', metadata.get('asset_type')),
-            'subcategory': asset_data.get('hierarchy', {}).get('subcategory') or asset_data.get('category'),
-            'render_engine': asset_data.get('render_engine')
-        })
-        logger.info(f"🔍 Updated metadata: {metadata}")
+        try:
+            hierarchy = asset_data.get('hierarchy', {})
+            if not isinstance(hierarchy, dict):
+                logger.warning(f"⚠️ Hierarchy is not a dict: {type(hierarchy)} = {hierarchy}")
+                hierarchy = {}
+            
+            metadata.update({
+                'dimension': asset_data.get('dimension', '3D'),
+                'asset_type': asset_data.get('asset_type', metadata.get('asset_type')),
+                'subcategory': hierarchy.get('subcategory') or asset_data.get('category'),
+                'render_engine': asset_data.get('render_engine')
+            })
+            logger.info(f"🔍 Updated metadata: {metadata}")
+        except Exception as e:
+            logger.error(f"❌ Error updating metadata: {e}")
+            logger.error(f"❌ asset_data type: {type(asset_data)}")
+            logger.error(f"❌ asset_data keys: {list(asset_data.keys()) if isinstance(asset_data, dict) else 'not a dict'}")
+            raise
     
     return AssetResponse(
         id=asset_data.get('_key', asset_data.get('id', '')),
@@ -233,10 +244,6 @@ async def create_asset(asset_request: AssetCreateRequest):
         metadata_id = asset_request.metadata.get('id') if asset_request.metadata else None
         asset_name = asset_request.name
         
-        print(f"🔴 DEBUG: asset_request.metadata = {asset_request.metadata}")
-        print(f"🔴 DEBUG: metadata_id = {metadata_id}")
-        print(f"🔴 DEBUG: asset_name = {asset_name}")
-        
         if metadata_id:
             # For new Houdini exports: metadata_id is just the UID (e.g., "B6A48C5B")
             # For legacy exports: metadata_id might be the full format (e.g., "B6A48C5B_atlas_asset")
@@ -246,20 +253,17 @@ async def create_asset(asset_request: AssetCreateRequest):
                 uid_part = metadata_id.split('_')[0]
                 asset_key = metadata_id  # Use full format for _key
                 asset_id = uid_part      # Use just UID for document id
-                print(f"🔴 DEBUG: Legacy format - _key: {asset_key}, id: {asset_id}")
             else:
                 # New format: metadata_id is just the UID
                 sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
                 asset_key = f"{metadata_id}_{sanitized_name}"  # Create full format for _key
                 asset_id = metadata_id                         # Use UID for document id
-                print(f"🔴 DEBUG: New format - _key: {asset_key}, id: {asset_id}")
         else:
             # Generate new asset ID and key
             sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
             uid = uuid.uuid4().hex[:8].upper()
             asset_key = f"{uid}_{sanitized_name}"
             asset_id = uid
-            print(f"🔴 DEBUG: Generated new - _key: {asset_key}, id: {asset_id}")
         
         # Create asset document for ArangoDB
         asset_data = {
@@ -343,15 +347,16 @@ async def update_asset(asset_id: str, asset_request: AssetCreateRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating asset: {str(e)}")
 
-@router.patch("/assets/{asset_id}", response_model=AssetResponse)
+@router.patch("/assets/{asset_id}")
 async def patch_asset(asset_id: str, asset_update: dict):
     """Partial update of an asset - updates only provided fields"""
-    asset_queries = get_asset_queries()
-    if not asset_queries:
-        raise HTTPException(status_code=503, detail="Database not available")
-    
     try:
-        # Check if asset exists
+        # Get database connection
+        asset_queries = get_asset_queries()
+        if not asset_queries:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Check if asset exists and update
         collection = asset_queries.db.collection('Atlas_Library')
         if not collection.has(asset_id):
             raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
@@ -360,45 +365,358 @@ async def patch_asset(asset_id: str, asset_update: dict):
         asset_update['updated_at'] = datetime.now().isoformat()
         
         # Update document in ArangoDB
-        result = collection.update(asset_id, asset_update)
+        collection.update_match({'_key': asset_id}, asset_update)
         
-        # Get updated document
-        updated_asset = collection.get(asset_id)
+        return {
+            "success": True,
+            "message": f"Asset {asset_id} updated successfully",
+            "updated_fields": list(asset_update.keys()),
+            "asset_id": asset_id
+        }
         
-        logger.info(f"✅ Asset {asset_id} partially updated")
-        
-        return convert_asset_to_response(updated_asset)
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        logger.error(f"❌ Error in patch_asset: {str(e)}")
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error updating asset: {str(e)}")
+
+def is_safe_asset_folder(folder_path: str) -> bool:
+    """
+    Security check: Verify that the folder path represents a valid asset folder
+    that is safe to move to TrashBin. NEVER allow deletion/moving of core folders.
+    Handles both host paths (/net/library/atlaslib/...) and container paths (/app/assets/...).
+    """
+    import re
+    from pathlib import Path
+    
+    if not folder_path:
+        return False
+    
+    path = Path(folder_path).resolve()
+    path_str = str(path)
+    
+    # Convert container path to host path for consistent security checking
+    if path_str.startswith('/app/assets/'):
+        # Convert container path to host path for validation
+        host_path_str = path_str.replace('/app/assets/', '/net/library/atlaslib/')
+        logger.info(f"🔄 SECURITY: Converted container path for validation: {path_str} -> {host_path_str}")
+    else:
+        host_path_str = path_str
+    
+    # CRITICAL SECURITY: Protected folders that should NEVER be moved/deleted (host paths)
+    protected_folders = [
+        "/net/library/atlaslib",
+        "/net/library/atlaslib/3D", 
+        "/net/library/atlaslib/2D",
+        "/net/library/atlaslib/3D/Assets",
+        "/net/library/atlaslib/3D/FX", 
+        "/net/library/atlaslib/3D/Materials",
+        "/net/library/atlaslib/3D/HDAs",
+        "/net/library/atlaslib/3D/Textures",
+        "/net/library/atlaslib/3D/HDRI",
+        "/net/library/atlaslib/2D/Textures",
+        "/net/library/atlaslib/2D/References", 
+        "/net/library/atlaslib/2D/UI"
+    ]
+    
+    # Add subcategory folders to protected list
+    subcategory_patterns = [
+        r"/net/library/atlaslib/3D/Assets/[^/]+$",           # e.g. /3D/Assets/BlacksmithAssets
+        r"/net/library/atlaslib/3D/FX/[^/]+$",              # e.g. /3D/FX/Pyro  
+        r"/net/library/atlaslib/3D/Materials/[^/]+$",       # e.g. /3D/Materials/Redshift
+        r"/net/library/atlaslib/3D/HDAs/[^/]+$",            # e.g. /3D/HDAs/BlacksmithHDAs
+        r"/net/library/atlaslib/2D/[^/]+/[^/]+$"            # e.g. /2D/Textures/Metals
+    ]
+    
+    # Check exact matches against protected folders (use host path for consistency)
+    for protected in protected_folders:
+        if host_path_str == str(Path(protected).resolve()):
+            logger.error(f"🚫 SECURITY: Attempted to delete protected folder: {host_path_str} (original: {path_str})")
+            return False
+    
+    # Check pattern matches for subcategory folders  
+    for pattern in subcategory_patterns:
+        if re.match(pattern, host_path_str):
+            logger.error(f"🚫 SECURITY: Attempted to delete subcategory folder: {host_path_str} (original: {path_str})")
+            return False
+    
+    # Validate this looks like an asset folder (should contain asset ID)
+    folder_name = path.name
+    
+    # Asset folders should match pattern: {ID}_{name} or just {ID}
+    asset_id_pattern = r'^[A-Z0-9]{6,12}(_.*)?$'
+    if not re.match(asset_id_pattern, folder_name):
+        logger.error(f"🚫 SECURITY: Folder name doesn't match asset pattern: {folder_name}")
+        return False
+    
+    # Must be within atlaslib structure (check both host and container paths)
+    if "/net/library/atlaslib/" not in host_path_str and "/app/assets/" not in path_str:
+        logger.error(f"🚫 SECURITY: Folder not within atlaslib: {path_str}")
+        return False
+    
+    # Must be at least 4 levels deep (e.g. /atlaslib/3D/Assets/Subcategory/AssetFolder)
+    if "/net/library/atlaslib/" in host_path_str:
+        atlaslib_relative = host_path_str.split("/net/library/atlaslib/")[1]
+    elif "/app/assets/" in path_str:
+        atlaslib_relative = path_str.split("/app/assets/")[1]
+    else:
+        logger.error(f"🚫 SECURITY: Invalid path format: {path_str}")
+        return False
+    
+    path_parts = atlaslib_relative.split("/")
+    if len(path_parts) < 4:
+        logger.error(f"🚫 SECURITY: Path not deep enough to be asset folder: {path_str}")
+        return False
+    
+    logger.info(f"✅ SECURITY: Path validated as safe asset folder: {path_str} (host equivalent: {host_path_str})")
+    return True
+
+def ensure_trashbin_structure():
+    """Create TrashBin folder structure if it doesn't exist"""
+    # Use container path for TrashBin
+    trashbin_base = Path("/app/assets/TrashBin")
+    trashbin_3d = trashbin_base / "3D" 
+    trashbin_2d = trashbin_base / "2D"
+    
+    try:
+        trashbin_base.mkdir(exist_ok=True)
+        trashbin_3d.mkdir(exist_ok=True)
+        trashbin_2d.mkdir(exist_ok=True)
+        logger.info(f"✅ TrashBin structure ensured: {trashbin_base}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to create TrashBin structure: {e}")
+        return False
+
+def move_asset_to_trashbin(asset_folder_path: str, dimension: str = "3D") -> dict:
+    """
+    Safely move an asset folder to TrashBin with timestamp.
+    Returns dict with success status and details.
+    """
+    import shutil
+    from datetime import datetime
+    
+    if not is_safe_asset_folder(asset_folder_path):
+        return {
+            "success": False,
+            "error": "Security validation failed - folder not safe to move",
+            "folder_path": asset_folder_path
+        }
+    
+    try:
+        # Ensure TrashBin exists
+        if not ensure_trashbin_structure():
+            return {
+                "success": False, 
+                "error": "Failed to create TrashBin structure",
+                "folder_path": asset_folder_path
+            }
+        
+        source_path = Path(asset_folder_path)
+        if not source_path.exists():
+            return {
+                "success": False,
+                "error": "Asset folder does not exist",
+                "folder_path": asset_folder_path  
+            }
+        
+        # Preserve original folder name, only add timestamp if conflict exists
+        folder_name = source_path.name
+        trashbin_path = Path(f"/app/assets/TrashBin/{dimension}/{folder_name}")
+        
+        # Only add timestamp if a folder with the same name already exists in TrashBin
+        if trashbin_path.exists():
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            trashbin_folder_name = f"{folder_name}_{timestamp}"
+            trashbin_path = Path(f"/app/assets/TrashBin/{dimension}/{trashbin_folder_name}")
+            logger.info(f"🔄 Conflict detected, using timestamped name: {trashbin_folder_name}")
+        else:
+            logger.info(f"✅ Using original folder name: {folder_name}")
+        
+        # Move the folder
+        shutil.move(str(source_path), str(trashbin_path))
+        
+        logger.info(f"✅ Asset folder moved to TrashBin: {source_path} -> {trashbin_path}")
+        
+        return {
+            "success": True,
+            "message": f"Asset folder moved to TrashBin",
+            "source_path": str(source_path),
+            "trashbin_path": str(trashbin_path),
+            "timestamp": timestamp
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to move asset to TrashBin: {e}")
+        return {
+            "success": False,
+            "error": f"Failed to move folder: {str(e)}",
+            "folder_path": asset_folder_path
+        }
 
 @router.delete("/assets/{asset_id}")
 async def delete_asset(asset_id: str):
-    """Delete an asset from the database"""
+    """
+    Securely delete an asset: remove from database and move folder to TrashBin.
+    NEVER permanently deletes folders - always moves to TrashBin for recovery.
+    """
     asset_queries = get_asset_queries()
     if not asset_queries:
         raise HTTPException(status_code=503, detail="Database not available")
     
     try:
-        # Check if asset exists
+        # Get asset data before deletion
         collection = asset_queries.db.collection('Atlas_Library')
         if not collection.has(asset_id):
             raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
         
-        # Delete document from ArangoDB
-        result = collection.delete(asset_id)
+        asset_data = collection.get(asset_id)
+        asset_name = asset_data.get('name', 'Unknown')
         
-        logger.info(f"✅ Asset {asset_id} deleted successfully")
+        # DEBUG: Log the entire asset data structure to understand what's available
+        logger.info(f"🔍 FULL ASSET DATA STRUCTURE:")
+        logger.info(f"🔍 Asset ID: {asset_id}")
+        logger.info(f"🔍 Asset Name: {asset_name}")
+        logger.info(f"🔍 All Keys: {list(asset_data.keys())}")
+        for key, value in asset_data.items():
+            if isinstance(value, dict):
+                logger.info(f"🔍 {key}: {value}")
+            else:
+                logger.info(f"🔍 {key}: {value}")
+        
+        # Get folder path for moving to TrashBin - PRIORITY: folder_path field
+        asset_folder_path = None
+        dimension = asset_data.get('dimension', '3D')
+        
+        # Check ALL possible field names where folder path might be stored
+        possible_paths = [
+            asset_data.get('folder_path'),
+            asset_data.get('asset_folder'),
+            asset_data.get('paths', {}).get('asset_folder') if 'paths' in asset_data else None,
+            asset_data.get('paths', {}).get('folder_path') if 'paths' in asset_data else None,
+            asset_data.get('asset_folder_path'),
+            asset_data.get('directory'),
+            asset_data.get('path'),
+        ]
+        
+        # SPECIAL CASE: Extract folder path from original_metadata_file field
+        original_metadata_file = asset_data.get('metadata', {}).get('original_metadata_file')
+        if original_metadata_file:
+            # Extract folder path from metadata file path
+            # e.g. '/net/library/atlaslib/3D/Assets/BlacksmithAssets/6F950393_atlas_asset/metadata.json'
+            # becomes '/net/library/atlaslib/3D/Assets/BlacksmithAssets/6F950393_atlas_asset'
+            from pathlib import Path
+            folder_from_metadata = str(Path(original_metadata_file).parent)
+            possible_paths.insert(0, folder_from_metadata)  # Add as first priority
+            logger.info(f"🔍 Extracted folder from original_metadata_file: {folder_from_metadata}")
+        
+        logger.info(f"🔍 All possible folder paths found:")
+        for i, path in enumerate(possible_paths):
+            logger.info(f"🔍   Option {i+1}: {path}")
+            
+        # Use the first non-None path found
+        for path in possible_paths:
+            if path and isinstance(path, str) and path.strip():
+                asset_folder_path = path.strip()
+                logger.info(f"✅ Selected folder path: {asset_folder_path}")
+                break
+        
+        if not asset_folder_path:
+            logger.error(f"❌ NO FOLDER PATH FOUND in any field!")
+            logger.info(f"🔍 Full asset data: {asset_data}")
+        else:
+            logger.info(f"✅ Final asset_folder_path: {asset_folder_path}")
+        
+        # STRICT POLICY: Only delete from database if folder is found AND successfully moved
+        if not asset_folder_path:
+            logger.error(f"❌ CRITICAL: No folder path found for asset {asset_id}. REFUSING to delete from database.")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot delete asset: No folder path found in database. Please check the asset data structure. Asset will NOT be removed from database without folder path."
+            )
+        
+        # CONTAINER PATH TRANSLATION: Convert host network path to container mount path
+        def translate_to_container_path(host_path: str) -> str:
+            """
+            Translate network path to container mount path.
+            Host: /net/library/atlaslib/3D/Assets/... 
+            Container: /app/assets/3D/Assets/...
+            """
+            if host_path.startswith('/net/library/atlaslib/'):
+                container_path = host_path.replace('/net/library/atlaslib/', '/app/assets/')
+                logger.info(f"🔄 Path translation: {host_path} -> {container_path}")
+                return container_path
+            else:
+                logger.info(f"🔄 Path already container-compatible: {host_path}")
+                return host_path
+        
+        # Translate path for container access
+        container_folder_path = translate_to_container_path(asset_folder_path)
+        
+        # Check if folder actually exists before attempting move
+        from pathlib import Path
+        folder_path = Path(container_folder_path)
+        if not folder_path.exists():
+            logger.error(f"❌ CRITICAL: Folder does not exist at container path: {container_folder_path} (original: {asset_folder_path})")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Cannot delete asset: Folder not found at {asset_folder_path}. Asset will NOT be removed from database without successful folder move."
+            )
+        
+        if not folder_path.is_dir():
+            logger.error(f"❌ CRITICAL: Path exists but is not a directory: {container_folder_path} (original: {asset_folder_path})")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot delete asset: Path is not a directory: {asset_folder_path}. Asset will NOT be removed from database."
+            )
+        
+        logger.info(f"🗑️ Attempting to move asset folder to TrashBin: {container_folder_path} (original: {asset_folder_path})")
+        folder_move_result = move_asset_to_trashbin(container_folder_path, dimension)
+        
+        if not folder_move_result["success"]:
+            # STRICT: If folder move fails for ANY reason, don't delete from database
+            logger.error(f"❌ FOLDER MOVE FAILED: {folder_move_result.get('error', 'Unknown error')}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"FOLDER MOVE FAILED: {folder_move_result.get('error', 'Unknown error')}. Asset will NOT be removed from database without successful folder move."
+            )
+        
+        logger.info(f"✅ SUCCESS: Folder successfully moved to TrashBin at: {folder_move_result.get('trashbin_path')}")
+        logger.info(f"🗑️ Now proceeding to delete from database...")
+        
+        # Delete from database ONLY after confirmed successful folder move
+        try:
+            result = collection.delete(asset_id)
+            logger.info(f"✅ Database deletion successful for asset {asset_id}")
+        except Exception as db_error:
+            logger.error(f"❌ Database deletion failed: {db_error}")
+            # NOTE: Folder was already moved to TrashBin, so we have a problem
+            # We should probably move the folder back from TrashBin in this case
+            raise HTTPException(
+                status_code=500, 
+                detail=f"CRITICAL: Folder was moved to TrashBin but database deletion failed: {db_error}. Manual recovery may be needed."
+            )
+        
+        logger.info(f"✅ Asset {asset_id} ({asset_name}) deleted successfully from database")
         
         return {
             "success": True,
-            "message": f"Asset {asset_id} deleted successfully",
-            "deleted_id": asset_id
+            "message": f"Asset '{asset_name}' deleted successfully",
+            "deleted_id": asset_id,
+            "deleted_name": asset_name,
+            "folder_moved": folder_move_result["success"],
+            "folder_move_details": folder_move_result,
+            "dimension": dimension
         }
+        
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"❌ Error deleting asset {asset_id}: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error deleting asset: {str(e)}")
 
 @router.get("/assets/{asset_id}/expand")
@@ -582,41 +900,6 @@ async def get_categories():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
-@router.get("/debug/test-connection")
-async def test_connection():
-    """Test database connection and return raw data"""
-    try:
-        from arango import ArangoClient
-        import os
-        
-        # Direct connection
-        client = ArangoClient(hosts=f"http://{os.getenv('ARANGO_HOST', 'arangodb')}:{os.getenv('ARANGO_PORT', '8529')}")
-        db = client.db(
-            os.getenv('ARANGO_DATABASE', 'blacksmith_atlas'),
-            username=os.getenv('ARANGO_USER', 'root'),
-            password=os.getenv('ARANGO_PASSWORD', 'atlas_password')
-        )
-        
-        # Test query
-        query = "FOR asset IN Atlas_Library RETURN asset"
-        cursor = db.aql.execute(query)
-        assets = list(cursor)
-        
-        return {
-            "status": "success",
-            "environment": os.getenv('ATLAS_ENV', 'development'),
-            "host": os.getenv('ARANGO_HOST', 'arangodb'),
-            "database": os.getenv('ARANGO_DATABASE', 'blacksmith_atlas'),
-            "assets_count": len(assets),
-            "assets": assets
-        }
-    except Exception as e:
-        import traceback
-        return {
-            "status": "error",
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
 
 @router.get("/creators")
 async def get_creators():
