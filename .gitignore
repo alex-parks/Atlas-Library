@@ -62,3 +62,6 @@ dev-debug.log
 # tasks.json
 # tasks/ 
 backend/venv/*
+
+# Database and Cache Data (bind mounts)
+data/

@@ -50,7 +50,6 @@ Blacksmith-Atlas/
 │   │       │   ├── shelf_load_atlas_asset.py
 │   │       │   └── shelf_paste_atlas_asset.py
 │   │       └── templates/             # Template files (ORGANIZED)
-│   │           ├── hda_pymodule.py
 │   │           └── hda_pymodule_template.py
 │   ├── core/                          # Core business logic
 │   │   ├── asset_manager.py

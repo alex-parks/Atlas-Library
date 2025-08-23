@@ -6,7 +6,7 @@ saveChildrenToFile() and loadChildrenFromFile() methods.
 
 Main modules:
 - houdiniae: Core template-based exporter/importer classes
-- hda_pymodule: HDA PyModule functions for Houdini integration
+- shelf_create_atlas_asset: Shelf tool for creating Atlas assets from selected nodes
 - demo_template_workflow: Example usage and demonstration
 """
 

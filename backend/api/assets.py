@@ -244,20 +244,42 @@ async def create_asset(asset_request: AssetCreateRequest):
         metadata_id = asset_request.metadata.get('id') if asset_request.metadata else None
         asset_name = asset_request.name
         
+        # DEBUG: Log the received metadata_id and its properties
+        logger.info(f"🔍 DEBUG: Received metadata_id = '{metadata_id}' (type: {type(metadata_id)}, length: {len(metadata_id) if metadata_id else 'None'})")
+        logger.info(f"🔍 DEBUG: Asset name = '{asset_name}'")
+        if asset_request.metadata:
+            logger.info(f"🔍 DEBUG: Full metadata keys: {list(asset_request.metadata.keys())}")
+        else:
+            logger.info(f"🔍 DEBUG: No metadata provided")
+        
         if metadata_id:
             # For new Houdini exports: metadata_id is just the UID (e.g., "B6A48C5B")
             # For legacy exports: metadata_id might be the full format (e.g., "B6A48C5B_atlas_asset")
             
-            # Extract UID part if metadata_id contains underscore (legacy format)
-            if '_' in metadata_id:
+            # New versioning system: metadata_id is the full 14-character UID 
+            # Use the 14-character UID directly as both _key and id
+            if len(metadata_id) == 14:
+                # New 14-character UID system (9 base + 2 variant + 3 version)
+                asset_key = metadata_id  # Use 14-char UID directly as _key
+                asset_id = metadata_id   # Use 14-char UID as document id
+                logger.info(f"🔍 DEBUG: Using 14-char UID path - asset_key = '{asset_key}', asset_id = '{asset_id}'")
+            elif len(metadata_id) == 12:
+                # Legacy 12-character UID system (9 base + 3 version) - still support for existing assets
+                asset_key = metadata_id  # Use 12-char UID directly as _key
+                asset_id = metadata_id   # Use 12-char UID as document id
+                logger.info(f"🔍 DEBUG: Using legacy 12-char UID path - asset_key = '{asset_key}', asset_id = '{asset_id}'")
+            elif '_' in metadata_id:
+                # Legacy format: UID_Name
                 uid_part = metadata_id.split('_')[0]
-                asset_key = metadata_id  # Use full format for _key
+                asset_key = metadata_id  # Use full format for _key (legacy)
                 asset_id = uid_part      # Use just UID for document id
+                logger.info(f"🔍 DEBUG: Using legacy UID_Name path - asset_key = '{asset_key}', asset_id = '{asset_id}'")
             else:
-                # New format: metadata_id is just the UID
+                # Old format: just UID (add name suffix for legacy compatibility)
                 sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
                 asset_key = f"{metadata_id}_{sanitized_name}"  # Create full format for _key
                 asset_id = metadata_id                         # Use UID for document id
+                logger.info(f"🔍 DEBUG: Using old UID path - asset_key = '{asset_key}', asset_id = '{asset_id}'")
         else:
             # Generate new asset ID and key
             sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
@@ -282,6 +304,12 @@ async def create_asset(asset_request: AssetCreateRequest):
             'created_by': getattr(asset_request, 'created_by', None) or 'unknown',
             'status': 'active'
         }
+        
+        # DEBUG: Log the final database document structure
+        logger.info(f"🔍 DEBUG: Final asset_data._key = '{asset_data['_key']}'")
+        logger.info(f"🔍 DEBUG: Final asset_data.id = '{asset_data['id']}'")
+        logger.info(f"🔍 DEBUG: Final asset_data.name = '{asset_data['name']}'")
+        logger.info(f"🔍 DEBUG: Final asset_data.category = '{asset_data['category']}'")
         
         # Use existing asset queries to insert
         asset_queries = get_asset_queries()

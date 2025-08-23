@@ -25,7 +25,7 @@ except ImportError:
 class TemplateAssetExporter:
     """Export assets using Houdini's template system"""
     
-    def __init__(self, asset_name, subcategory="Props", description="", tags=None, asset_type=None, render_engine=None, metadata=None):
+    def __init__(self, asset_name, subcategory="Props", description="", tags=None, asset_type=None, render_engine=None, metadata=None, action="create_new", parent_asset_id=None, variant_name=None):
         self.asset_name = asset_name
         self.subcategory = subcategory  
         self.description = description
@@ -33,13 +33,58 @@ class TemplateAssetExporter:
         self.asset_type = asset_type or "Assets"
         self.render_engine = render_engine or "Redshift"
         self.metadata = metadata or ""
+        self.action = action
+        self.parent_asset_id = parent_asset_id
         
-        # Generate unique asset ID (8 character UID)
+        # Handle variant name - determine based on action
+        if action == "create_new":
+            self.variant_name = "default"
+        elif action == "variant" and variant_name:
+            self.variant_name = variant_name
+        elif action == "version_up":
+            # For version_up, copy variant_name from parent (will be looked up later)
+            self.variant_name = None  # Will be set by _get_variant_name_from_parent()
+        else:
+            self.variant_name = "default"
+        
+        # Generate unique asset ID (9 character base UID + 3 digit version = 12 characters total)
         import uuid
-        self.asset_id = str(uuid.uuid4())[:8].upper()
-        
-        # Sanitize asset name for folder/key generation
         import re
+        
+        if action == "create_new":
+            # Generate new 9-character base UID + 2-character variant + 3-digit version = 14 characters total
+            self.base_uid = str(uuid.uuid4()).replace('-', '')[:9].upper()
+            self.variant_id = "AA"  # Always start with AA variant for new assets
+            self.version = 1
+        elif action == "version_up":
+            # For version_up: expects 11 characters (9 base + 2 variant)
+            if not parent_asset_id or len(parent_asset_id) != 11:
+                raise ValueError(f"Parent asset ID required for version_up and must be exactly 11 characters (9 base + 2 variant)")
+            self.base_uid = parent_asset_id[:9].upper()  # First 9 characters as base UID
+            self.variant_id = parent_asset_id[9:11].upper()  # Characters 9-11 as variant ID
+            self.version = self._get_next_version(parent_asset_id, action)  # Pass full 11-char asset ID
+        elif action == "variant":
+            # For variant: expects 9 characters (base UID only)
+            if not parent_asset_id or len(parent_asset_id) != 9:
+                raise ValueError(f"Parent asset ID required for variant and must be exactly 9 characters (base UID)")
+            self.base_uid = parent_asset_id.upper()  # Use the 9-character base UID
+            # Generate next variant ID based on existing variants for this base UID
+            self.variant_id = self._get_next_variant_id(self.base_uid)
+            self.version = 1  # Reset version to 001 for new variant
+        else:
+            raise ValueError(f"Invalid action: {action}. Must be 'create_new', 'version_up', or 'variant'")
+        
+        # Create full 14-character asset ID (9 base + 2 variant + 3 version)
+        self.asset_id = f"{self.base_uid}{self.variant_id}{self.version:03d}"
+        
+        # The 11-character asset ID (without version) for referencing
+        self.asset_base_id = f"{self.base_uid}{self.variant_id}"
+        
+        # Set variant_name for version_up if not already set
+        if action == "version_up" and self.variant_name is None:
+            self.variant_name = self._get_variant_name_from_parent(parent_asset_id)
+        
+        # Sanitize asset name for display purposes only
         self.sanitized_asset_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
         
         # Set up paths based on hierarchy structure
@@ -63,13 +108,14 @@ class TemplateAssetExporter:
         
         subcategory_folder = subcategory_folder_map.get(subcategory, subcategory.replace(" ", ""))
         
-        self.asset_folder = self.library_root / asset_type / subcategory_folder / f"{self.asset_id}_{self.sanitized_asset_name}"
+        # Asset folder is named with the full 14-character UID
+        self.asset_folder = self.library_root / asset_type / subcategory_folder / self.asset_id
         self.data_folder = self.asset_folder / "Data"
         self.textures_folder = self.asset_folder / "Textures"
         self.geometry_folder = self.asset_folder / "Geometry"
         
-        # Database key in UID_Name format (matching folder name)
-        self.database_key = f"{self.asset_id}_{self.sanitized_asset_name}"
+        # Database key is the full 14-character UID
+        self.database_key = self.asset_id
     
     def _get_artist_name(self):
         """Extract artist name from POSE environment variable or fallback to USER"""
@@ -98,6 +144,233 @@ class TemplateAssetExporter:
             return fallback_user
         except:
             return 'unknown'
+    
+    def _get_next_version(self, asset_base_id, action):
+        """Get the next version number for version up or variant actions"""
+        try:
+            if action == "version_up":
+                # Query the Atlas API to find existing versions for this asset (11-char base + variant)
+                print(f"   🔍 Looking up existing versions for asset base ID: {asset_base_id}")
+                
+                try:
+                    import urllib.request
+                    import json
+                    
+                    # Query the Atlas API to get all assets
+                    api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+                    print(f"   🌐 Making API request to: {api_url}")
+                    
+                    response = urllib.request.urlopen(api_url, timeout=30)
+                    assets_data = json.loads(response.read().decode())
+                    all_assets = assets_data.get('items', [])
+                    
+                    print(f"   📊 Found {len(all_assets)} total assets in database")
+                    
+                    # Filter assets that match the asset base ID (first 11 characters: 9 base + 2 variant)
+                    matching_assets = []
+                    for asset in all_assets:
+                        asset_id = asset.get('id', '')
+                        if len(asset_id) >= 11 and asset_id[:11].upper() == asset_base_id.upper():
+                            matching_assets.append(asset)
+                            print(f"   ✅ Found matching asset: {asset_id}")
+                    
+                    print(f"   📊 Total matching assets: {len(matching_assets)}")
+                    
+                    if not matching_assets:
+                        print(f"   ❌ No existing versions found for asset base ID: {asset_base_id}")
+                        print(f"   ⚠️ Asset not found in database - cannot version up")
+                        # This will trigger an error in Houdini
+                        raise ValueError(f"No Asset Found: {asset_base_id} not found in database")
+                    
+                    # Parse version numbers from matching assets
+                    existing_versions = []
+                    for asset in matching_assets:
+                        asset_id = asset.get('id', '')
+                        if len(asset_id) == 14:  # 14-character UIDs now
+                            try:
+                                version_str = asset_id[-3:]  # Last 3 characters are version
+                                version_num = int(version_str)
+                                existing_versions.append(version_num)
+                                print(f"   ✅ Parsed version {version_num:03d} from {asset_id}")
+                            except ValueError:
+                                print(f"   ⚠️ Invalid version format in asset ID: {asset_id} (last 3: '{asset_id[-3:]}')")
+                        else:
+                            print(f"   ⚠️ Asset ID wrong length: {asset_id} (expected 14, got {len(asset_id)})")
+                    
+                    # Calculate next version number
+                    next_version = max(existing_versions) + 1 if existing_versions else 1
+                    print(f"   📊 Existing versions: {existing_versions}")
+                    print(f"   🔢 Next version calculated: {next_version}")
+                    
+                    return next_version
+                    
+                except ValueError as ve:
+                    # Re-raise ValueError to trigger proper error in Houdini
+                    raise ve
+                except Exception as api_error:
+                    print(f"   ❌ API lookup failed: {api_error}")
+                    print(f"   ⚠️ Falling back to version 1")
+                    return 1
+                
+            elif action == "variant":
+                # For variants, use same logic as version_up for now
+                return self._get_next_version(asset_base_id, "version_up")
+            else:
+                return 1
+                
+        except ValueError as ve:
+            # Re-raise ValueError for proper error handling
+            raise ve
+        except Exception as e:
+            print(f"   ⚠️ Error getting next version, defaulting to 1: {e}")
+            return 1
+    
+    def _get_next_variant_id(self, base_uid):
+        """Get the next variant ID using letter-based incrementation (AA->AB->AC...->AZ->BA)"""
+        try:
+            print(f"   🔍 Getting next variant ID for base: {base_uid}")
+            
+            # Query the Atlas API to find all existing variants for this base UID
+            try:
+                import urllib.request
+                import json
+                
+                # Query the Atlas API to get all assets
+                api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+                print(f"   🌐 Making API request to: {api_url}")
+                
+                response = urllib.request.urlopen(api_url, timeout=30)
+                assets_data = json.loads(response.read().decode())
+                all_assets = assets_data.get('items', [])
+                
+                print(f"   📊 Found {len(all_assets)} total assets in database")
+                
+                # Filter assets that match the base UID (first 9 characters)
+                matching_variants = set()
+                print(f"   🔍 Searching for base UID: '{base_uid.upper()}'")
+                
+                for asset in all_assets:
+                    asset_id = asset.get('id', '')
+                    if len(asset_id) >= 11:
+                        asset_base = asset_id[:9].upper()
+                        if asset_base == base_uid.upper():
+                            variant_id = asset_id[9:11].upper()
+                            matching_variants.add(variant_id)
+                            print(f"   ✅ Found variant: {variant_id} in asset {asset_id}")
+                        else:
+                            # Debug: show first few non-matching assets
+                            if len(matching_variants) == 0:
+                                print(f"   ❌ Asset {asset_id[:20]}... doesn't match base '{base_uid.upper()}' (got '{asset_base}')")
+                
+                print(f"   📊 All existing variants for {base_uid}: {sorted(matching_variants)}")
+                print(f"   🔢 Total matching variants found: {len(matching_variants)}")
+                
+                # Generate next variant ID using letter logic
+                next_variant = self._increment_variant_id(matching_variants)
+                print(f"   🔢 Next variant calculated: {next_variant}")
+                
+                return next_variant
+                
+            except Exception as api_error:
+                print(f"   ❌ API lookup failed: {api_error}")
+                # Fallback: start with AB (assuming AA exists)
+                return "AB"
+                
+        except Exception as e:
+            print(f"   ⚠️ Error getting next variant, falling back to AB: {e}")
+            return "AB"
+    
+    def _increment_variant_id(self, existing_variants):
+        """Generate the next available variant ID using AA->AB->AC...->AZ->BA logic"""
+        print(f"   🔢 _increment_variant_id called with: {existing_variants}")
+        
+        # Start with AA if no variants exist
+        if not existing_variants:
+            print(f"   ✅ No existing variants, starting with AA")
+            return "AA"
+        
+        # Convert existing variants to numbers for easier processing
+        variant_numbers = []
+        for variant in existing_variants:
+            if len(variant) == 2:
+                first_char = ord(variant[0]) - ord('A')
+                second_char = ord(variant[1]) - ord('A')
+                variant_num = first_char * 26 + second_char
+                variant_numbers.append(variant_num)
+                print(f"   🔢 Variant '{variant}' -> number {variant_num}")
+        
+        print(f"   🔢 All variant numbers: {sorted(variant_numbers)}")
+        
+        # Find the next available number
+        variant_numbers.sort()
+        next_num = 0
+        while next_num in variant_numbers:
+            print(f"   🔍 Checking number {next_num} - already exists, incrementing")
+            next_num += 1
+        
+        print(f"   ✅ Next available number: {next_num}")
+        
+        # Convert back to letters
+        first_char = chr(ord('A') + (next_num // 26))
+        second_char = chr(ord('A') + (next_num % 26))
+        
+        result = f"{first_char}{second_char}"
+        print(f"   🔢 Next variant ID: {result} (from number {next_num})")
+        
+        return result
+    
+    def _increment_single_variant_id(self, current_variant):
+        """Increment a single variant ID (fallback method)"""
+        if len(current_variant) != 2:
+            return "AB"
+        
+        first_char = current_variant[0]
+        second_char = current_variant[1]
+        
+        # Increment second character first
+        if second_char < 'Z':
+            return f"{first_char}{chr(ord(second_char) + 1)}"
+        elif first_char < 'Z':
+            return f"{chr(ord(first_char) + 1)}A"
+        else:
+            # Wrap around (shouldn't happen in practice)
+            return "AA"
+    
+    def _get_variant_name_from_parent(self, parent_asset_id):
+        """Get the variant_name from the parent asset for version_up actions"""
+        try:
+            print(f"   🔍 Looking up variant_name for parent asset: {parent_asset_id}")
+            
+            import urllib.request
+            import json
+            
+            # Query the Atlas API to get all assets and find ones matching the 11-char pattern
+            api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+            print(f"   🌐 Making API request to: {api_url}")
+            
+            response = urllib.request.urlopen(api_url, timeout=30)
+            assets_data = json.loads(response.read().decode())
+            all_assets = assets_data.get('items', [])
+            
+            # Find assets that match the 11-character pattern (ignore version)
+            matching_assets = []
+            for asset in all_assets:
+                asset_id = asset.get('id', '')
+                if len(asset_id) >= 11 and asset_id[:11].upper() == parent_asset_id.upper():
+                    matching_assets.append(asset)
+            
+            if matching_assets:
+                # Use the first matching asset (they should all have the same variant_name)
+                variant_name = matching_assets[0].get('variant_name', 'default')
+                print(f"   ✅ Found variant_name: {variant_name} from asset {matching_assets[0].get('id')}")
+                return variant_name
+            else:
+                print(f"   ⚠️ No matching assets found for pattern: {parent_asset_id}")
+                return "default"
+            
+        except Exception as e:
+            print(f"   ⚠️ Error getting parent variant_name, defaulting to 'default': {e}")
+            return "default"
     
     def export_as_template(self, parent_node, nodes_to_export):
         """Export nodes as template using saveChildrenToFile"""
@@ -923,7 +1196,15 @@ class TemplateAssetExporter:
             
             # Create metadata structure with hierarchy data for frontend filtering
             metadata = {
-                "id": self.asset_id,  # Use just the UID part for the document ID
+                "id": self.asset_id,  # Full 14-character UID
+                "base_uid": self.base_uid,  # 9-character base UID
+                "variant_id": self.variant_id,  # 2-character variant ID
+                "asset_base_id": self.asset_base_id,  # 11-character asset base ID (base + variant)
+                "version": self.version,  # Version number (integer)
+                "version_string": f"{self.version:03d}",  # Padded version string
+                "action": self.action,  # Action used to create this asset
+                "parent_asset_id": self.parent_asset_id,  # Parent asset ID for versions/variants
+                "variant_name": self.variant_name,  # Variant name metadata field
                 "name": self.asset_name,
                 "asset_type": self.asset_type,
                 "subcategory": self.subcategory,
@@ -1691,9 +1972,10 @@ class TemplateAssetImporter:
             print(f"🔴 DEBUG: API URL: {api_url}")
             
             # Prepare asset data for API (match AssetCreateRequest schema)
-            # Use the database key from metadata (UID_Name format)
-            database_key = metadata.get("id", self.database_key)
-            print(f"🔴 DEBUG: Using database key: {database_key}")
+            # Use ONLY the 12-character UID as database key (no suffix)
+            database_key = self.asset_id  # Always use the pure 12-character UID
+            print(f"🔴 DEBUG: Using database key: {database_key} (forced to asset_id)")
+            print(f"🔴 DEBUG: Metadata id was: {metadata.get('id', 'NOT_FOUND')}")
             
             asset_data = {
                 "name": metadata.get("name", self.asset_name),

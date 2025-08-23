@@ -89,9 +89,9 @@ class BLAtlasContextMenu:
             if str(backend_path) not in sys.path:
                 sys.path.insert(0, str(backend_path))
             
-            # Import and execute the collapse function
-            from assetlibrary._3D.hda_pymodule import collapse_to_atlas_asset
-            collapse_to_atlas_asset()
+            # Import and execute the collapse function from shelf tool
+            from assetlibrary.houdini.tools.shelf_create_atlas_asset import main
+            main()
             
         except Exception as e:
             print(f"❌ Collapse error: {e}")

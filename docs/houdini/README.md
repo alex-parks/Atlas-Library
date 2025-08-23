@@ -8,7 +8,7 @@ This folder contains the core files for the Blacksmith Atlas template-based 3D a
 
 ### Core System Files
 - **`houdiniae.py`** - Main module containing `TemplateAssetExporter` and `TemplateAssetImporter` classes
-- **`hda_pymodule.py`** - HDA PyModule functions for Houdini integration (copy into HDA PyModule)
+- **`shelf_create_atlas_asset.py`** - Shelf tool for creating Atlas assets from selected nodes (modern approach)
 - **`__init__.py`** - Python package initialization
 
 ### Documentation & Examples  

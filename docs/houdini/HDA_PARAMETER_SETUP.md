@@ -116,9 +116,16 @@ Group: "Utilities"
     - Help: "Reset export status and clear results"
 ```
 
-### 4. PyModule Setup
+### 4. Alternative Approach - Shelf Tool (Recommended)
+**Note:** The HDA approach is legacy. The modern approach uses shelf tools instead.
+
+1. Use the **shelf_create_atlas_asset.py** tool for creating Atlas assets
+2. This approach provides the same functionality with better maintainability
+3. Right-click context menu integration available
+
+### 4. PyModule Setup (Legacy HDA Approach)
 1. Go to **Type Properties → Scripts → PythonModule**
-2. Copy the entire contents of `hda_pymodule.py` into the PyModule
+2. Use the `hda_pymodule_template.py` as a reference for custom HDA implementations
 3. Make sure the callback scripts match the parameter names above
 
 ### 5. Network Setup Inside HDA

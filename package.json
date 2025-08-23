@@ -19,6 +19,8 @@
     "docker:logs": "docker compose logs -f",
     "docker:status": "docker compose ps",
     "docker:build": "docker compose build --no-cache",
+    "docker:rebuild": "docker compose down && sleep 1 && docker compose build --no-cache && docker compose up -d && echo '🔄 Complete rebuild finished!' && echo 'Frontend: http://localhost:3011' && echo 'Backend: http://localhost:8000'",
+    "podman:rebuild": "podman-compose down && sleep 1 && podman-compose build --no-cache && podman-compose up -d && echo '🔄 Complete podman rebuild finished!' && echo 'Frontend: http://localhost:3011' && echo 'Backend: http://localhost:8000'",
     "docker:cleanup": "docker compose down --remove-orphans && docker system prune -f",
     "docker:setup-db": "docker compose exec backend python -m backend.assetlibrary.database.setup_arango_database",
     
