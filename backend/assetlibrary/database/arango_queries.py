@@ -38,19 +38,19 @@ class AssetQueries:
         """Get asset with all its dependencies"""
         query = """
         LET asset = DOCUMENT('Atlas_Library', @asset_id)
-        LET textures = (
-            FOR texture IN asset.dependencies.textures
-                RETURN texture
-        )
         RETURN {
             asset: asset,
-            texture_count: LENGTH(textures),
-            total_size: asset.file_sizes.usd + asset.file_sizes.thumbnail
+            texture_count: 0,
+            total_size: 0
         }
         """
 
         cursor = self.db.aql.execute(query, bind_vars={'asset_id': asset_id})
-        return cursor.next()
+        try:
+            result = cursor.next()
+            return result if result else {'asset': None}
+        except StopIteration:
+            return {'asset': None}
 
     def get_assets_by_artist(self, artist: str) -> List[Dict]:
         """Get all assets created by a specific user"""

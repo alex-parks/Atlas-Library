@@ -49,25 +49,32 @@ def copy_selected_to_atlas_asset():
                                  buttons=("OK", "Cancel"),
                                  severity=hou.severityType.Message,
                                  title="Atlas Asset Name",
-                                 initial_contents="atlas_asset")
+                                 initial_contents="MyAtlasAsset")
         
-        # result is (text, button_index)
-        text_input = result[0]
-        button_clicked = result[1]
+        print(f"🔍 Dialog result: {result}")
+        print(f"🔍 Dialog result type: {type(result)}")
+        
+        # hou.ui.readInput returns (button_index, text_input)
+        button_clicked = result[0]  # 0 = OK, 1 = Cancel
+        text_input = result[1]      # The actual text entered
+        
+        print(f"🔍 Button clicked: {button_clicked}")  
+        print(f"🔍 Text input: '{text_input}'")
         
         if button_clicked == 1:  # User clicked Cancel
             print("❌ User cancelled operation")
             return False
             
-        # Handle different return types from readInput
-        if isinstance(text_input, str):
-            subnet_name = text_input.strip() if text_input.strip() else "atlas_asset"
-        else:
-            subnet_name = "atlas_asset"
+        # Get the user's input
+        user_asset_name = text_input.strip() if text_input and text_input.strip() else "atlas_asset"
             
-        subnet_name = subnet_name.replace(" ", "_")  # Replace spaces with underscores
+        # Create separate names: one for node (sanitized) and one for parameters (original)
+        subnet_node_name = user_asset_name.replace(" ", "_")  # Replace spaces with underscores for node name
+        asset_parameter_name = user_asset_name  # Keep original for parameters
         
-        print(f"📝 Asset name: {subnet_name}")
+        print(f"📝 User entered: '{user_asset_name}'")
+        print(f"📝 Node name: '{subnet_node_name}'")
+        print(f"📝 Parameter name: '{asset_parameter_name}'")
         
         # Collect nodes and bounds
         node_bounds = []
@@ -116,7 +123,7 @@ def copy_selected_to_atlas_asset():
             subnet_x, subnet_y = 0, 0
 
         # Create subnet
-        subnet = parent.createNode("subnet", subnet_name)
+        subnet = parent.createNode("subnet", subnet_node_name)
         subnet.setPosition([subnet_x, subnet_y])
         
         print(f"✅ Created subnet: {subnet.path()}")
@@ -139,7 +146,7 @@ def copy_selected_to_atlas_asset():
         print(f"✅ Successfully copied {len(copied_nodes)} nodes to subnet")
         
         # Add comprehensive export parameters  
-        success = add_atlas_export_parameters(subnet, subnet_name)
+        success = add_atlas_export_parameters(subnet, asset_parameter_name)
         if not success:
             print("❌ Failed to add export parameters")
             return False

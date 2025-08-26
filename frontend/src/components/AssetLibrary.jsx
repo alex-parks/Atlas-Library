@@ -78,9 +78,8 @@ const AssetLibrary = () => {
   const [editFormData, setEditFormData] = useState({});
 
   const [selectedFilters, setSelectedFilters] = useState({
-    type: 'all',
-    format: 'all',
-    category: 'all',
+    noVariants: true,    // Hide non-AA variants by default
+    noVersions: true,    // Show only highest version by default  
     creator: 'all'
   });
 
@@ -315,9 +314,8 @@ const AssetLibrary = () => {
 
   const clearFilters = () => {
     setSelectedFilters({
-      type: 'all',
-      format: 'all',
-      category: 'all',
+      noVariants: true,    // Reset to default ON
+      noVersions: true,    // Reset to default ON
       creator: 'all'
     });
   };
@@ -326,12 +324,49 @@ const AssetLibrary = () => {
     const matchesSearch = (asset.name && asset.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
                          (asset.description && asset.description.toLowerCase().includes(searchTerm.toLowerCase()));
 
-    const matchesType = selectedFilters.type === 'all' ||
-                       (selectedFilters.type === '2d' && ['texture', 'image', 'reference'].includes(asset.asset_type)) ||
-                       (selectedFilters.type === '3d' && ['3D', 'Assets', 'FX', 'Materials', 'HDAs'].includes(asset.asset_type));
-
-    const matchesCategory = selectedFilters.category === 'all' || asset.category === selectedFilters.category;
     const matchesCreator = selectedFilters.creator === 'all' || asset.metadata?.ingested_by === selectedFilters.creator;
+
+    // Variant filtering logic
+    let matchesVariantFilter = true;
+    if (selectedFilters.noVariants) {
+      // Only show assets where variant_id is 'AA' (original assets)
+      // Check for variant_id in multiple possible locations
+      const variantId = asset.metadata?.variant_id || asset.variant_id || 
+                       (asset.metadata?.hierarchy?.variant_id) || 
+                       // If no explicit variant_id, derive from asset ID (characters 10-11)
+                       (asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA');
+      matchesVariantFilter = variantId === 'AA';
+    }
+    // When noVariants is OFF, matchesVariantFilter stays true (show all variants)
+
+    // Version filtering logic  
+    let matchesVersionFilter = true;
+    if (selectedFilters.noVersions) {
+      // For version filtering, we need to group assets by their base ID (first 11 characters: 9-char base + 2-char variant)
+      // and only show the highest version (last 3 digits) for each base ID
+      
+      // Extract the asset ID structure: XXXXXXXXX[AA]001
+      const assetId = asset.id || asset._key || '';
+      if (assetId.length >= 14) {
+        const baseId = assetId.substring(0, 11); // First 11 characters (9 base + 2 variant)
+        const versionNum = parseInt(assetId.substring(11), 10) || 1; // Last 3 digits as version
+        
+        // Find the highest version for this base ID among all assets
+        const sameBaseAssets = assets.filter(a => {
+          const otherId = a.id || a._key || '';
+          return otherId.length >= 14 && otherId.substring(0, 11) === baseId;
+        });
+        
+        const highestVersion = Math.max(...sameBaseAssets.map(a => {
+          const otherId = a.id || a._key || '';
+          return parseInt(otherId.substring(11), 10) || 1;
+        }));
+        
+        // Only show if this asset has the highest version for its base ID
+        matchesVersionFilter = versionNum === highestVersion;
+      }
+    }
+    // When noVersions is OFF, matchesVersionFilter stays true (show all versions)
 
     // Apply navigation filters based on current navigation state and ArangoDB data structure
     let matchesNavigation = true;
@@ -374,7 +409,7 @@ const AssetLibrary = () => {
       return true;
     });
 
-    return matchesSearch && matchesType && matchesCategory && matchesCreator && matchesNavigation && matchesActiveFilters;
+    return matchesSearch && matchesCreator && matchesVariantFilter && matchesVersionFilter && matchesNavigation && matchesActiveFilters;
   });
 
   // Debug logging for filtering
@@ -387,11 +422,32 @@ const AssetLibrary = () => {
     console.log('Selected category:', selectedCategory);
     console.log('Selected subcategory:', selectedSubcategory);
     console.log('Active filters:', activeFilters);
+    console.log('Selected filters:', selectedFilters);
+    console.log('No Variants filter:', selectedFilters.noVariants, '(true = hide non-AA variants)');
+    console.log('No Versions filter:', selectedFilters.noVersions, '(true = show only highest version)');
+    
     if (assets.length > 0) {
       console.log('Sample asset structure:', assets[0]);
+      
+      // Show some examples of variant_id and asset ID structures
+      const sampleAssets = assets.slice(0, 10);
+      console.log('Sample asset IDs and variants:');
+      sampleAssets.forEach(asset => {
+        const assetId = asset.id || asset._key || '';
+        const variantId = asset.metadata?.variant_id || asset.variant_id || 
+                         (asset.metadata?.hierarchy?.variant_id) || 
+                         (asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA');
+        const derivedVariantId = asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA';
+        console.log(`  ID: ${assetId}, variant_id: ${variantId}, derived: ${derivedVariantId}, name: ${asset.name}`);
+      });
+      
+      // Show filtering results for a few assets
+      if (selectedFilters.noVariants === false || selectedFilters.noVersions === false) {
+        console.log('Filter is OFF - should show all assets');
+      }
     }
     console.log('=======================');
-  }, [assets, filteredAssets, currentView, selectedDimension, selectedCategory, selectedSubcategory, activeFilters]);
+  }, [assets, filteredAssets, currentView, selectedDimension, selectedCategory, selectedSubcategory, activeFilters, selectedFilters]);
 
   const saveSettings = async () => {
     try {
@@ -475,70 +531,21 @@ const AssetLibrary = () => {
 
   const copyAssetToClipboard = async (asset) => {
     try {
-      // Create comprehensive asset data for Houdini clipboard
-      const assetClipboardData = {
-        // Core asset information
-        atlas_asset_id: asset.id,
-        asset_name: asset.name,
-        asset_type: asset.metadata?.asset_type || asset.category,
-        subcategory: asset.metadata?.subcategory || 'General',
-        render_engine: asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine || 'Redshift',
-        
-        // File paths (Docker-mounted paths for Houdini access)  
-        asset_folder: asset.asset_folder || `/net/library/atlaslib/3D/${asset.metadata?.asset_type || 'Assets'}/${asset.metadata?.subcategory?.replace(/\s/g, '') || 'General'}/${asset.id}_${asset.name}`,
-        template_file: `${asset.id}_${asset.name}.hip`,
-        usd_file: asset.paths?.usd || `${asset.id}_${asset.name}.usd`,
-        
-        // Metadata for smart pasting
-        metadata: {
-          dimension: asset.metadata?.dimension || '3D',
-          export_context: asset.metadata?.export_context || 'houdini',
-          houdini_version: asset.metadata?.houdini_version || '20.0',
-          tags: asset.metadata?.tags || [],
-          description: asset.description || '',
-          artist: asset.metadata?.ingested_by || 'Unknown'
-        },
-        
-        // Instructions for Houdini
-        paste_instructions: {
-          method: 'template_load',
-          load_command: 'hou.hipFile.load("TEMPLATE_PATH", suppress_save_prompt=True)',
-          copy_nodes_command: 'atlas_clipboard_paste',
-          notes: 'Asset exported from Blacksmith Atlas - use Atlas clipboard system for pasting'
-        },
-        
-        // Timestamp
-        copied_at: new Date().toISOString(),
-        copy_source: 'blacksmith_atlas_web'
-      };
-
-      // Create formatted text for clipboard that includes both JSON data and human-readable info
-      const clipboardText = `# Blacksmith Atlas Asset Copy
-# Asset: ${asset.name}
-# Type: ${asset.metadata?.dimension || '3D'} → ${asset.metadata?.asset_type || 'Assets'} → ${asset.metadata?.subcategory || 'General'}
-# Render Engine: ${asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine || 'Redshift'}
-# Artist: ${asset.metadata?.ingested_by || 'Unknown'}
-# Copied: ${new Date().toLocaleString()}
-
-# JSON Data for Houdini Integration:
-${JSON.stringify(assetClipboardData, null, 2)}
-
-# To paste in Houdini:
-# 1. Use Atlas Clipboard System: Ctrl+V or Atlas Paste shelf button
-# 2. Or manually load template: ${assetClipboardData.asset_folder}/${assetClipboardData.template_file}`;
-
-      // Copy to clipboard
-      await navigator.clipboard.writeText(clipboardText);
+      // Simply copy the Asset ID to clipboard
+      const assetId = asset.id;
+      
+      // Copy just the ID to clipboard
+      await navigator.clipboard.writeText(assetId);
       
       // Show success feedback
-      console.log('Asset copied to clipboard:', assetClipboardData);
+      console.log('Asset ID copied to clipboard:', assetId);
       
-      // Optional: Show a more prominent notification
-      alert(`✅ Asset "${asset.name}" copied to clipboard!\n\nYou can now paste it in Houdini using:\n• Ctrl+V (Atlas Clipboard System)\n• Atlas Paste shelf button\n• Or manually load the template file`);
+      // Show a simple notification
+      alert(`✅ Asset ID copied: ${assetId}`);
       
     } catch (error) {
-      console.error('Failed to copy asset to clipboard:', error);
-      alert('❌ Failed to copy asset to clipboard. Please try again.');
+      console.error('Failed to copy asset ID to clipboard:', error);
+      alert('❌ Failed to copy asset ID to clipboard. Please try again.');
     }
   };
 
@@ -710,7 +717,7 @@ ${JSON.stringify(assetClipboardData, null, 2)}
               >
                 <Filter size={18} />
                 Filter
-                {(selectedFilters.type !== 'all' || selectedFilters.category !== 'all' || selectedFilters.creator !== 'all') && (
+                {(selectedFilters.creator !== 'all' || !selectedFilters.noVariants || !selectedFilters.noVersions) && (
                   <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
                 )}
               </button>
@@ -729,40 +736,29 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                     </div>
 
                     <div className="mb-4">
-                      <label className="block text-sm font-medium text-neutral-300 mb-2">Asset Type</label>
+                      <label className="block text-sm font-medium text-neutral-300 mb-2">Display Options</label>
                       <div className="space-y-2">
-                        {[
-                          { value: 'all', label: 'All Assets' },
-                          { value: '2d', label: '2D Assets' },
-                          { value: '3d', label: '3D Assets' }
-                        ].map(option => (
-                          <label key={option.value} className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="assetType"
-                              value={option.value}
-                              checked={selectedFilters.type === option.value}
-                              onChange={(e) => handleFilterChange('type', e.target.value)}
-                              className="text-blue-600 focus:ring-blue-500"
-                            />
-                            <span className="text-neutral-300 text-sm">{option.label}</span>
-                          </label>
-                        ))}
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedFilters.noVariants}
+                            onChange={(e) => handleFilterChange('noVariants', e.target.checked)}
+                            className="text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-neutral-300 text-sm">No Variants</span>
+                          <span className="text-neutral-500 text-xs">(Hide non-AA variants)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedFilters.noVersions}
+                            onChange={(e) => handleFilterChange('noVersions', e.target.checked)}
+                            className="text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-neutral-300 text-sm">No Versions</span>
+                          <span className="text-neutral-500 text-xs">(Show only highest version)</span>
+                        </label>
                       </div>
-                    </div>
-
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-neutral-300 mb-2">Category</label>
-                      <select
-                        value={selectedFilters.category}
-                        onChange={(e) => handleFilterChange('category', e.target.value)}
-                        className="w-full bg-neutral-700 border border-neutral-600 rounded px-3 py-2 text-white text-sm"
-                      >
-                        <option value="all">All Categories</option>
-                        {assetCategories.map(category => (
-                          <option key={category} value={category}>{category}</option>
-                        ))}
-                      </select>
                     </div>
 
                     <div className="mb-4">
@@ -1348,6 +1344,18 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                           })()}
                         </span>
                       </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-400">Version:</span>
+                        <span className="text-purple-400 font-medium">
+                          {(() => {
+                            const assetId = previewAsset.id || previewAsset._key || '';
+                            if (assetId.length >= 14) {
+                              return `v${assetId.substring(11)}`;
+                            }
+                            return 'v001';
+                          })()}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -1543,7 +1551,7 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                     <span>{filteredAssets.length} assets found</span>
                     <span>Path: /net/library/atlaslib/{selectedDimension}/{selectedCategory}{selectedSubcategory ? `/${selectedSubcategory}` : ''}</span>
                     <span>Database: {dbStatus.database_type || 'JSON'}</span>
-                    {(selectedFilters.type !== 'all' || selectedFilters.category !== 'all' || selectedFilters.creator !== 'all') && (
+                    {(selectedFilters.creator !== 'all' || !selectedFilters.noVariants || !selectedFilters.noVersions) && (
                       <span className="text-blue-400">Filtered</span>
                     )}
                   </div>
@@ -1580,6 +1588,22 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                             </div>
 
 
+                            {/* Version Tag - Bottom Left */}
+                            <div className="absolute bottom-2 left-2">
+                              {(() => {
+                                const assetId = asset.id || asset._key || '';
+                                if (assetId.length >= 14) {
+                                  const versionNum = assetId.substring(11); // Last 3 digits
+                                  return (
+                                    <span className="px-2 py-1 text-xs rounded font-medium bg-blue-500/20 text-blue-300 backdrop-blur-sm">
+                                      v{versionNum}
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
+
                             {/* Render Engine Tags - Bottom Right */}
                             <div className="absolute bottom-2 right-2 flex flex-col gap-1 items-end">
                               {((asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine) === 'Redshift' || (asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine)?.includes('Redshift')) && (
@@ -1605,7 +1629,7 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                               )}
                             </div>
 
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center z-20">
                               <div className="flex gap-2">
                                 <button
                                   onClick={(e) => {
@@ -1712,7 +1736,7 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                           <h3 className="text-white font-semibold text-sm mb-1 truncate">{asset.name}</h3>
                           <p className="text-neutral-400 text-xs mb-2 line-clamp-2">{asset.description || 'No description available'}</p>
 
-                          {/* Technical Details Grid - Simplified */}
+                          {/* Technical Details Grid - 2x3 layout */}
                           <div className="grid grid-cols-2 gap-2 text-xs text-neutral-500">
                             <div>
                               <span className="text-neutral-400">Render Engine:</span>
@@ -1746,8 +1770,20 @@ ${JSON.stringify(assetClipboardData, null, 2)}
                               <div className="text-green-400 font-medium truncate">{asset.metadata?.ingested_by || 'Unknown'}</div>
                             </div>
                             <div>
-                              <span className="text-neutral-400">Version:</span>
+                              <span className="text-neutral-400">Houdini Ver:</span>
                               <div className="text-blue-300 font-medium">{asset.metadata?.houdini_version || 'Unknown'}</div>
+                            </div>
+                            <div>
+                              <span className="text-neutral-400">Asset Ver:</span>
+                              <div className="text-purple-300 font-medium">
+                                {(() => {
+                                  const assetId = asset.id || asset._key || '';
+                                  if (assetId.length >= 14) {
+                                    return `v${assetId.substring(11)}`;
+                                  }
+                                  return 'v001';
+                                })()}
+                              </div>
                             </div>
                           </div>
                         </div>

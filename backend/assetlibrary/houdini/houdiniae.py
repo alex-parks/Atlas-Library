@@ -392,14 +392,20 @@ class TemplateAssetExporter:
             # Process geometry files and copy them
             geometry_info = self.process_geometry_files(parent_node, nodes_to_export)
             
-            # Export template
-            template_file = self.data_folder / "template.hipnc"
-            print(f"   💾 Saving template to: {template_file}")
+            # 🆕 REMAP ALL FILE PATHS FROM JOB LOCATIONS TO LIBRARY LOCATIONS
+            print(f"   🔄 Remapping file paths before export...")
+            path_mappings = self.remap_paths_before_export(parent_node, nodes_to_export, texture_info, geometry_info)
+            print(f"   ✅ Path remapping complete: {len(path_mappings)} paths updated")
+            
+            # Export template with render engine suffix in root folder
+            render_engine_lower = self.render_engine.lower()
+            template_file = self.asset_folder / f"template_{render_engine_lower}.hip"
+            print(f"   💾 Saving {self.render_engine} template to: {template_file}")
             
             # Use saveChildrenToFile with correct syntax (children, network_boxes, filename)
             try:
                 parent_node.saveChildrenToFile(nodes_to_export, parent_node.networkBoxes(), str(template_file))
-                print(f"   ✅ Template saved successfully using correct saveChildrenToFile syntax")
+                print(f"   ✅ Template saved successfully: template_{render_engine_lower}.hip")
             except Exception as e:
                 print(f"   ❌ Template save failed: {e}")
                 # As a fallback, just create an empty file so the export doesn't fail
@@ -410,7 +416,7 @@ class TemplateAssetExporter:
             
             # Create metadata
             print(f"   📋 Creating metadata...")
-            metadata = self.create_asset_metadata(template_file, nodes_to_export, texture_info, geometry_info)
+            metadata = self.create_asset_metadata(template_file, nodes_to_export, texture_info, geometry_info, path_mappings)
             print(f"   ✅ Metadata created successfully")
             
             print(f"✅ Export complete: {self.asset_folder}")
@@ -1166,7 +1172,7 @@ class TemplateAssetExporter:
         print(f"         📋 Found {len(texture_info)} textures in material '{material_name}'")
         return texture_info
     
-    def create_asset_metadata(self, template_file, nodes_exported, texture_info=None, geometry_info=None):
+    def create_asset_metadata(self, template_file, nodes_exported, texture_info=None, geometry_info=None, path_mappings=None):
         """Create metadata JSON for the asset"""
         try:
             if texture_info is None:
@@ -1254,6 +1260,13 @@ class TemplateAssetExporter:
                 "geometry_files": {
                     "count": len(geometry_info),
                     "files": [geo['relative_path'] for geo in geometry_info if 'relative_path' in geo]
+                },
+                
+                # Path remapping info (NEW)
+                "path_remapping": {
+                    "total_remapped": len(path_mappings) if path_mappings else 0,
+                    "paths_json_file": "Data/paths.json",
+                    "remapped_during_export": True if path_mappings else False
                 },
                 
                 # Direct folder path for file manager access
@@ -1457,6 +1470,178 @@ class TemplateAssetExporter:
         
         return keywords
 
+    def remap_paths_before_export(self, parent_node, nodes_to_export, texture_info, geometry_info):
+        """
+        Remap all file paths from job locations to library locations BEFORE exporting template.
+        This ensures the template contains only library paths when saved.
+        """
+        try:
+            import json
+            from datetime import datetime
+            
+            print(f"   🔍 COMPREHENSIVE PATH REMAPPING BEFORE EXPORT")
+            print(f"   📊 Scanning {len(nodes_to_export)} nodes for file path parameters...")
+            
+            # 1. Collect all nodes recursively (including nested nodes)
+            all_nodes = []
+            
+            def collect_all_nodes(parent_node):
+                """Recursively collect all nodes"""
+                for child in parent_node.children():
+                    all_nodes.append(child)
+                    collect_all_nodes(child)  # Recurse into children
+            
+            collect_all_nodes(parent_node)
+            print(f"   📋 Found {len(all_nodes)} total nodes (including nested)")
+            
+            # 2. Build path mappings from copied file information
+            path_mappings = self.build_path_mappings_from_copied_files(texture_info, geometry_info)
+            print(f"   📝 Built {len(path_mappings)} initial path mappings from copied files")
+            
+            # 3. Scan all nodes for file path parameters and discover additional paths
+            discovered_paths = self.discover_all_file_paths(all_nodes)
+            print(f"   🔍 Discovered {len(discovered_paths)} file path parameters in nodes")
+            
+            # 4. Try to match discovered paths with copied files or create fallback mappings
+            additional_mappings = self.create_additional_path_mappings(discovered_paths, texture_info, geometry_info)
+            path_mappings.update(additional_mappings)
+            print(f"   ➕ Added {len(additional_mappings)} additional path mappings")
+            
+            # 5. Update all node parameters to use library paths
+            remapped_count = self.update_node_parameters_with_library_paths(all_nodes, path_mappings)
+            print(f"   ✅ Updated {remapped_count} node parameters with library paths")
+            
+            # 6. Save paths.json file in Data folder
+            paths_json_file = self.data_folder / "paths.json"
+            self.save_paths_json(paths_json_file, path_mappings)
+            print(f"   💾 Saved path mappings to: {paths_json_file}")
+            
+            return path_mappings
+            
+        except Exception as e:
+            print(f"   ❌ Error during path remapping: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
+
+
+
+
+    def build_path_mappings_from_copied_files(self, texture_info, geometry_info):
+        mappings = {}
+        try:
+            # Add texture path mappings
+            for tex_info in texture_info:
+                original_path = tex_info.get('original_path')  # The original job path
+                relative_path = tex_info.get('relative_path')  # The library relative path
+                if original_path and relative_path:
+                    full_library_path = str(self.asset_folder / relative_path)
+                    mappings[original_path] = full_library_path
+                    print(f"      🖼️ Texture mapping: {os.path.basename(original_path)} → {relative_path}")
+            
+            # Add geometry path mappings  
+            for geo_info in geometry_info:
+                original_path = geo_info.get('original_path')  # The original job path
+                relative_path = geo_info.get('relative_path')  # The library relative path
+                if original_path and relative_path:
+                    full_library_path = str(self.asset_folder / relative_path)
+                    mappings[original_path] = full_library_path
+                    print(f"      🧊 Geometry mapping: {os.path.basename(original_path)} → {relative_path}")
+            
+            print(f"   📝 Built {len(mappings)} path mappings from copied files")
+            return mappings
+        except Exception as e:
+            print(f"   ❌ Error building path mappings: {e}")
+            return {}
+
+    def discover_all_file_paths(self, all_nodes):
+        discovered_paths = {}
+        try:
+            file_extensions = ['.abc', '.fbx', '.obj', '.bgeo', '.geo', '.jpg', '.jpeg', '.png', '.exr']
+            for node in all_nodes:
+                for parm in node.parms():
+                    try:
+                        parm_value = parm.eval()
+                        if (isinstance(parm_value, str) and parm_value.strip() and 
+                            any(ext in parm_value.lower() for ext in file_extensions)):
+                            param_key = f"{node.path()}::{parm.name()}"
+                            discovered_paths[param_key] = parm_value.strip()
+                    except:
+                        continue
+            return discovered_paths
+        except:
+            return {}
+
+    def create_additional_path_mappings(self, discovered_paths, texture_info, geometry_info):
+        additional_mappings = {}
+        try:
+            copied_files = [t.get('original_path') for t in texture_info + geometry_info if 'original_path' in t]
+            for param_key, discovered_path in discovered_paths.items():
+                if discovered_path not in copied_files:
+                    library_path = self._find_matching_library_file(discovered_path, texture_info, geometry_info)
+                    if library_path:
+                        full_library_path = str(self.asset_folder / library_path)
+                        additional_mappings[discovered_path] = full_library_path
+            return additional_mappings
+        except:
+            return {}
+
+    def _find_matching_library_file(self, original_path, texture_info, geometry_info):
+        try:
+            original_filename = os.path.basename(original_path)
+            for info_list in [texture_info, geometry_info]:
+                for info in info_list:
+                    if (info.get('original_path') and info.get('relative_path') and 
+                        os.path.basename(info['original_path']) == original_filename):
+                        return info['relative_path']
+            return None
+        except:
+            return None
+
+    def update_node_parameters_with_library_paths(self, all_nodes, path_mappings):
+        remapped_count = 0
+        try:
+            for node in all_nodes:
+                for parm in node.parms():
+                    try:
+                        parm_value = parm.eval()
+                        if isinstance(parm_value, str) and parm_value.strip() in path_mappings:
+                            old_path = parm_value.strip()
+                            new_path = path_mappings[old_path]
+                            parm.set(new_path)
+                            remapped_count += 1
+                            print(f'      🔀 Updated {node.name()}.{parm.name()}: {old_path} → {new_path}')
+                    except:
+                        continue
+            print(f'   ✅ Successfully remapped {remapped_count} parameters')
+            return remapped_count
+        except:
+            return 0
+
+    def save_paths_json(self, paths_json_file, path_mappings):
+        try:
+            import json
+            from datetime import datetime
+            paths_data = {
+                'export_timestamp': str(datetime.now()),
+                'asset_id': getattr(self, 'asset_id', 'unknown'),
+                'asset_name': self.asset_name,
+                'total_mappings': len(path_mappings),
+                'path_mappings': {}
+            }
+            for i, (old_path, new_path) in enumerate(path_mappings.items(), 1):
+                key = f'mapping_{i:03d}'
+                paths_data['path_mappings'][key] = {
+                    'old_path': old_path,
+                    'new_path': new_path,
+                    'filename': os.path.basename(old_path)
+                }
+            paths_json_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(paths_json_file, 'w') as f:
+                json.dump(paths_data, f, indent=2)
+            print(f'   💾 Saved {len(path_mappings)} path mappings to paths.json')
+        except Exception as e:
+            print(f'   ❌ Error saving paths.json: {e}')
 
 
 class TemplateAssetImporter:
@@ -1559,6 +1744,269 @@ class TemplateAssetImporter:
             import traceback
             traceback.print_exc()
             return False
+
+    def remap_paths_before_export(self, parent_node, nodes_to_export, texture_info, geometry_info):
+        """
+        Remap all file paths from job locations to library locations BEFORE exporting template.
+        This ensures the template contains only library paths when saved.
+        """
+        try:
+            import json
+            from datetime import datetime
+            
+            print(f"   🔍 COMPREHENSIVE PATH REMAPPING BEFORE EXPORT")
+            print(f"   📊 Scanning {len(nodes_to_export)} nodes for file path parameters...")
+            
+            # 1. Collect all nodes recursively (including nested nodes)
+            all_nodes = []
+            
+            def collect_all_nodes(parent_node):
+                """Recursively collect all nodes"""
+                for child in parent_node.children():
+                    all_nodes.append(child)
+                    collect_all_nodes(child)  # Recurse into children
+            
+            collect_all_nodes(parent_node)
+            print(f"   📋 Found {len(all_nodes)} total nodes (including nested)")
+            
+            # 2. Build path mappings from copied file information
+            path_mappings = self.build_path_mappings_from_copied_files(texture_info, geometry_info)
+            print(f"   📝 Built {len(path_mappings)} initial path mappings from copied files")
+            
+            # 3. Scan all nodes for file path parameters and discover additional paths
+            discovered_paths = self.discover_all_file_paths(all_nodes)
+            print(f"   🔍 Discovered {len(discovered_paths)} file path parameters in nodes")
+            
+            # 4. Try to match discovered paths with copied files or create fallback mappings
+            additional_mappings = self.create_additional_path_mappings(discovered_paths, texture_info, geometry_info)
+            path_mappings.update(additional_mappings)
+            print(f"   ➕ Added {len(additional_mappings)} additional path mappings")
+            
+            # 5. Update all node parameters to use library paths
+            remapped_count = self.update_node_parameters_with_library_paths(all_nodes, path_mappings)
+            print(f"   ✅ Updated {remapped_count} node parameters with library paths")
+            
+            # 6. Save paths.json file in Data folder
+            paths_json_file = self.data_folder / "paths.json"
+            self.save_paths_json(paths_json_file, path_mappings)
+            print(f"   💾 Saved path mappings to: {paths_json_file}")
+            
+            return path_mappings
+            
+        except Exception as e:
+            print(f"   ❌ Error during path remapping: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
+
+    def build_path_mappings_from_copied_files(self, texture_info, geometry_info):
+        """Build path mappings dictionary from copied texture and geometry file information"""
+        mappings = {}
+        
+        try:
+            # Add texture path mappings
+            for tex_info in texture_info:
+                original_path = tex_info.get('original_path')
+                library_path = tex_info.get('library_path')
+                
+                if original_path and library_path:
+                    # Convert library relative path to full path
+                    full_library_path = str(self.asset_folder / library_path)
+                    mappings[original_path] = full_library_path
+                    print(f"      🖼️ Texture mapping: {os.path.basename(original_path)} → {library_path}")
+            
+            # Add geometry path mappings  
+            for geo_info in geometry_info:
+                original_path = geo_info.get('original_path')
+                library_path = geo_info.get('library_path')
+                
+                if original_path and library_path:
+                    # Convert library relative path to full path
+                    full_library_path = str(self.asset_folder / library_path)
+                    mappings[original_path] = full_library_path
+                    print(f"      🧊 Geometry mapping: {os.path.basename(original_path)} → {library_path}")
+            
+            print(f"   📝 Built {len(mappings)} path mappings from copied files")
+            return mappings
+            
+        except Exception as e:
+            print(f"   ❌ Error building path mappings: {e}")
+            return {}
+
+    def discover_all_file_paths(self, all_nodes):
+        """Scan all nodes and parameters to discover file path references"""
+        discovered_paths = {}  # {parameter_key: path_value}
+        
+        try:
+            # Common file extensions to look for
+            file_extensions = [
+                # Geometry files
+                '.abc', '.fbx', '.obj', '.bgeo', '.geo', '.ply', '.stl', '.usd', '.usda', '.usdc',
+                # Texture files  
+                '.jpg', '.jpeg', '.png', '.tiff', '.tif', '.exr', '.hdr', '.pic', '.rat', '.tx',
+                # Cache files
+                '.sim', '.cache', '.vdb', '.f3d',
+                # Other formats
+                '.mov', '.mp4', '.avi', '.exr', '.dpx'
+            ]
+            
+            for node in all_nodes:
+                node_path = node.path()
+                print(f"      🔍 Scanning node: {node_path}")
+                
+                # Get all parameters
+                all_parms = node.parms()
+                
+                for parm in all_parms:
+                    try:
+                        parm_value = parm.eval()
+                        
+                        # Check if this looks like a file path
+                        if (isinstance(parm_value, str) and 
+                            parm_value.strip() and 
+                            len(parm_value.strip()) > 3 and
+                            any(ext in parm_value.lower() for ext in file_extensions)):
+                            
+                            # Store with unique key
+                            param_key = f"{node_path}::{parm.name()}"
+                            discovered_paths[param_key] = parm_value.strip()
+                            
+                            print(f"         📄 Found file path: {parm.name()} = '{parm_value}'")
+                            
+                    except Exception as e:
+                        # Skip parameters that can't be evaluated
+                        continue
+            
+            print(f"   🔍 Discovered {len(discovered_paths)} file path parameters")
+            return discovered_paths
+            
+        except Exception as e:
+            print(f"   ❌ Error discovering file paths: {e}")
+            return {}
+
+    def create_additional_path_mappings(self, discovered_paths, texture_info, geometry_info):
+        """Create additional path mappings for discovered paths that weren't in copied files"""
+        additional_mappings = {}
+        
+        try:
+            # Get lists of copied files for matching
+            copied_texture_files = [tex['original_path'] for tex in texture_info if 'original_path' in tex]
+            copied_geometry_files = [geo['original_path'] for geo in geometry_info if 'original_path' in geo]
+            
+            for param_key, discovered_path in discovered_paths.items():
+                # Skip if we already have a mapping for this exact path
+                if discovered_path in additional_mappings:
+                    continue
+                
+                # Try to find this path in our copied files
+                if discovered_path in copied_texture_files or discovered_path in copied_geometry_files:
+                    # This path was already handled in build_path_mappings_from_copied_files
+                    continue
+                
+                # Try to find a similar file by name matching
+                library_path = self._find_matching_library_file(discovered_path, texture_info, geometry_info)
+                
+                if library_path:
+                    full_library_path = str(self.asset_folder / library_path)
+                    additional_mappings[discovered_path] = full_library_path
+                    print(f"      🔗 Additional mapping: {os.path.basename(discovered_path)} → {library_path}")
+                else:
+                    print(f"      ⚠️ No library match found for: {discovered_path}")
+            
+            return additional_mappings
+            
+        except Exception as e:
+            print(f"   ❌ Error creating additional mappings: {e}")
+            return {}
+
+    def _find_matching_library_file(self, original_path, texture_info, geometry_info):
+        """Find matching library file by filename comparison"""
+        try:
+            original_filename = os.path.basename(original_path)
+            
+            # Check texture files
+            for tex_info in texture_info:
+                tex_original = tex_info.get('original_path', '')
+                tex_library = tex_info.get('library_path', '')
+                
+                if tex_original and tex_library and os.path.basename(tex_original) == original_filename:
+                    return tex_library
+            
+            # Check geometry files
+            for geo_info in geometry_info:
+                geo_original = geo_info.get('original_path', '')
+                geo_library = geo_info.get('library_path', '')
+                
+                if geo_original and geo_library and os.path.basename(geo_original) == original_filename:
+                    return geo_library
+            
+            return None
+            
+        except Exception as e:
+            print(f"      ❌ Error matching library file: {e}")
+            return None
+
+    def update_node_parameters_with_library_paths(self, all_nodes, path_mappings):
+        """Update all node parameters to use library paths"""
+        remapped_count = 0
+        
+        try:
+            for node in all_nodes:
+                node_path = node.path()
+                
+                # Get all parameters
+                all_parms = node.parms()
+                
+                for parm in all_parms:
+                    try:
+                        current_value = parm.eval()
+                        
+                        if isinstance(current_value, str) and current_value.strip():
+                            # Check if this parameter value matches any original path
+                            if current_value in path_mappings:
+                                new_path = path_mappings[current_value]
+                                
+                                print(f"      🔄 Remapping {node_path}::{parm.name()}")
+                                print(f"         FROM: {current_value}")
+                                print(f"         TO: {new_path}")
+                                
+                                # Update the parameter
+                                parm.set(new_path)
+                                remapped_count += 1
+                            
+                    except Exception as e:
+                        # Skip parameters that can't be updated
+                        continue
+            
+            return remapped_count
+            
+        except Exception as e:
+            print(f"   ❌ Error updating parameters: {e}")
+            return 0
+
+    def save_paths_json(self, paths_json_file, path_mappings):
+        """Save path mappings to paths.json file"""
+        try:
+            import json
+            from datetime import datetime
+            
+            paths_data = {
+                "metadata": {
+                    "export_date": datetime.now().isoformat(),
+                    "total_remapped": len(path_mappings),
+                    "asset_id": self.asset_id,
+                    "asset_name": self.asset_name
+                },
+                "mappings": path_mappings
+            }
+            
+            with open(paths_json_file, 'w') as f:
+                json.dump(paths_data, f, indent=2)
+            
+            print(f"   💾 Saved {len(path_mappings)} path mappings to paths.json")
+            
+        except Exception as e:
+            print(f"   ❌ Error saving paths.json: {e}")
 
     def remap_texture_paths(self, imported_subnet):
         """Remap texture paths from original locations to library locations using metadata mapping"""

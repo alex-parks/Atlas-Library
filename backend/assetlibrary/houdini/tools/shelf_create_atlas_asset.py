@@ -40,13 +40,23 @@ def create_atlas_asset():
     
     asset_name = result[1].strip()
     
+    # Sanitize the asset name for use as node name (remove spaces, special chars)
+    node_name = asset_name.replace(" ", "_").replace("-", "_")
+    # Remove any characters that aren't alphanumeric or underscore
+    import re
+    node_name = re.sub(r'[^\w]', '_', node_name)
+    
+    print(f"📝 Original name: '{asset_name}'")
+    print(f"📝 Node name: '{node_name}'")
+    
     try:
-        # Create an empty subnet first
-        subnet = parent.createNode("subnet", asset_name)
+        # Create an empty subnet first with sanitized node name
+        subnet = parent.createNode("subnet", node_name)
         subnet.setComment("Blacksmith Atlas Asset - Ready for Export")
         subnet.setColor(hou.Color(0.2, 0.6, 1.0))  # Blue
         
         print(f"📦 Created subnet: {subnet.path()}")
+        print(f"📦 Actual subnet name: {subnet.name()}")
         
         # Copy selected nodes into the subnet
         print(f"📋 Copying {len(selected_nodes)} nodes into subnet...")
@@ -78,8 +88,10 @@ def create_atlas_asset():
         except:
             pass
         
-        # Add Atlas parameters
+        # Add Atlas parameters (use original asset_name for parameters)
         add_atlas_parameters(subnet, asset_name)
+        
+        print(f"📋 Set parameter default to: '{asset_name}'")
         
         # Select and position the subnet near the original nodes
         if selected_nodes:
