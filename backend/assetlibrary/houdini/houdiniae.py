@@ -386,11 +386,15 @@ class TemplateAssetExporter:
             self.asset_folder.mkdir(parents=True, exist_ok=True)
             self.data_folder.mkdir(exist_ok=True)
             
+            # PRE-SCAN: Detect BGEO sequences with original paths (before any remapping)
+            print(f"   🎬 PRE-SCANNING FOR BGEO SEQUENCES WITH ORIGINAL PATHS...")
+            bgeo_sequences = self.detect_bgeo_sequences_early(parent_node)
+            
             # Process materials and copy textures FIRST
             texture_info = self.process_materials_and_textures(parent_node, nodes_to_export)
             
-            # Process geometry files and copy them
-            geometry_info = self.process_geometry_files(parent_node, nodes_to_export)
+            # Process geometry files and copy them (now with BGEO sequence info)
+            geometry_info = self.process_geometry_files(parent_node, nodes_to_export, bgeo_sequences)
             
             # 🆕 REMAP ALL FILE PATHS FROM JOB LOCATIONS TO LIBRARY LOCATIONS
             print(f"   🔄 Remapping file paths before export...")
@@ -458,20 +462,16 @@ class TemplateAssetExporter:
                 node_type = node.type().name()
                 category = node.type().category().name()
                 
-                print(f"      🔍 {node.path()} ({node_type}) - Category: {category}")
                 
                 # Collect different types of nodes
                 if node_type == 'matnet':
                     matnet_nodes.append(node)
-                    print(f"         ✅ MATNET FOUND")
                 
                 elif category == 'Vop':
                     vop_nodes.append(node)
-                    print(f"         ✅ VOP FOUND")
                 
                 elif category == 'Shop':
                     material_nodes.append(node)
-                    print(f"         ✅ SHOP MATERIAL FOUND")
             
             print(f"   📊 SUMMARY:")
             print(f"      🎨 MatNet nodes: {len(matnet_nodes)}")
@@ -479,10 +479,8 @@ class TemplateAssetExporter:
             print(f"      🏪 Shop materials: {len(material_nodes)}")
             
             # Scan ALL VOP nodes for texture parameters (like our test script)
-            print(f"   🔍 SCANNING ALL VOP NODES FOR TEXTURES:")
-            
+            # Scan all VOP nodes for texture references
             for vop_node in vop_nodes:
-                print(f"      🔍 Scanning VOP: {vop_node.path()} ({vop_node.type().name()})")
                 
                 # Get material name for folder organization
                 material_name = "Unknown"
@@ -532,36 +530,41 @@ class TemplateAssetExporter:
                                     udim_files = glob.glob(udim_pattern)
                                     if udim_files:
                                         print(f"            🎯 Found {len(udim_files)} UDIM files:")
-                                        for udim_file in udim_files[:10]:  # Show first 10
+                                        # Add the PATTERN as a single entry, not individual files
+                                        texture_info.append({
+                                            'material': vop_node.path(),
+                                            'material_name': material_name,
+                                            'node': vop_node.path(),
+                                            'parameter': parm.name(),
+                                            'file': expanded_path,  # Keep the original pattern with <UDIM>
+                                            'filename': os.path.basename(expanded_path),  # Pattern filename
+                                            'original_path': parm_value,  # Original parameter value
+                                            'is_udim_pattern': True,  # Mark as UDIM pattern
+                                            'udim_files_found': udim_files,  # Store actual files for copying
+                                            'udim_count': len(udim_files)
+                                        })
+                                        # Show sample files for verification
+                                        for udim_file in udim_files[:5]:  # Show first 5
                                             print(f"              • {os.path.basename(udim_file)}")
-                                            # Add each UDIM file as a separate texture
-                                            texture_info.append({
-                                                'material': vop_node.path(),
-                                                'material_name': material_name,
-                                                'node': vop_node.path(),
-                                                'parameter': parm.name(),
-                                                'file': udim_file,
-                                                'filename': os.path.basename(udim_file),
-                                                'original_path': parm_value,
-                                                'is_udim': True
-                                            })
-                                        if len(udim_files) > 10:
-                                            print(f"              ... and {len(udim_files)-10} more")
+                                        if len(udim_files) > 5:
+                                            print(f"              ... and {len(udim_files)-5} more")
                                     else:
                                         print(f"            ❌ No UDIM files found with pattern: {udim_pattern}")
                                         # Try checking if the base file exists (like .1001)
                                         test_udim = expanded_path.replace('<UDIM>', '1001').replace('<udim>', '1001')
                                         if os.path.exists(test_udim):
-                                            print(f"            🎯 Found single UDIM file: {os.path.basename(test_udim)}")
+                                            print(f"            🎯 Found single UDIM file - adding as pattern anyway: {os.path.basename(test_udim)}")
                                             texture_info.append({
                                                 'material': vop_node.path(),
                                                 'material_name': material_name,
                                                 'node': vop_node.path(),
                                                 'parameter': parm.name(),
-                                                'file': test_udim,
-                                                'filename': os.path.basename(test_udim),
+                                                'file': expanded_path,  # Keep the original pattern with <UDIM>
+                                                'filename': os.path.basename(expanded_path),
                                                 'original_path': parm_value,
-                                                'is_udim': True
+                                                'is_udim_pattern': True,
+                                                'udim_files_found': [test_udim],  # Store the one file we found
+                                                'udim_count': 1
                                             })
                                 else:
                                     print(f"            ❌ FILE NOT FOUND: {expanded_path}")
@@ -601,22 +604,24 @@ class TemplateAssetExporter:
                                 })
                                 print(f"            ✅ FILE EXISTS: {os.path.basename(expanded_path)}")
                             else:
-                                # Handle UDIM patterns for SHOP materials too
+                                # Handle UDIM patterns for SHOP materials too - preserve pattern
                                 if '<UDIM>' in parm_value or '<udim>' in parm_value or '<UDIM>' in expanded_path or '<udim>' in expanded_path:
                                     udim_pattern = expanded_path.replace('<UDIM>', '*').replace('<udim>', '*')
                                     udim_files = glob.glob(udim_pattern)
                                     if udim_files:
-                                        for udim_file in udim_files:
-                                            texture_info.append({
-                                                'material': shop_node.path(),
-                                                'material_name': material_name,
-                                                'node': shop_node.path(),
-                                                'parameter': parm.name(),
-                                                'file': udim_file,
-                                                'filename': os.path.basename(udim_file),
-                                                'original_path': parm_value,
-                                                'is_udim': True
-                                            })
+                                        print(f"            🎯 SHOP UDIM pattern found with {len(udim_files)} files - preserving pattern")
+                                        texture_info.append({
+                                            'material': shop_node.path(),
+                                            'material_name': material_name,
+                                            'node': shop_node.path(),
+                                            'parameter': parm.name(),
+                                            'file': expanded_path,  # Keep the original pattern with <UDIM>
+                                            'filename': os.path.basename(expanded_path),
+                                            'original_path': parm_value,
+                                            'is_udim_pattern': True,  # Mark as UDIM pattern
+                                            'udim_files_found': udim_files,
+                                            'udim_count': len(udim_files)
+                                        })
                     
                     except Exception as e:
                         pass
@@ -652,35 +657,79 @@ class TemplateAssetExporter:
                     # Copy textures for this material
                     for tex_info in textures:
                         try:
-                            source_file = Path(tex_info['file'])
-                            if source_file.exists():
-                                # Create destination filename in material folder
-                                dest_file = material_folder / source_file.name
+                            # Handle UDIM patterns specially
+                            if tex_info.get('is_udim_pattern', False):
+                                print(f"      🎯 Processing UDIM pattern: {tex_info['filename']}")
                                 
-                                # Handle duplicate filenames
-                                counter = 1
-                                original_dest = dest_file
-                                while dest_file.exists():
-                                    stem = original_dest.stem
-                                    suffix = original_dest.suffix
-                                    dest_file = material_folder / f"{stem}_{counter}{suffix}"
-                                    counter += 1
-                                
-                                # Copy the texture file
-                                shutil.copy2(source_file, dest_file)
-                                
-                                print(f"      ✅ Copied: {source_file.name} -> {mat_name}/{dest_file.name}")
-                                
-                                # Update texture info with new relative path
-                                tex_info['copied_file'] = str(dest_file)
-                                tex_info['relative_path'] = f"Textures/{mat_name}/{dest_file.name}"
-                                copied_textures.append(tex_info)
-                                
+                                # Copy all the individual UDIM files
+                                udim_files = tex_info.get('udim_files_found', [])
+                                if udim_files:
+                                    print(f"         Copying {len(udim_files)} UDIM files...")
+                                    
+                                    # Copy each UDIM file
+                                    for udim_file_path in udim_files:
+                                        udim_source = Path(udim_file_path)
+                                        udim_dest = material_folder / udim_source.name
+                                        
+                                        # Handle duplicate filenames
+                                        counter = 1
+                                        original_dest = udim_dest
+                                        while udim_dest.exists():
+                                            stem = original_dest.stem
+                                            suffix = original_dest.suffix
+                                            udim_dest = material_folder / f"{stem}_{counter}{suffix}"
+                                            counter += 1
+                                        
+                                        # Copy the UDIM file
+                                        shutil.copy2(udim_source, udim_dest)
+                                        print(f"         ✅ Copied UDIM: {udim_source.name} -> {mat_name}/{udim_dest.name}")
+                                    
+                                    # Create relative path with preserved <UDIM> pattern
+                                    pattern_filename = tex_info['filename']  # This has <UDIM> in it
+                                    relative_pattern_path = f"Textures/{mat_name}/{pattern_filename}"
+                                    
+                                    # Update texture info with the PATTERN path (preserving <UDIM>)
+                                    tex_info['relative_path'] = relative_pattern_path
+                                    tex_info['library_path'] = relative_pattern_path  # Add library_path too
+                                    tex_info['copied_file'] = str(material_folder / pattern_filename)
+                                    copied_textures.append(tex_info)
+                                    
+                                    print(f"         🎯 UDIM pattern remapping will use: {relative_pattern_path}")
+                                else:
+                                    print(f"         ❌ No UDIM files found to copy")
+                            
                             else:
-                                print(f"      ⚠️ Texture file not found: {source_file}")
+                                # Handle regular texture files
+                                source_file = Path(tex_info['file'])
+                                if source_file.exists():
+                                    # Create destination filename in material folder
+                                    dest_file = material_folder / source_file.name
+                                    
+                                    # Handle duplicate filenames
+                                    counter = 1
+                                    original_dest = dest_file
+                                    while dest_file.exists():
+                                        stem = original_dest.stem
+                                        suffix = original_dest.suffix
+                                        dest_file = material_folder / f"{stem}_{counter}{suffix}"
+                                        counter += 1
+                                    
+                                    # Copy the texture file
+                                    shutil.copy2(source_file, dest_file)
+                                    
+                                    print(f"      ✅ Copied: {source_file.name} -> {mat_name}/{dest_file.name}")
+                                    
+                                    # Update texture info with new relative path
+                                    tex_info['copied_file'] = str(dest_file)
+                                    tex_info['relative_path'] = f"Textures/{mat_name}/{dest_file.name}"
+                                    tex_info['library_path'] = f"Textures/{mat_name}/{dest_file.name}"  # Add library_path too
+                                    copied_textures.append(tex_info)
+                                    
+                                else:
+                                    print(f"      ⚠️ Texture file not found: {source_file}")
                         
                         except Exception as e:
-                            print(f"      ❌ Error copying texture {tex_info['file']}: {e}")
+                            print(f"      ❌ Error copying texture {tex_info.get('filename', 'unknown')}: {e}")
                 
                 print(f"   ✅ Copied {len(copied_textures)} texture files organized by material")
                 texture_info = copied_textures
@@ -695,12 +744,154 @@ class TemplateAssetExporter:
         
         return texture_info
 
-    def process_geometry_files(self, parent_node, nodes_to_export):
+    def detect_bgeo_sequences_early(self, parent_node):
+        """Detect BGEO sequences before any path remapping occurs"""
+        bgeo_sequences = {}
+        
+        try:
+            print("      🔍 EARLY BGEO SCAN: Scanning for BGEO sequences with original frame variables...")
+            
+            # Get ALL nodes recursively
+            all_nodes = []
+            def collect_all_nodes(parent_node):
+                for child in parent_node.children():
+                    all_nodes.append(child)
+                    collect_all_nodes(child)
+            
+            collect_all_nodes(parent_node)
+            print(f"      📋 EARLY BGEO SCAN: Checking {len(all_nodes)} nodes for BGEO sequence patterns...")
+            
+            # Debug: Show what nodes we found
+            cache_nodes_found = 0
+            for node in all_nodes[:10]:  # Show first 10 nodes
+                node_type = node.type().name()
+                print(f"         • {node.path()} ({node_type})")
+                if (node_type.lower() in ['filecache', 'rop_geometry', 'geometry'] or 
+                    'cache' in node_type.lower() or 
+                    node_type.startswith('filecache::')):
+                    cache_nodes_found += 1
+            
+            if len(all_nodes) > 10:
+                print(f"         ... and {len(all_nodes) - 10} more nodes")
+                
+            print(f"      🎯 EARLY BGEO SCAN: Found {cache_nodes_found} potential cache nodes")
+            
+            # Look for file cache nodes and geometry ROPs with frame variables
+            for node in all_nodes:
+                node_type = node.type().name()
+                
+                # Check file cache, rop_geometry, and regular file nodes
+                # Include versioned file cache nodes like 'filecache::2.0'
+                is_cache_node = (
+                    node_type.lower() in ['filecache', 'rop_geometry', 'geometry', 'file'] or 
+                    'cache' in node_type.lower() or 
+                    node_type.startswith('filecache::')
+                )
+                
+                if is_cache_node:
+                    print(f"         🎯 Found cache node: {node.path()} ({node_type})")
+                    
+                    # Check the 'file' parameter specifically (this is where BGEO sequences are typically stored)
+                    file_parm = node.parm('file')
+                    if file_parm:
+                        try:
+                            raw_value = file_parm.unexpandedString()
+                            eval_value = file_parm.evalAsString()
+                            
+                            print(f"            🔍 Checking 'file' parameter:")
+                            print(f"               Raw: '{raw_value}'")
+                            print(f"               Evaluated: '{eval_value}'")
+                            
+                            # Look for BGEO files with frame variables in the RAW value
+                            if (isinstance(raw_value, str) and 
+                                raw_value.strip() and
+                                ('.bgeo' in raw_value.lower()) and
+                                any(var in raw_value for var in ['${F4}', '${F}', '${FF}', '$F4', '$F', '${OS}', '$OS'])):
+                                
+                                print(f"            ✅ BGEO SEQUENCE FOUND: {raw_value}")
+                                
+                                # Process this sequence using the raw value with variables
+                                sequence_info = self._process_bgeo_sequence(node, file_parm, raw_value, raw_value)
+                                if sequence_info:
+                                    sequence_key = f"{node.path()}:file"
+                                    bgeo_sequences[sequence_key] = {
+                                        'node': node,
+                                        'parameter': file_parm,
+                                        'original_pattern': raw_value,
+                                        'sequence_info': sequence_info,
+                                        'node_name': node.name()
+                                    }
+                                    print(f"            📊 Stored {len(sequence_info)} sequence files for {sequence_key}")
+                            else:
+                                print(f"            ❌ No BGEO sequence pattern found in 'file' parameter")
+                                    
+                        except Exception as e:
+                            print(f"            ❌ Error checking 'file' parameter: {e}")
+                    else:
+                        print(f"            ❌ No 'file' parameter found on {node.path()}")
+                        
+                        # Show available parameters for debugging
+                        print(f"            📋 Available parameters:")
+                        for parm in node.parms()[:10]:  # Show first 10 params
+                            try:
+                                parm_name = parm.name()
+                                parm_value = parm.unexpandedString()
+                                if isinstance(parm_value, str) and parm_value.strip():
+                                    print(f"               {parm_name}: '{parm_value[:50]}{'...' if len(str(parm_value)) > 50 else ''}'")
+                            except:
+                                pass
+            
+            print(f"      ✅ Found {len(bgeo_sequences)} BGEO sequences total")
+            for seq_key, seq_data in bgeo_sequences.items():
+                print(f"         • {seq_key}: {len(seq_data['sequence_info'])} files")
+            
+            return bgeo_sequences
+            
+        except Exception as e:
+            print(f"      ❌ Error in BGEO sequence detection: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
+
+    def process_geometry_files(self, parent_node, nodes_to_export, bgeo_sequences=None):
         """Process geometry files (Alembic, FBX, etc.) and copy them to library"""
         geometry_info = []
         
         try:
             print("   🔍 SCANNING FOR GEOMETRY FILES (Alembic, FBX, OBJ, etc.)...")
+            
+            # First, add pre-detected BGEO sequences to geometry_info
+            if bgeo_sequences:
+                print(f"   🎬 Adding {len(bgeo_sequences)} pre-detected BGEO sequences...")
+                
+                # Consolidate sequences by sequence base name to avoid duplicates
+                consolidated_sequences = {}
+                for seq_key, seq_data in bgeo_sequences.items():
+                    sequence_info = seq_data['sequence_info']
+                    if sequence_info:  # Make sure we have sequence files
+                        sequence_base_name = sequence_info[0].get('sequence_base_name', 'unknown')
+                        if sequence_base_name not in consolidated_sequences:
+                            consolidated_sequences[sequence_base_name] = sequence_info
+                            print(f"      📁 Adding sequence '{sequence_base_name}': {len(sequence_info)} files")
+                        else:
+                            print(f"      🔄 Skipping duplicate sequence '{sequence_base_name}' (already have {len(consolidated_sequences[sequence_base_name])} files)")
+                
+                # Add consolidated sequences to geometry_info
+                for seq_name, seq_info in consolidated_sequences.items():
+                    geometry_info.extend(seq_info)
+                    
+                    # Count pattern mappings for debugging
+                    pattern_count = sum(1 for item in seq_info if item.get('is_pattern_mapping', False))
+                    regular_count = len(seq_info) - pattern_count
+                    
+                    print(f"      ✅ Added {len(seq_info)} files for sequence '{seq_name}' ({pattern_count} patterns, {regular_count} regular files)")
+                    
+                    # Debug: Show pattern mappings
+                    for item in seq_info:
+                        if item.get('is_pattern_mapping', False):
+                            print(f"         🔗 Pattern: {item.get('filename', 'NO_FILENAME')}")
+                            print(f"            original_path: {item.get('original_path', 'NO_ORIGINAL')}")
+                            print(f"            library_path: {item.get('library_path', 'NO_LIBRARY')}")
             
             # Get ALL nodes recursively inside the subnet
             all_nodes = []
@@ -713,7 +904,7 @@ class TemplateAssetExporter:
             
             collect_all_nodes(parent_node)
             
-            print(f"   📋 Scanning {len(all_nodes)} nodes for geometry file references...")
+            print(f"   📋 Scanning {len(all_nodes)} nodes for NON-SEQUENCE geometry file references...")
             
             # Common geometry file extensions
             geometry_extensions = ['.abc', '.fbx', '.obj', '.bgeo', '.bgeo.sc', '.ply', '.vdb', '.sim', '.geo']
@@ -723,50 +914,40 @@ class TemplateAssetExporter:
                 node_type = node.type().name()
                 category = node.type().category().name()
                 
-                print(f"      🔍 {node.path()} ({node_type}) - Category: {category}")
-                
+                # Only show output for nodes that have geometry files
                 # Get ALL parameters on this node
                 all_parms = node.parms()
+                found_geometry = False
                 
+                # Check for geometry file parameters
                 for parm in all_parms:
                     try:
                         parm_value = parm.eval()
                         
-                        # Check if this looks like a geometry file path
+                        # Check if this looks like a NON-BGEO geometry file path
+                        # BGEO files are ONLY handled by early pre-scan
                         if (isinstance(parm_value, str) and 
                             parm_value.strip() and 
-                            any(ext in parm_value.lower() for ext in geometry_extensions)):
+                            not any(bgeo_ext in parm_value.lower() for bgeo_ext in ['.bgeo', '.bgeo.sc']) and
+                            any(ext in parm_value.lower() for ext in ['.abc', '.fbx', '.obj', '.vdb'])):
                             
                             # Expand Houdini variables
                             expanded_path = hou.expandString(parm_value)
-                            print(f"         📁 GEOMETRY FILE PARAMETER: {parm.name()} = '{parm_value}'")
-                            print(f"            EXPANDED TO: '{expanded_path}'")
                             
-                            # Check for BGEO sequences with Houdini variables
-                            if (file_extension := Path(expanded_path).suffix.lower()) in ['.bgeo', '.bgeo.sc']:
-                                # Special handling for BGEO sequences
-                                if any(var in parm_value for var in ['${F4}', '${F}', '${FF}', '$F4', '$F']):
-                                    print(f"            🎬 BGEO SEQUENCE DETECTED: {parm_value}")
-                                    sequence_info = self._process_bgeo_sequence(node, parm, parm_value, expanded_path)
-                                    if sequence_info:
-                                        geometry_info.extend(sequence_info)
-                                    continue
+                            # No fallback BGEO sequence detection - rely only on early pre-scan
                             
                             if os.path.exists(expanded_path):
                                 # Determine file type and subfolder
-                                file_extension = Path(expanded_path).suffix.lower()
-                                if file_extension in ['.abc']:
+                                # Handle compound extensions properly
+                                expanded_path_lower = expanded_path.lower()
+                                
+                                if expanded_path_lower.endswith('.abc'):
                                     subfolder = 'Alembic'
-                                elif file_extension in ['.fbx']:
+                                elif expanded_path_lower.endswith('.fbx'):
                                     subfolder = 'FBX'
-                                elif file_extension in ['.obj']:
+                                elif expanded_path_lower.endswith('.obj'):
                                     subfolder = 'OBJ'
-                                elif file_extension in ['.bgeo', '.bgeo.sc']:
-                                    subfolder = 'BGEO'
-                                    # For individual BGEO files, use node-based subfolder
-                                    node_name = node.name()
-                                    subfolder = f'BGEO/{node_name}'
-                                elif file_extension in ['.vdb']:
+                                elif expanded_path_lower.endswith('.vdb'):
                                     subfolder = 'VDB'
                                 else:
                                     subfolder = 'Other'
@@ -779,7 +960,7 @@ class TemplateAssetExporter:
                                     'filename': os.path.basename(expanded_path),
                                     'original_path': parm_value,
                                     'file_type': subfolder,
-                                    'extension': file_extension,
+                                    'extension': Path(expanded_path).suffix.lower(),
                                     'is_sequence': False
                                 })
                                 print(f"            ✅ GEOMETRY FILE FOUND: {os.path.basename(expanded_path)} ({subfolder})")
@@ -787,7 +968,9 @@ class TemplateAssetExporter:
                                 print(f"            ❌ GEOMETRY FILE NOT FOUND: {expanded_path}")
                     
                     except Exception as e:
-                        pass  # Skip parameters that can't be evaluated
+                        # Log the error but continue processing
+                        print(f"            ⚠️ Error processing parameter {parm.name()}: {e}")
+                        pass
             
             if geometry_info:
                 print(f"   📁 Found {len(geometry_info)} geometry files to copy:")
@@ -812,11 +995,14 @@ class TemplateAssetExporter:
                 # Copy geometry files organized by type
                 copied_files = []
                 for file_type, files in files_by_type.items():
-                    # Handle BGEO sequences specially
-                    if file_type.startswith('BGEO/'):
-                        # This is a BGEO sequence with node-specific subfolder
+                    print(f"      🔍 Processing file_type: '{file_type}' with {len(files)} files")
+                    # Handle BGEO sequences specially (both uppercase and lowercase)
+                    if file_type.startswith('BGEO/') or file_type.startswith('bgeo/'):
+                        print(f"      🎬 Using BGEO sequence method for: {file_type}")
+                        # This is a BGEO sequence with sequence-specific subfolder
                         self._copy_bgeo_sequence(geometry_folder, file_type, files, copied_files)
                     else:
+                        print(f"      📁 Using standard method for: {file_type}")
                         # Standard file copying for other types
                         self._copy_standard_geometry_files(geometry_folder, file_type, files, copied_files)
                 
@@ -837,92 +1023,121 @@ class TemplateAssetExporter:
         """Process BGEO sequence and discover all files in the sequence"""
         try:
             print(f"            🎬 Processing BGEO sequence from node: {node.name()}")
+            print(f"            📄 Raw pattern: {parm_value}")
             
-            # Extract base path and pattern from the original parameter value
-            base_path = Path(expanded_path).parent
-            original_filename = Path(parm_value).name  # Use original parm_value, not expanded
+            # Step 1: Replace ${OS} with node name to get the actual folder path
+            actual_path = parm_value
+            if '${OS}' in actual_path:
+                actual_path = actual_path.replace('${OS}', node.name())
+            if '$OS' in actual_path and '${OS}' not in actual_path:
+                actual_path = actual_path.replace('$OS', node.name())
             
-            print(f"            📂 Base path: {base_path}")
-            print(f"            📄 Original pattern: {original_filename}")
+            # Step 2: Extract directory path and filename pattern
+            sequence_file_pattern = Path(actual_path).name
+            sequence_dir = str(Path(actual_path).parent)
             
-            # Extract the base filename pattern by removing frame variables
-            # Example: Library_LibraryExport_v001.$F.bgeo.sc -> Library_LibraryExport_v001 and .bgeo.sc
-            base_filename = original_filename
-            file_extension = ""
+            print(f"            📂 Target directory: {sequence_dir}")
+            print(f"            🔍 Looking for pattern: {sequence_file_pattern}")
             
-            # Find and extract the frame variable and extension
+            # Step 3: Extract base filename by removing frame variables
+            # From: Library_LibraryExport_v001.${F4}.bgeo.sc
+            # Get: Library_LibraryExport_v001
+            base_filename = sequence_file_pattern
             frame_vars = ['${F4}', '${F}', '${FF}', '$F4', '$F']
-            frame_var_used = None
             
+            # Remove frame variable to get prefix
+            prefix = ""
             for var in frame_vars:
                 if var in base_filename:
-                    frame_var_used = var
-                    # Split around the frame variable
-                    parts = base_filename.split(var)
-                    if len(parts) == 2:
-                        prefix = parts[0]  # e.g., "Library_LibraryExport_v001."
-                        suffix = parts[1]  # e.g., ".bgeo.sc"
-                        break
+                    prefix = base_filename.split(var)[0]
+                    break
             
-            if not frame_var_used:
-                print(f"            ⚠️ No frame variable found in: {original_filename}")
-                return None
+            # If no frame variable found, use the whole name minus extension as prefix
+            if not prefix:
+                if '.bgeo' in base_filename:
+                    prefix = base_filename.split('.bgeo')[0]
+                else:
+                    prefix = base_filename
+                    
+            # Extract sequence base name (remove trailing dots and frame separators)
+            sequence_base_name = prefix.rstrip('._')
             
-            print(f"            🔍 Frame variable: {frame_var_used}")
-            print(f"            📋 Prefix: '{prefix}'")
-            print(f"            📋 Suffix: '{suffix}'")
+            print(f"            🏷️  Base prefix: '{prefix}'")
+            print(f"            🏷️  Sequence name: '{sequence_base_name}'")
             
-            # Look for all files in the directory that match the pattern
+            # Step 4: Find all BGEO files in the directory that match the pattern
             sequence_files = []
+            sequence_dir_path = Path(sequence_dir)
             
-            if base_path.exists():
-                print(f"            🔍 Scanning directory: {base_path}")
+            if sequence_dir_path.exists():
+                print(f"            🔍 Scanning directory for BGEO files...")
                 
-                # Find all files that start with prefix and end with suffix
-                for file_path in base_path.iterdir():
+                for file_path in sequence_dir_path.iterdir():
                     if file_path.is_file():
                         filename = file_path.name
-                        # Check if it matches our pattern
-                        if filename.startswith(prefix) and filename.endswith(suffix):
-                            # Additional check: make sure there's a frame number in between
-                            middle_part = filename[len(prefix):-len(suffix)] if suffix else filename[len(prefix):]
-                            # Check if middle part looks like a frame number
-                            if middle_part.isdigit() or (middle_part and all(c.isdigit() or c == '.' for c in middle_part)):
-                                sequence_files.append(str(file_path))
-                                print(f"               ✅ Found: {filename}")
-            
-            if not sequence_files:
-                print(f"            ❌ No sequence files found matching pattern in: {base_path}")
-                print(f"            🔍 Looking for files starting with: '{prefix}' and ending with: '{suffix}'")
+                        # Check if it's a BGEO file and starts with our prefix
+                        if (filename.lower().endswith(('.bgeo', '.bgeo.sc')) and 
+                            filename.startswith(prefix)):
+                            sequence_files.append(str(file_path))
+                            
+                print(f"            ✅ Found {len(sequence_files)} BGEO files matching pattern")
+                
+                if sequence_files:
+                    # Sort files to ensure proper sequence order
+                    sequence_files.sort()
+                    print(f"            📋 Range: {os.path.basename(sequence_files[0])} → {os.path.basename(sequence_files[-1])}")
+                else:
+                    print(f"            ❌ No files found starting with '{prefix}' and ending with .bgeo/.bgeo.sc")
+                    # Show what files are actually in the directory
+                    all_files = [f.name for f in sequence_dir_path.iterdir() if f.is_file()]
+                    if all_files:
+                        print(f"            📋 Files in directory: {all_files[:5]}{'...' if len(all_files) > 5 else ''}")
+                    return None
+            else:
+                print(f"            ❌ Directory doesn't exist: {sequence_dir_path}")
                 return None
-            
-            # Sort files to ensure proper sequence order
-            sequence_files.sort()
-            
-            print(f"            ✅ Found {len(sequence_files)} files in BGEO sequence")
-            print(f"            📋 First file: {os.path.basename(sequence_files[0])}")
-            print(f"            📋 Last file: {os.path.basename(sequence_files[-1])}")
             
             # Create geometry info entries for the sequence
             sequence_info = []
-            node_name = node.name()
             
             for seq_file in sequence_files:
                 sequence_info.append({
                     'node': node.path(),
-                    'node_name': node_name,
+                    'node_name': node.name(),
                     'parameter': parm.name(),
                     'file': seq_file,
                     'filename': os.path.basename(seq_file),
-                    'original_path': parm_value,
-                    'file_type': f'BGEO/{node_name}',
+                    'original_path': seq_file,  # Use the ACTUAL file path, not the pattern
+                    'file_type': f'bgeo/{node.name()}',  # Use the NODE NAME as folder name
                     'extension': Path(seq_file).suffix.lower(),
                     'is_sequence': True,
                     'sequence_pattern': parm_value,
+                    'sequence_base_name': node.name(),  # Use node name as base name
                     'sequence_total': len(sequence_files)
                 })
             
-            print(f"            ✅ Created sequence info for {len(sequence_info)} files")
+            # Add a special entry for the sequence pattern mapping (for path remapping)
+            library_pattern_path = f"Geometry/bgeo/{node.name()}/{os.path.basename(parm_value)}"
+            sequence_info.append({
+                'node': node.path(),
+                'node_name': node.name(),
+                'parameter': parm.name(),
+                'file': parm_value,  # Keep original pattern with variables
+                'filename': os.path.basename(parm_value),
+                'original_path': parm_value,  # Original pattern for remapping
+                'library_path': library_pattern_path,  # Library pattern for remapping
+                'file_type': f'bgeo/{node.name()}',
+                'extension': Path(parm_value).suffix.lower(),
+                'is_sequence': True,
+                'is_pattern_mapping': True,  # Special flag for pattern remapping
+                'sequence_pattern': parm_value,
+                'sequence_base_name': node.name(),
+                'sequence_total': len(sequence_files)
+            })
+            
+            print(f"            ✅ Created sequence info for {len(sequence_info)} files (including pattern mapping)")
+            print(f"            📁 Will be organized under: bgeo/{node.name()}/")
+            print(f"            🔗 Pattern mapping: {os.path.basename(parm_value)} → {library_pattern_path}")
             return sequence_info
             
         except Exception as e:
@@ -932,9 +1147,9 @@ class TemplateAssetExporter:
             return None
 
     def _copy_bgeo_sequence(self, geometry_folder, file_type, files, copied_files):
-        """Copy BGEO sequence files to node-specific subfolders"""
+        """Copy BGEO sequence files to sequence-specific subfolders"""
         try:
-            # Create the BGEO/NodeName folder structure
+            # Create the bgeo/sequence_name folder structure
             type_folder = geometry_folder / file_type
             type_folder.mkdir(parents=True, exist_ok=True)
             print(f"   📁 Created BGEO sequence folder: {type_folder}")
@@ -949,15 +1164,36 @@ class TemplateAssetExporter:
             
             # Process each sequence
             for sequence_pattern, sequence_files in sequences.items():
-                print(f"      🎬 Processing BGEO sequence: {sequence_pattern}")
+                # Get sequence base name from the first file for logging
+                sequence_base_name = sequence_files[0].get('sequence_base_name', 'unknown')
+                print(f"      🎬 Processing BGEO sequence: {sequence_base_name}")
                 print(f"         📁 Copying {len(sequence_files)} files to {file_type}/")
                 
                 copied_in_sequence = 0
                 
                 for geo_info in sequence_files:
+                    # Skip pattern mapping entries during file copying - they don't have real files
+                    if geo_info.get('is_pattern_mapping', False):
+                        print(f"         🔒 BGEO PATTERN MAPPING PRESERVATION:")
+                        print(f"            original_path: {geo_info.get('original_path')}")
+                        print(f"            library_path: {geo_info.get('library_path')}")
+                        print(f"            is_pattern_mapping: {geo_info.get('is_pattern_mapping')}")
+                        
+                        # COPY THE LOGIC FROM WORKING REGULAR GEOMETRY FILES
+                        # Make a deep copy to ensure pattern mapping isn't modified during individual file processing
+                        import copy
+                        pattern_copy = copy.deepcopy(geo_info)
+                        
+                        # Verify the copy preserved the original_path
+                        print(f"            AFTER COPY - original_path: {pattern_copy.get('original_path')}")
+                        print(f"            AFTER COPY - is_pattern_mapping: {pattern_copy.get('is_pattern_mapping')}")
+                        
+                        copied_files.append(pattern_copy)
+                        continue
+                    
                     source_file = Path(geo_info['file'])
                     if source_file.exists():
-                        # Create destination filename in type folder
+                        # Create destination filename in sequence-specific folder
                         dest_file = type_folder / source_file.name
                         
                         # Copy the geometry file
@@ -965,20 +1201,23 @@ class TemplateAssetExporter:
                         
                         # Update geometry info with new relative path
                         geo_info['copied_file'] = str(dest_file)
-                        geo_info['relative_path'] = f"Geometry/{file_type}/{dest_file.name}"
+                        
+                        # Don't overwrite library_path for pattern mappings - they need to preserve frame variables
+                        if not geo_info.get('is_pattern_mapping', False):
+                            geo_info['library_path'] = f"Geometry/{file_type}/{dest_file.name}"
+                        else:
+                            print(f"         🔒 Preserving pattern mapping library_path: {geo_info.get('library_path')}")
+                        # Pattern mappings keep their original library_path with frame variables
+                        
                         copied_files.append(geo_info)
                         copied_in_sequence += 1
                         
-                        if copied_in_sequence <= 3 or copied_in_sequence == len(sequence_files):
-                            # Show first 3 and last file
-                            print(f"         ✅ {source_file.name}")
-                        elif copied_in_sequence == 4:
-                            print(f"         ... copying {len(sequence_files) - 3} more files ...")
                         
                     else:
                         print(f"         ⚠️ BGEO file not found: {source_file}")
                 
                 print(f"      ✅ Sequence complete: {copied_in_sequence}/{len(sequence_files)} files copied")
+                print(f"      📂 Files saved to: Geometry/{file_type}/")
                     
         except Exception as e:
             print(f"      ❌ Error copying BGEO sequence: {e}")
@@ -996,6 +1235,12 @@ class TemplateAssetExporter:
             # Copy files for this type
             for geo_info in files:
                 try:
+                    # Skip pattern mapping entries during file copying - they don't have real files
+                    if geo_info.get('is_pattern_mapping', False):
+                        print(f"      🔒 Preserving pattern mapping library_path: {geo_info.get('library_path')}")
+                        copied_files.append(geo_info)  # Keep pattern mapping in copied_files
+                        continue
+                    
                     source_file = Path(geo_info['file'])
                     if source_file.exists():
                         # Create destination filename in type folder
@@ -1017,7 +1262,14 @@ class TemplateAssetExporter:
                         
                         # Update geometry info with new relative path
                         geo_info['copied_file'] = str(dest_file)
-                        geo_info['relative_path'] = f"Geometry/{file_type}/{dest_file.name}"
+                        
+                        # Don't overwrite library_path for pattern mappings - they need to preserve frame variables  
+                        if not geo_info.get('is_pattern_mapping', False):
+                            geo_info['library_path'] = f"Geometry/{file_type}/{dest_file.name}"
+                        else:
+                            print(f"      🔒 Preserving pattern mapping library_path: {geo_info.get('library_path')}")
+                        # Pattern mappings keep their original library_path with frame variables
+                        
                         copied_files.append(geo_info)
                         
                     else:
@@ -1146,22 +1398,24 @@ class TemplateAssetExporter:
                                     })
                                     print(f"               ✅ Found SHOP texture: {parm.name()} -> {os.path.basename(expanded_path)}")
                                 else:
-                                    # Handle UDIM patterns for SHOP materials too
+                                    # Handle UDIM patterns for SHOP materials too - preserve pattern
                                     if '<UDIM>' in parm_value or '<udim>' in parm_value or '<UDIM>' in expanded_path or '<udim>' in expanded_path:
                                         udim_pattern = expanded_path.replace('<UDIM>', '*').replace('<udim>', '*')
                                         udim_files = glob.glob(udim_pattern)
                                         if udim_files:
-                                            for udim_file in udim_files:
-                                                texture_info.append({
-                                                    'material': material_node.path(),
-                                                    'material_name': material_name,
-                                                    'node': node.path(),
-                                                    'parameter': parm.name(),
-                                                    'file': udim_file,
-                                                    'filename': os.path.basename(udim_file),
-                                                    'original_path': parm_value,
-                                                    'is_udim': True
-                                                })
+                                            print(f"               🎯 UDIM pattern found in material extract with {len(udim_files)} files - preserving pattern")
+                                            texture_info.append({
+                                                'material': material_node.path(),
+                                                'material_name': material_name,
+                                                'node': node.path(),
+                                                'parameter': parm.name(),
+                                                'file': expanded_path,  # Keep the original pattern with <UDIM>
+                                                'filename': os.path.basename(expanded_path),
+                                                'original_path': parm_value,
+                                                'is_udim_pattern': True,  # Mark as UDIM pattern
+                                                'udim_files_found': udim_files,
+                                                'udim_count': len(udim_files)
+                                            })
                         
                         except Exception as e:
                             pass
@@ -1482,6 +1736,26 @@ class TemplateAssetExporter:
             print(f"   🔍 COMPREHENSIVE PATH REMAPPING BEFORE EXPORT")
             print(f"   📊 Scanning {len(nodes_to_export)} nodes for file path parameters...")
             
+            # DEBUG: Check what we received
+            print(f"   🚨 DEBUG: Received for path remapping:")
+            print(f"      Texture info entries: {len(texture_info)}")
+            print(f"      Geometry info entries: {len(geometry_info)}")
+            if geometry_info:
+                pattern_count = sum(1 for geo in geometry_info if geo.get('is_pattern_mapping', False))
+                print(f"      Pattern mappings in geometry_info: {pattern_count}")
+                # Show first few geometry entries for debugging
+                for i, geo_info in enumerate(geometry_info[:3]):
+                    is_pattern = geo_info.get('is_pattern_mapping', False)
+                    filename = geo_info.get('filename', 'NO_FILENAME')
+                    original_path = geo_info.get('original_path', 'NO_ORIGINAL_PATH')
+                    library_path = geo_info.get('library_path', 'NO_LIBRARY_PATH')
+                    print(f"         Entry {i}: {'🔗PATTERN' if is_pattern else '📄REGULAR'}")
+                    print(f"            filename: {filename}")
+                    print(f"            original_path: {original_path[:80] if len(str(original_path)) > 80 else original_path}")
+                    print(f"            library_path: {library_path}")
+            else:
+                print(f"      ❌ geometry_info is EMPTY!")
+            
             # 1. Collect all nodes recursively (including nested nodes)
             all_nodes = []
             
@@ -1533,25 +1807,55 @@ class TemplateAssetExporter:
             # Add texture path mappings
             for tex_info in texture_info:
                 original_path = tex_info.get('original_path')  # The original job path
-                relative_path = tex_info.get('relative_path')  # The library relative path
-                if original_path and relative_path:
-                    full_library_path = str(self.asset_folder / relative_path)
+                # Try both relative_path and library_path for backward compatibility
+                library_path = tex_info.get('relative_path') or tex_info.get('library_path')
+                is_udim_pattern = tex_info.get('is_udim_pattern', False)
+                
+                if original_path and library_path:
+                    full_library_path = str(self.asset_folder / library_path)
                     mappings[original_path] = full_library_path
-                    print(f"      🖼️ Texture mapping: {os.path.basename(original_path)} → {relative_path}")
+                    
+                    if is_udim_pattern:
+                        print(f"      🎯 UDIM texture mapping: {os.path.basename(original_path)} → {library_path}")
+                        # Verify UDIM pattern is preserved
+                        if "<UDIM>" in library_path or "<udim>" in library_path:
+                            print(f"            ✅ UDIM pattern preserved in library path!")
+                        else:
+                            print(f"            ⚠️ UDIM pattern NOT found in library path: {library_path}")
+                    else:
+                        print(f"      🖼️ Texture mapping: {os.path.basename(original_path)} → {library_path}")
+                else:
+                    print(f"      ❌ Missing texture mapping data - original_path: {bool(original_path)}, library_path: {bool(library_path)}")
             
             # Add geometry path mappings  
             for geo_info in geometry_info:
                 original_path = geo_info.get('original_path')  # The original job path
-                relative_path = geo_info.get('relative_path')  # The library relative path
-                if original_path and relative_path:
-                    full_library_path = str(self.asset_folder / relative_path)
+                # Try both relative_path and library_path for backward compatibility
+                library_path = geo_info.get('relative_path') or geo_info.get('library_path')
+                is_pattern = geo_info.get('is_pattern_mapping', False)
+                
+                if original_path and library_path:
+                    full_library_path = str(self.asset_folder / library_path)
                     mappings[original_path] = full_library_path
-                    print(f"      🧊 Geometry mapping: {os.path.basename(original_path)} → {relative_path}")
+                    
+                    if is_pattern:
+                        print(f"      🎯 BGEO Pattern mapping: {os.path.basename(original_path)} → {library_path}")
+                        # Verify frame variables are preserved
+                        if "${F4}" in full_library_path or "${F}" in full_library_path:
+                            print(f"            ✅ Frame variables preserved in mapping!")
+                        else:
+                            print(f"            ⚠️ Frame variables NOT found in: {full_library_path}")
+                    else:
+                        print(f"      🧊 Geometry mapping: {os.path.basename(original_path)} → {library_path}")
+                else:
+                    print(f"      ❌ Missing mapping data - original_path: {bool(original_path)}, library_path: {bool(library_path)}")
             
             print(f"   📝 Built {len(mappings)} path mappings from copied files")
             return mappings
         except Exception as e:
             print(f"   ❌ Error building path mappings: {e}")
+            import traceback
+            traceback.print_exc()
             return {}
 
     def discover_all_file_paths(self, all_nodes):
@@ -1599,23 +1903,74 @@ class TemplateAssetExporter:
             return None
 
     def update_node_parameters_with_library_paths(self, all_nodes, path_mappings):
+        """Update all node parameters to use library paths"""
         remapped_count = 0
+        
+        print(f"   🔄 Starting parameter remapping with {len(path_mappings)} available path mappings:")
+        for i, (old_path, new_path) in enumerate(list(path_mappings.items())[:3]):  # Show first 3
+            print(f"      {i+1}. {os.path.basename(old_path)} → {os.path.basename(new_path)}")
+        if len(path_mappings) > 3:
+            print(f"      ... and {len(path_mappings) - 3} more mappings")
+        
         try:
             for node in all_nodes:
-                for parm in node.parms():
+                node_path = node.path()
+                
+                # Get all parameters
+                all_parms = node.parms()
+                
+                for parm in all_parms:
                     try:
-                        parm_value = parm.eval()
-                        if isinstance(parm_value, str) and parm_value.strip() in path_mappings:
-                            old_path = parm_value.strip()
-                            new_path = path_mappings[old_path]
-                            parm.set(new_path)
-                            remapped_count += 1
-                            print(f'      🔀 Updated {node.name()}.{parm.name()}: {old_path} → {new_path}')
-                    except:
+                        # For BGEO sequence patterns, we need the unexpanded value to preserve frame variables
+                        try:
+                            unexpanded_value = parm.unexpandedString()
+                        except:
+                            unexpanded_value = None
+                        
+                        current_value = parm.eval()
+                        
+                        if isinstance(current_value, str) and current_value.strip():
+                            # First check unexpanded value (preserves frame variables like ${F4})
+                            if unexpanded_value and unexpanded_value in path_mappings:
+                                new_path = path_mappings[unexpanded_value]
+                                
+                                print(f"      🔄 Remapping {node_path}::{parm.name()} (pattern)")
+                                print(f"         FROM: {unexpanded_value}")
+                                print(f"         TO: {new_path}")
+                                
+                                # Verify frame variables in BGEO sequences
+                                if "${F4}" in unexpanded_value or "${F}" in unexpanded_value:
+                                    if "${F4}" in new_path or "${F}" in new_path:
+                                        print(f"         🎯 BGEO sequence: Frame variables preserved!")
+                                    else:
+                                        print(f"         ⚠️ BGEO sequence: Frame variables LOST!")
+                                
+                                # Update the parameter with the new pattern path
+                                parm.set(new_path)
+                                remapped_count += 1
+                                
+                            # Otherwise check expanded value (regular file paths)  
+                            elif current_value.strip() in path_mappings:
+                                old_path = current_value.strip()
+                                new_path = path_mappings[old_path]
+                                
+                                print(f"      🔄 Remapping {node_path}::{parm.name()}")
+                                print(f"         FROM: {old_path}")
+                                print(f"         TO: {new_path}")
+                                
+                                # Update the parameter
+                                parm.set(new_path)
+                                remapped_count += 1
+                                
+                    except Exception as e:
+                        # Silently continue if parameter can't be processed
                         continue
+                        
             print(f'   ✅ Successfully remapped {remapped_count} parameters')
             return remapped_count
-        except:
+            
+        except Exception as e:
+            print(f"   ❌ Error updating parameters: {e}")
             return 0
 
     def save_paths_json(self, paths_json_file, path_mappings):
@@ -1757,6 +2112,26 @@ class TemplateAssetImporter:
             print(f"   🔍 COMPREHENSIVE PATH REMAPPING BEFORE EXPORT")
             print(f"   📊 Scanning {len(nodes_to_export)} nodes for file path parameters...")
             
+            # DEBUG: Check what we received
+            print(f"   🚨 DEBUG: Received for path remapping:")
+            print(f"      Texture info entries: {len(texture_info)}")
+            print(f"      Geometry info entries: {len(geometry_info)}")
+            if geometry_info:
+                pattern_count = sum(1 for geo in geometry_info if geo.get('is_pattern_mapping', False))
+                print(f"      Pattern mappings in geometry_info: {pattern_count}")
+                # Show first few geometry entries for debugging
+                for i, geo_info in enumerate(geometry_info[:3]):
+                    is_pattern = geo_info.get('is_pattern_mapping', False)
+                    filename = geo_info.get('filename', 'NO_FILENAME')
+                    original_path = geo_info.get('original_path', 'NO_ORIGINAL_PATH')
+                    library_path = geo_info.get('library_path', 'NO_LIBRARY_PATH')
+                    print(f"         Entry {i}: {'🔗PATTERN' if is_pattern else '📄REGULAR'}")
+                    print(f"            filename: {filename}")
+                    print(f"            original_path: {original_path[:80] if len(str(original_path)) > 80 else original_path}")
+                    print(f"            library_path: {library_path}")
+            else:
+                print(f"      ❌ geometry_info is EMPTY!")
+            
             # 1. Collect all nodes recursively (including nested nodes)
             all_nodes = []
             
@@ -1816,15 +2191,66 @@ class TemplateAssetImporter:
                     print(f"      🖼️ Texture mapping: {os.path.basename(original_path)} → {library_path}")
             
             # Add geometry path mappings  
+            print(f"      🔍 Processing {len(geometry_info)} geometry entries...")
+            
+            # DEBUG: Show all pattern mapping entries first
+            pattern_count = 0
+            regular_count = 0
+            
+            print(f"      🔍 DETAILED PATTERN MAPPING DEBUG:")
+            for i, geo_info in enumerate(geometry_info):
+                is_pattern = geo_info.get('is_pattern_mapping', False)
+                if is_pattern:
+                    pattern_count += 1
+                    print(f"         🔗 PATTERN #{pattern_count}: Entry {i}")
+                    print(f"            file: {geo_info.get('file', 'MISSING')}")
+                    print(f"            original_path: {geo_info.get('original_path', 'MISSING')}")
+                    print(f"            library_path: {geo_info.get('library_path', 'MISSING')}")
+                    print(f"            is_pattern_mapping: {is_pattern}")
+                    print(f"            Keys in entry: {list(geo_info.keys())}")
+                else:
+                    regular_count += 1
+            
+            print(f"      📊 Geometry entries breakdown: {pattern_count} patterns, {regular_count} regular files")
+            
+            # If no patterns found but we expected some, show first few entries
+            if pattern_count == 0 and len(geometry_info) > 0:
+                print(f"      ⚠️ NO PATTERN MAPPINGS FOUND! Showing first 3 entries:")
+                for i in range(min(3, len(geometry_info))):
+                    geo_info = geometry_info[i]
+                    print(f"         Entry {i}: is_pattern_mapping={geo_info.get('is_pattern_mapping', 'MISSING')}")
+                    print(f"            Keys: {list(geo_info.keys())}")
+                    print(f"            original_path: {geo_info.get('original_path', 'MISSING')}")
+            
             for geo_info in geometry_info:
                 original_path = geo_info.get('original_path')
                 library_path = geo_info.get('library_path')
+                is_pattern = geo_info.get('is_pattern_mapping', False)
+                
+                print(f"         📄 Geo entry: {os.path.basename(original_path) if original_path else 'NO ORIGINAL_PATH'}")
+                print(f"            original_path: {original_path}")
+                print(f"            library_path: {library_path}")
+                print(f"            is_pattern_mapping: {is_pattern}")
                 
                 if original_path and library_path:
                     # Convert library relative path to full path
                     full_library_path = str(self.asset_folder / library_path)
                     mappings[original_path] = full_library_path
-                    print(f"      🧊 Geometry mapping: {os.path.basename(original_path)} → {library_path}")
+                    
+                    if is_pattern:
+                        print(f"            ✅ BGEO Pattern mapping added: {os.path.basename(original_path)} → {library_path}")
+                        # Verify frame variables are preserved
+                        if "${F4}" in full_library_path or "${F}" in full_library_path:
+                            print(f"            🎯 Frame variables preserved in mapping!")
+                        else:
+                            print(f"            ⚠️ Frame variables NOT found in: {full_library_path}")
+                    else:
+                        print(f"            ✅ Regular geometry mapping added: {os.path.basename(original_path)} → {library_path}")
+                else:
+                    if not original_path:
+                        print(f"            ❌ Missing original_path")
+                    if not library_path:
+                        print(f"            ❌ Missing library_path")
             
             print(f"   📝 Built {len(mappings)} path mappings from copied files")
             return mappings
@@ -1950,6 +2376,12 @@ class TemplateAssetImporter:
         """Update all node parameters to use library paths"""
         remapped_count = 0
         
+        print(f"   🔄 Starting parameter remapping with {len(path_mappings)} available path mappings:")
+        for i, (old_path, new_path) in enumerate(list(path_mappings.items())[:3]):  # Show first 3
+            print(f"      {i+1}. {os.path.basename(old_path)} → {os.path.basename(new_path)}")
+        if len(path_mappings) > 3:
+            print(f"      ... and {len(path_mappings) - 3} more mappings")
+        
         try:
             for node in all_nodes:
                 node_path = node.path()
@@ -1959,11 +2391,36 @@ class TemplateAssetImporter:
                 
                 for parm in all_parms:
                     try:
+                        # For BGEO sequence patterns, we need the unexpanded value to preserve frame variables
+                        try:
+                            unexpanded_value = parm.unexpandedString()
+                        except:
+                            unexpanded_value = None
+                        
                         current_value = parm.eval()
                         
                         if isinstance(current_value, str) and current_value.strip():
-                            # Check if this parameter value matches any original path
-                            if current_value in path_mappings:
+                            # First check unexpanded value (preserves frame variables like ${F4})
+                            if unexpanded_value and unexpanded_value in path_mappings:
+                                new_path = path_mappings[unexpanded_value]
+                                
+                                print(f"      🔄 Remapping {node_path}::{parm.name()} (pattern)")
+                                print(f"         FROM: {unexpanded_value}")
+                                print(f"         TO: {new_path}")
+                                
+                                # Verify frame variables in BGEO sequences
+                                if "${F4}" in unexpanded_value or "${F}" in unexpanded_value:
+                                    if "${F4}" in new_path or "${F}" in new_path:
+                                        print(f"         🎯 BGEO sequence: Frame variables preserved!")
+                                    else:
+                                        print(f"         ⚠️ BGEO sequence: Frame variables LOST!")
+                                
+                                # Update the parameter with the new pattern path
+                                parm.set(new_path)
+                                remapped_count += 1
+                                
+                            # Otherwise check expanded value (regular file paths)  
+                            elif current_value in path_mappings:
                                 new_path = path_mappings[current_value]
                                 
                                 print(f"      🔄 Remapping {node_path}::{parm.name()}")
@@ -1973,6 +2430,13 @@ class TemplateAssetImporter:
                                 # Update the parameter
                                 parm.set(new_path)
                                 remapped_count += 1
+                            else:
+                                # Debug: Show what wasn't found
+                                if unexpanded_value and ("${F4}" in unexpanded_value or "${F}" in unexpanded_value):
+                                    print(f"      ❌ BGEO pattern NOT FOUND in mappings:")
+                                    print(f"         Unexpanded: {unexpanded_value}")
+                                    print(f"         Expanded: {current_value}")
+                                    print(f"         Available mappings: {len(path_mappings)} total")
                             
                     except Exception as e:
                         # Skip parameters that can't be updated
@@ -2379,13 +2843,16 @@ class TemplateAssetImporter:
                 return geometry_file
         
         # BGEO sequence matching
-        if any(ext in original_filename.lower() for ext in ['.bgeo', '.bgeo.sc']):
+        original_lower = original_filename.lower()
+        if original_lower.endswith('.bgeo') or original_lower.endswith('.bgeo.sc'):
             # Check if original path has frame variables
             if any(var in original_path for var in ['${F4}', '${F}', '${FF}', '$F4', '$F']):
                 # For sequence patterns, return the pattern itself to be used in remapping
                 for geometry_file in geometry_files:
-                    # Look for BGEO files in node-specific subfolders
-                    if 'BGEO/' in geometry_file and any(ext in geometry_file.lower() for ext in ['.bgeo', '.bgeo.sc']):
+                    # Look for BGEO files in node-specific or sequence-specific subfolders  
+                    geometry_file_lower = geometry_file.lower()
+                    if (('BGEO/' in geometry_file or 'bgeo/' in geometry_file) and 
+                        (geometry_file_lower.endswith('.bgeo') or geometry_file_lower.endswith('.bgeo.sc'))):
                         # Check if this could be from the same sequence
                         geo_basename = os.path.basename(geometry_file)
                         original_basename = os.path.basename(original_path)

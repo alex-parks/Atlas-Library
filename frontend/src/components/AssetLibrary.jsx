@@ -1052,15 +1052,11 @@ const AssetLibrary = () => {
                 e.preventDefault();
                 
                 try {
-                  // Simplified approach - avoid complex metadata operations
+                  // Only update editable fields - category, subcategory, and render engine are not editable
                   const updateData = {
                     name: editFormData.name,
                     description: editFormData.description,
-                    category: editFormData.category,
-                    tags: editFormData.tags ? editFormData.tags.split(',').map(t => t.trim()) : [],
-                    // Store these fields at the top level
-                    subcategory: editFormData.subcategory,
-                    render_engine: editFormData.render_engine
+                    tags: editFormData.tags ? editFormData.tags.split(',').map(t => t.trim()) : []
                   };
                   
                   // Send PATCH request to update asset
@@ -1122,77 +1118,6 @@ const AssetLibrary = () => {
                   />
                 </div>
 
-                {/* Category and Subcategory */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-300 mb-2">
-                      Category
-                    </label>
-                    <select
-                      value={editFormData.category || ''}
-                      onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
-                      className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="Assets">Assets</option>
-                      <option value="FX">FX</option>
-                      <option value="Materials">Materials</option>
-                      <option value="HDAs">HDAs</option>
-                      <option value="Textures">Textures</option>
-                      <option value="HDRI">HDRI</option>
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-300 mb-2">
-                      Subcategory
-                    </label>
-                    <select
-                      value={editFormData.subcategory || ''}
-                      onChange={(e) => setEditFormData({...editFormData, subcategory: e.target.value})}
-                      className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-                    >
-                      {/* Assets subcategories */}
-                      {editFormData.category === 'Assets' && (
-                        <>
-                          <option value="Blacksmith Asset">Blacksmith Asset</option>
-                          <option value="Megascans">Megascans</option>
-                          <option value="Kitbash">Kitbash</option>
-                        </>
-                      )}
-                      
-                      {/* FX subcategories */}
-                      {editFormData.category === 'FX' && (
-                        <>
-                          <option value="Blacksmith FX">Blacksmith FX</option>
-                          <option value="Atmosphere">Atmosphere</option>
-                          <option value="FLIP">FLIP</option>
-                          <option value="Pyro">Pyro</option>
-                        </>
-                      )}
-                      
-                      {/* Materials subcategories */}
-                      {editFormData.category === 'Materials' && (
-                        <>
-                          <option value="Blacksmith Materials">Blacksmith Materials</option>
-                          <option value="Redshift">Redshift</option>
-                          <option value="Karma">Karma</option>
-                        </>
-                      )}
-                      
-                      {/* HDAs subcategories */}
-                      {editFormData.category === 'HDAs' && (
-                        <>
-                          <option value="Blacksmith HDAs">Blacksmith HDAs</option>
-                        </>
-                      )}
-                      
-                      {/* Other categories - no subcategories */}
-                      {(editFormData.category === 'Textures' || editFormData.category === 'HDRI') && (
-                        <option value={editFormData.category}>{editFormData.category}</option>
-                      )}
-                    </select>
-                  </div>
-                </div>
 
                 {/* Tags */}
                 <div>
@@ -1208,23 +1133,6 @@ const AssetLibrary = () => {
                   />
                 </div>
 
-                {/* Render Engine */}
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">
-                    Render Engine
-                  </label>
-                  <select
-                    value={editFormData.render_engine || ''}
-                    onChange={(e) => setEditFormData({...editFormData, render_engine: e.target.value})}
-                    className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="Redshift">Redshift</option>
-                    <option value="Karma">Karma</option>
-                    <option value="Mantra">Mantra</option>
-                    <option value="Octane">Octane</option>
-                    <option value="Arnold">Arnold</option>
-                  </select>
-                </div>
 
                 {/* Action Buttons */}
                 <div className="flex gap-3 pt-4">
@@ -1663,7 +1571,7 @@ const AssetLibrary = () => {
                           </span>
                           
                           {/* Three-dot menu button and dropdown container */}
-                          <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 asset-dropdown-menu pointer-events-auto">
+                          <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 asset-dropdown-menu pointer-events-auto z-30">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1690,10 +1598,7 @@ const AssetLibrary = () => {
                                     setEditFormData({
                                       name: asset.name,
                                       description: asset.description || '',
-                                      category: asset.category,
-                                      subcategory: asset.metadata?.subcategory || asset.category,
-                                      tags: asset.tags?.join(', ') || '',
-                                      render_engine: asset.metadata?.render_engine || 'Redshift'
+                                      tags: asset.tags?.join(', ') || ''
                                     });
                                     setShowEditModal(true);
                                     setActiveDropdown(null);
