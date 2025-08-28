@@ -225,15 +225,45 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         atlas_tab.addParmTemplate(asset_type)
         print(f"   ➕ Added asset type (Create New only)")
         
-        # Subcategory dropdown (Create New only)
-        subcategory = hou.MenuParmTemplate("subcategory", "Subcategory",
-                                          menu_items=("0", "1", "2"),
-                                          menu_labels=("Blacksmith Asset", "Megascans", "Kitbash"),
-                                          default_value=0)
-        subcategory.setHelp("Select the subcategory for this asset")
-        subcategory.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
-        atlas_tab.addParmTemplate(subcategory)
-        print(f"   ➕ Added subcategory (Create New only)")
+        # Subcategory dropdowns - one for each asset type (conditional visibility)
+        
+        # Assets subcategory (visible when asset_type == 0)
+        subcategory_assets = hou.MenuParmTemplate("subcategory_assets", "Subcategory",
+                                                menu_items=("0", "1", "2"),
+                                                menu_labels=("Blacksmith Asset", "Megascans", "Kitbash"),
+                                                default_value=0)
+        subcategory_assets.setHelp("Select the subcategory for Assets")
+        subcategory_assets.setConditional(hou.parmCondType.HideWhen, "{ action != 0 } { asset_type != 0 }")
+        atlas_tab.addParmTemplate(subcategory_assets)
+        
+        # FX subcategory (visible when asset_type == 1)
+        subcategory_fx = hou.MenuParmTemplate("subcategory_fx", "Subcategory",
+                                            menu_items=("0", "1", "2", "3"),
+                                            menu_labels=("Blacksmith FX", "Atmosphere", "FLIP", "Pyro"),
+                                            default_value=0)
+        subcategory_fx.setHelp("Select the subcategory for FX")
+        subcategory_fx.setConditional(hou.parmCondType.HideWhen, "{ action != 0 } { asset_type != 1 }")
+        atlas_tab.addParmTemplate(subcategory_fx)
+        
+        # Materials subcategory (visible when asset_type == 2)
+        subcategory_materials = hou.MenuParmTemplate("subcategory_materials", "Subcategory",
+                                                    menu_items=("0", "1", "2"),
+                                                    menu_labels=("Blacksmith Materials", "Redshift", "Karma"),
+                                                    default_value=0)
+        subcategory_materials.setHelp("Select the subcategory for Materials")
+        subcategory_materials.setConditional(hou.parmCondType.HideWhen, "{ action != 0 } { asset_type != 2 }")
+        atlas_tab.addParmTemplate(subcategory_materials)
+        
+        # HDAs subcategory (visible when asset_type == 3)
+        subcategory_hdas = hou.MenuParmTemplate("subcategory_hdas", "Subcategory",
+                                              menu_items=("0",),
+                                              menu_labels=("Blacksmith HDAs",),
+                                              default_value=0)
+        subcategory_hdas.setHelp("Select the subcategory for HDAs")
+        subcategory_hdas.setConditional(hou.parmCondType.HideWhen, "{ action != 0 } { asset_type != 3 }")
+        atlas_tab.addParmTemplate(subcategory_hdas)
+        
+        print(f"   ➕ Added conditional subcategory dropdowns (Create New only)")
         
         # Render Engine (Create New only)
         render_engine = hou.MenuParmTemplate("render_engine", "Render Engine",
@@ -252,6 +282,18 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         tags.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
         atlas_tab.addParmTemplate(tags)
         print(f"   ➕ Added tags (Create New only)")
+        
+        # Advanced section (Create New only) - Collapsible folder
+        advanced_folder = hou.FolderParmTemplate("advanced", "Advanced", folder_type=hou.folderType.Collapsible)
+        advanced_folder.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
+        
+        # Branded checkbox inside Advanced folder
+        branded_checkbox = hou.ToggleParmTemplate("branded", "Branded", default_value=False)
+        branded_checkbox.setHelp("Check if this asset is branded by a specific brand/company")
+        advanced_folder.addParmTemplate(branded_checkbox)
+        
+        atlas_tab.addParmTemplate(advanced_folder)
+        print(f"   ➕ Added Advanced section with Branded checkbox (Create New only)")
         
         # Separator before Create New export section
         separator_create = hou.SeparatorParmTemplate("create_sep")
@@ -358,7 +400,7 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         required_params = [
             "action", 
             # Create New Asset parameters
-            "asset_name", "asset_type", "subcategory", "render_engine", "tags", "export_atlas_asset",
+            "asset_name", "asset_type", "subcategory_assets", "subcategory_fx", "subcategory_materials", "subcategory_hdas", "render_engine", "tags", "branded", "export_atlas_asset",
             # Version Up Asset parameters  
             "version_parent_asset_id", "create_new_version",
             # Variant Asset parameters
@@ -1028,8 +1070,9 @@ try:
     if not variant_name:
         variant_name = "default"
     
-    # Use subnet name as asset name for variant
-    variant_asset_name = node.name()
+    # For variants, pass the variant name as asset_name, but the TemplateAssetExporter
+    # will look up the original asset name and use that instead
+    variant_asset_name = variant_name  # This will be the variant name, used for metadata
     
     print(f"🎭 Variant Parameters:")
     print(f"   Parent Asset ID: {variant_parent_id}")
@@ -1244,7 +1287,14 @@ try:
         tags_str = subnet.parm("tags").eval().strip() if subnet.parm("tags") else ""
         render_engine_idx = int(subnet.parm("render_engine").eval()) if subnet.parm("render_engine") else 0
         parent_asset_id = None
-        subcategory_idx = int(subnet.parm("subcategory").eval()) if subnet.parm("subcategory") else 0
+        
+        # Get subcategory from the correct parameter based on asset type
+        subcategory_parm_names = ["subcategory_assets", "subcategory_fx", "subcategory_materials", "subcategory_hdas"]
+        subcategory_parm_name = subcategory_parm_names[asset_type_idx] if asset_type_idx < len(subcategory_parm_names) else subcategory_parm_names[0]
+        subcategory_idx = int(subnet.parm(subcategory_parm_name).eval()) if subnet.parm(subcategory_parm_name) else 0
+        
+        # Get branded checkbox value
+        branded = bool(subnet.parm("branded").eval()) if subnet.parm("branded") else False
     elif action == "version_up":
         parent_asset_id = subnet.parm("version_parent_asset_id").eval().strip() if subnet.parm("version_parent_asset_id") else ""
         # For Version Up, we'll use the subnet name as asset name
@@ -1287,8 +1337,15 @@ try:
         asset_types = ["Assets", "FX", "Materials", "HDAs"]
         asset_type = asset_types[asset_type_idx] if asset_type_idx < len(asset_types) else "Assets"
         
-        # Get the subcategory - use consistent options for all actions
-        subcategory_options = ["Blacksmith Asset", "Megascans", "Kitbash"]
+        # Get the subcategory based on asset type
+        subcategory_mapping = {
+            "Assets": ["Blacksmith Asset", "Megascans", "Kitbash"],
+            "FX": ["Blacksmith FX", "Atmosphere", "FLIP", "Pyro"], 
+            "Materials": ["Blacksmith Materials", "Redshift", "Karma"],
+            "HDAs": ["Blacksmith HDAs"]
+        }
+        
+        subcategory_options = subcategory_mapping.get(asset_type, subcategory_mapping["Assets"])
         subcategory = subcategory_options[subcategory_idx] if subcategory_idx < len(subcategory_options) else subcategory_options[0]
         
         # Get render engine
@@ -1326,7 +1383,8 @@ try:
             "export_time": str(datetime.now()),
             "tags": extended_tags,
             "action": action,
-            "parent_asset_id": parent_asset_id
+            "parent_asset_id": parent_asset_id,
+            "branded": branded if action == "create_new" else False
         }
 
         # Create TemplateAssetExporter with new parameters

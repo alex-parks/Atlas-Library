@@ -9,6 +9,14 @@ saveChildrenToFile/loadChildrenFromFile methods for perfect reconstruction.
 
 import os
 import sys
+import json
+import uuid
+import re
+import urllib.request
+import subprocess
+import traceback
+import copy
+import fnmatch
 from datetime import datetime
 from pathlib import Path
 import shutil
@@ -26,7 +34,8 @@ class TemplateAssetExporter:
     """Export assets using Houdini's template system"""
     
     def __init__(self, asset_name, subcategory="Props", description="", tags=None, asset_type=None, render_engine=None, metadata=None, action="create_new", parent_asset_id=None, variant_name=None):
-        self.asset_name = asset_name
+        # Store the raw input for variants (will be overridden for variants)
+        self.raw_input_name = asset_name
         self.subcategory = subcategory  
         self.description = description
         self.tags = tags or []
@@ -48,14 +57,14 @@ class TemplateAssetExporter:
             self.variant_name = "default"
         
         # Generate unique asset ID (9 character base UID + 3 digit version = 12 characters total)
-        import uuid
-        import re
         
         if action == "create_new":
             # Generate new 9-character base UID + 2-character variant + 3-digit version = 14 characters total
             self.base_uid = str(uuid.uuid4()).replace('-', '')[:9].upper()
             self.variant_id = "AA"  # Always start with AA variant for new assets
             self.version = 1
+            # For new assets, use the provided name
+            self.asset_name = asset_name
         elif action == "version_up":
             # For version_up: expects 11 characters (9 base + 2 variant)
             if not parent_asset_id or len(parent_asset_id) != 11:
@@ -63,6 +72,8 @@ class TemplateAssetExporter:
             self.base_uid = parent_asset_id[:9].upper()  # First 9 characters as base UID
             self.variant_id = parent_asset_id[9:11].upper()  # Characters 9-11 as variant ID
             self.version = self._get_next_version(parent_asset_id, action)  # Pass full 11-char asset ID
+            # For version_up, inherit the original asset name (not the version name)
+            self.asset_name = self._get_original_asset_name_from_base_uid(self.base_uid)
         elif action == "variant":
             # For variant: expects 9 characters (base UID only)
             if not parent_asset_id or len(parent_asset_id) != 9:
@@ -71,6 +82,8 @@ class TemplateAssetExporter:
             # Generate next variant ID based on existing variants for this base UID
             self.variant_id = self._get_next_variant_id(self.base_uid)
             self.version = 1  # Reset version to 001 for new variant
+            # For variants, use the original asset name from the base UID, not the variant name
+            self.asset_name = self._get_original_asset_name_from_base_uid(self.base_uid)
         else:
             raise ValueError(f"Invalid action: {action}. Must be 'create_new', 'version_up', or 'variant'")
         
@@ -117,6 +130,19 @@ class TemplateAssetExporter:
         # Database key is the full 14-character UID
         self.database_key = self.asset_id
     
+    def _collect_all_nodes(self, parent_node):
+        """Recursively collect all nodes from a parent node"""
+        all_nodes = []
+        
+        def collect_recursive(node):
+            """Recursively collect all nodes"""
+            for child in node.children():
+                all_nodes.append(child)
+                collect_recursive(child)  # Recurse into children
+        
+        collect_recursive(parent_node)
+        return all_nodes
+
     def _get_artist_name(self):
         """Extract artist name from POSE environment variable or fallback to USER"""
         try:
@@ -153,8 +179,6 @@ class TemplateAssetExporter:
                 print(f"   🔍 Looking up existing versions for asset base ID: {asset_base_id}")
                 
                 try:
-                    import urllib.request
-                    import json
                     
                     # Query the Atlas API to get all assets
                     api_url = "http://localhost:8000/api/v1/assets?limit=1000"
@@ -232,8 +256,6 @@ class TemplateAssetExporter:
             
             # Query the Atlas API to find all existing variants for this base UID
             try:
-                import urllib.request
-                import json
                 
                 # Query the Atlas API to get all assets
                 api_url = "http://localhost:8000/api/v1/assets?limit=1000"
@@ -341,8 +363,6 @@ class TemplateAssetExporter:
         try:
             print(f"   🔍 Looking up variant_name for parent asset: {parent_asset_id}")
             
-            import urllib.request
-            import json
             
             # Query the Atlas API to get all assets and find ones matching the 11-char pattern
             api_url = "http://localhost:8000/api/v1/assets?limit=1000"
@@ -371,6 +391,191 @@ class TemplateAssetExporter:
         except Exception as e:
             print(f"   ⚠️ Error getting parent variant_name, defaulting to 'default': {e}")
             return "default"
+    
+    def _get_original_asset_name_from_base_uid(self, base_uid):
+        """Get the original asset name from the base UID for variant creation"""
+        try:
+            print(f"   🔍 Looking up original asset name for base UID: {base_uid}")
+            
+            # Query the Atlas API to get all assets and find the original (AA variant)
+            api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+            print(f"   🌐 Making API request to: {api_url}")
+            
+            response = urllib.request.urlopen(api_url, timeout=30)
+            assets_data = json.loads(response.read().decode())
+            all_assets = assets_data.get('items', [])
+            
+            # Find assets that match the base UID (first 9 characters) and are original (variant AA)
+            original_asset = None
+            for asset in all_assets:
+                asset_id = asset.get('id', '')
+                if len(asset_id) >= 11:
+                    asset_base_uid = asset_id[:9].upper()
+                    asset_variant_id = asset_id[9:11].upper()
+                    if asset_base_uid == base_uid.upper() and asset_variant_id == "AA":
+                        original_asset = asset
+                        print(f"   ✅ Found original asset (AA variant): {asset_id}")
+                        break
+            
+            if original_asset:
+                original_name = original_asset.get('name', f'Asset_{base_uid}')
+                print(f"   ✅ Original asset name: {original_name}")
+                return original_name
+            else:
+                print(f"   ⚠️ No original asset (AA variant) found for base UID: {base_uid}")
+                return f"Asset_{base_uid}"
+            
+        except Exception as e:
+            print(f"   ⚠️ Error getting original asset name, using fallback: {e}")
+            return f"Asset_{base_uid}"
+
+    def _get_parent_branded_status(self):
+        """Get the branded status from the parent asset for inheritance"""
+        try:
+            if not self.parent_asset_id:
+                return None
+                
+            print(f"   🔍 Looking up branded status for parent asset: {self.parent_asset_id}")
+            
+            # For variants, we need to find the original asset (AA variant) with the base UID
+            # For versions, we need to find the previous version
+            if self.action == "variant":
+                # For variants, find the original asset (AA variant) from the base UID
+                base_uid = self.parent_asset_id  # This is the 9-character base UID
+                target_asset_id = f"{base_uid}AA001"  # Original asset format
+                print(f"   🔍 Variant inheritance: Looking for original asset {target_asset_id}")
+            elif self.action == "create_version" or self.action == "version_up":
+                # For versions, parent_asset_id is base_uid + variant_id (11 chars)
+                # We need to find the previous version by appending version number
+                if len(self.parent_asset_id) == 11:
+                    # Calculate previous version number
+                    current_version = self.version
+                    prev_version = current_version - 1 if current_version > 1 else 1
+                    target_asset_id = f"{self.parent_asset_id}{prev_version:03d}"
+                    print(f"   🔍 Version inheritance: Looking for previous version {target_asset_id}")
+                else:
+                    # If parent_asset_id is already full 14-char ID, use it directly
+                    target_asset_id = self.parent_asset_id
+                    print(f"   🔍 Version inheritance: Looking for parent asset {target_asset_id}")
+            else:
+                # Default case
+                target_asset_id = self.parent_asset_id
+                print(f"   🔍 Default inheritance: Looking for parent asset {target_asset_id}")
+            
+            # Query the Atlas API to get all assets and find the target
+            api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+            print(f"   🌐 Making API request to: {api_url}")
+            
+            response = urllib.request.urlopen(api_url, timeout=30)
+            assets_data = json.loads(response.read().decode())
+            all_assets = assets_data.get('items', [])
+            
+            # Find the target asset
+            target_asset = None
+            for asset in all_assets:
+                asset_id = asset.get('id', '')
+                if asset_id == target_asset_id:
+                    target_asset = asset
+                    print(f"   ✅ Found target asset: {asset_id}")
+                    break
+            
+            if target_asset:
+                # Check for branded status in multiple locations
+                branded_status = (
+                    target_asset.get('branded') or
+                    target_asset.get('metadata', {}).get('branded') or
+                    target_asset.get('metadata', {}).get('export_metadata', {}).get('branded') or
+                    False
+                )
+                print(f"   ✅ Target asset branded status: {branded_status}")
+                return branded_status
+            else:
+                print(f"   ⚠️ Target asset not found: {target_asset_id}")
+                return None
+                
+        except Exception as e:
+            print(f"   ⚠️ Error getting parent branded status: {e}")
+            return None
+
+    def _get_branded_status(self):
+        """Get branded status, inheriting from parent for versions/variants"""
+        try:
+            # First check if branded status is explicitly set in metadata
+            if isinstance(self.metadata, dict) and "branded" in self.metadata:
+                branded_status = self.metadata.get("branded", False)
+                print(f"   🏷️ Using explicit branded status: {branded_status}")
+                return branded_status
+            
+            # For versions and variants, inherit from parent
+            if self.action in ["create_version", "version_up", "variant"] and self.parent_asset_id:
+                parent_branded_status = self._get_parent_branded_status()
+                if parent_branded_status is not None:
+                    print(f"   🏷️ Inherited branded status from parent: {parent_branded_status}")
+                    return parent_branded_status
+            
+            # Default to False for new assets
+            print(f"   🏷️ Using default branded status: False")
+            return False
+            
+        except Exception as e:
+            print(f"   ⚠️ Error determining branded status: {e}")
+            return False
+
+    def _build_export_metadata(self):
+        """Build export metadata including essential variant information"""
+        try:
+            # Start with structured metadata if it exists as dict
+            export_metadata = {}
+            if isinstance(self.metadata, dict):
+                export_metadata.update(self.metadata)
+            
+            # Always include essential information for API consumption
+            essential_metadata = {
+                "dimension": "3D",
+                "asset_type": self.asset_type,
+                "subcategory": self.subcategory,
+                "render_engine": self.render_engine,
+                "houdini_version": "Unknown",
+                "export_time": datetime.now().isoformat(),
+                "tags": self.tags,
+                "action": self.action,
+                "parent_asset_id": self.parent_asset_id,
+                "branded": False
+            }
+            
+            # Get Houdini version if available
+            if HOU_AVAILABLE:
+                try:
+                    version_tuple = hou.applicationVersion()
+                    essential_metadata["houdini_version"] = f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}"
+                except:
+                    try:
+                        essential_metadata["houdini_version"] = hou.applicationVersionString()
+                    except:
+                        pass
+            
+            # Add variant information (crucial for API response)
+            if self.variant_name and self.variant_name != "default":
+                essential_metadata["variant_name"] = self.variant_name
+            
+            # Inherit branded status from parent asset for versions/variants
+            if self.action in ["create_version", "version_up", "variant"] and self.parent_asset_id:
+                parent_branded_status = self._get_parent_branded_status()
+                if parent_branded_status is not None:
+                    essential_metadata["branded"] = parent_branded_status
+                    print(f"   🏷️ Inherited branded status from parent: {parent_branded_status}")
+            
+            # Update export_metadata with essential info (existing values take precedence)
+            for key, value in essential_metadata.items():
+                if key not in export_metadata:
+                    export_metadata[key] = value
+                    
+            print(f"   📋 Built export_metadata with variant_name: {export_metadata.get('variant_name', 'None')}")
+            return export_metadata
+            
+        except Exception as e:
+            print(f"   ⚠️ Error building export metadata: {e}")
+            return {}
     
     def export_as_template(self, parent_node, nodes_to_export):
         """Export nodes as template using saveChildrenToFile"""
@@ -428,7 +633,6 @@ class TemplateAssetExporter:
             
         except Exception as e:
             print(f"❌ Export failed: {e}")
-            import traceback
             traceback.print_exc()
             return False
 
@@ -441,15 +645,7 @@ class TemplateAssetExporter:
             print("   🔍 Scanning for materials and textures using comprehensive method...")
             
             # Get ALL nodes recursively inside the subnet (like our test script)
-            all_nodes = []
-            
-            def collect_all_nodes(parent_node):
-                """Recursively collect all nodes"""
-                for child in parent_node.children():
-                    all_nodes.append(child)
-                    collect_all_nodes(child)  # Recurse into children
-            
-            collect_all_nodes(parent_node)
+            all_nodes = self._collect_all_nodes(parent_node)
             
             print(f"   📋 Found {len(all_nodes)} total nodes (including nested)")
             
@@ -739,7 +935,6 @@ class TemplateAssetExporter:
             
         except Exception as e:
             print(f"   ⚠️ Error processing materials and textures: {e}")
-            import traceback
             traceback.print_exc()
         
         return texture_info
@@ -752,13 +947,7 @@ class TemplateAssetExporter:
             print("      🔍 EARLY BGEO SCAN: Scanning for BGEO sequences with original frame variables...")
             
             # Get ALL nodes recursively
-            all_nodes = []
-            def collect_all_nodes(parent_node):
-                for child in parent_node.children():
-                    all_nodes.append(child)
-                    collect_all_nodes(child)
-            
-            collect_all_nodes(parent_node)
+            all_nodes = self._collect_all_nodes(parent_node)
             print(f"      📋 EARLY BGEO SCAN: Checking {len(all_nodes)} nodes for BGEO sequence patterns...")
             
             # Debug: Show what nodes we found
@@ -849,7 +1038,6 @@ class TemplateAssetExporter:
             
         except Exception as e:
             print(f"      ❌ Error in BGEO sequence detection: {e}")
-            import traceback
             traceback.print_exc()
             return {}
 
@@ -894,15 +1082,7 @@ class TemplateAssetExporter:
                             print(f"            library_path: {item.get('library_path', 'NO_LIBRARY')}")
             
             # Get ALL nodes recursively inside the subnet
-            all_nodes = []
-            
-            def collect_all_nodes(parent_node):
-                """Recursively collect all nodes"""
-                for child in parent_node.children():
-                    all_nodes.append(child)
-                    collect_all_nodes(child)  # Recurse into children
-            
-            collect_all_nodes(parent_node)
+            all_nodes = self._collect_all_nodes(parent_node)
             
             print(f"   📋 Scanning {len(all_nodes)} nodes for NON-SEQUENCE geometry file references...")
             
@@ -1014,7 +1194,6 @@ class TemplateAssetExporter:
             
         except Exception as e:
             print(f"   ⚠️ Error processing geometry files: {e}")
-            import traceback
             traceback.print_exc()
         
         return geometry_info
@@ -1142,7 +1321,6 @@ class TemplateAssetExporter:
             
         except Exception as e:
             print(f"            ❌ Error processing BGEO sequence: {e}")
-            import traceback
             traceback.print_exc()
             return None
 
@@ -1181,7 +1359,6 @@ class TemplateAssetExporter:
                         
                         # COPY THE LOGIC FROM WORKING REGULAR GEOMETRY FILES
                         # Make a deep copy to ensure pattern mapping isn't modified during individual file processing
-                        import copy
                         pattern_copy = copy.deepcopy(geo_info)
                         
                         # Verify the copy preserved the original_path
@@ -1221,7 +1398,6 @@ class TemplateAssetExporter:
                     
         except Exception as e:
             print(f"      ❌ Error copying BGEO sequence: {e}")
-            import traceback
             traceback.print_exc()
 
     def _copy_standard_geometry_files(self, geometry_folder, file_type, files, copied_files):
@@ -1474,6 +1650,9 @@ class TemplateAssetExporter:
                 "created_at": datetime.now().isoformat(),
                 "created_by": self._get_artist_name(),
                 
+                # Branding information (inherit from parent for versions/variants)
+                "branded": self._get_branded_status(),
+                
                 # Frontend hierarchy filtering structure
                 "dimension": "3D",  # Always 3D from Houdini
                 "hierarchy": {
@@ -1483,8 +1662,8 @@ class TemplateAssetExporter:
                     "render_engine": self.render_engine
                 },
                 
-                # Include any structured metadata passed from Houdini
-                "export_metadata": self.metadata if isinstance(self.metadata, dict) else {},
+                # Include any structured metadata passed from Houdini + essential variant info
+                "export_metadata": self._build_export_metadata(),
                 
                 # Template file info
                 "template_file": template_file.name,
@@ -1529,7 +1708,6 @@ class TemplateAssetExporter:
             
             # Write metadata to file
             metadata_file = self.asset_folder / "metadata.json"
-            import json
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
             
@@ -1730,14 +1908,11 @@ class TemplateAssetExporter:
         This ensures the template contains only library paths when saved.
         """
         try:
-            import json
-            from datetime import datetime
             
             print(f"   🔍 COMPREHENSIVE PATH REMAPPING BEFORE EXPORT")
             print(f"   📊 Scanning {len(nodes_to_export)} nodes for file path parameters...")
             
-            # DEBUG: Check what we received
-            print(f"   🚨 DEBUG: Received for path remapping:")
+            # Check what we received for remapping
             print(f"      Texture info entries: {len(texture_info)}")
             print(f"      Geometry info entries: {len(geometry_info)}")
             if geometry_info:
@@ -1757,15 +1932,7 @@ class TemplateAssetExporter:
                 print(f"      ❌ geometry_info is EMPTY!")
             
             # 1. Collect all nodes recursively (including nested nodes)
-            all_nodes = []
-            
-            def collect_all_nodes(parent_node):
-                """Recursively collect all nodes"""
-                for child in parent_node.children():
-                    all_nodes.append(child)
-                    collect_all_nodes(child)  # Recurse into children
-            
-            collect_all_nodes(parent_node)
+            all_nodes = self._collect_all_nodes(parent_node)
             print(f"   📋 Found {len(all_nodes)} total nodes (including nested)")
             
             # 2. Build path mappings from copied file information
@@ -1794,7 +1961,6 @@ class TemplateAssetExporter:
             
         except Exception as e:
             print(f"   ❌ Error during path remapping: {e}")
-            import traceback
             traceback.print_exc()
             return {}
 
@@ -1854,7 +2020,6 @@ class TemplateAssetExporter:
             return mappings
         except Exception as e:
             print(f"   ❌ Error building path mappings: {e}")
-            import traceback
             traceback.print_exc()
             return {}
 
@@ -1975,8 +2140,6 @@ class TemplateAssetExporter:
 
     def save_paths_json(self, paths_json_file, path_mappings):
         try:
-            import json
-            from datetime import datetime
             paths_data = {
                 'export_timestamp': str(datetime.now()),
                 'asset_id': getattr(self, 'asset_id', 'unknown'),
@@ -2005,7 +2168,19 @@ class TemplateAssetImporter:
     def __init__(self, asset_folder):
         self.asset_folder = Path(asset_folder)
         self.data_folder = self.asset_folder / "Data"
-        self.template_file = self.data_folder / "template.hipnc"
+    
+    def _collect_all_nodes(self, parent_node):
+        """Recursively collect all nodes from a parent node"""
+        all_nodes = []
+        
+        def collect_recursive(node):
+            """Recursively collect all nodes"""
+            for child in node.children():
+                all_nodes.append(child)
+                collect_recursive(child)  # Recurse into children
+        
+        collect_recursive(parent_node)
+        return all_nodes
     
     def import_into_scene(self, target_parent, as_collapsed_subnet=True):
         """Import the template as a collapsed subnet or expand nodes"""
@@ -2027,7 +2202,6 @@ class TemplateAssetImporter:
                 asset_name = self.asset_folder.name  # fallback
                 
                 if metadata_file.exists():
-                    import json
                     try:
                         with open(metadata_file, 'r') as f:
                             metadata = json.load(f)
@@ -2096,381 +2270,8 @@ class TemplateAssetImporter:
             
         except Exception as e:
             print(f"❌ Import failed: {e}")
-            import traceback
             traceback.print_exc()
             return False
-
-    def remap_paths_before_export(self, parent_node, nodes_to_export, texture_info, geometry_info):
-        """
-        Remap all file paths from job locations to library locations BEFORE exporting template.
-        This ensures the template contains only library paths when saved.
-        """
-        try:
-            import json
-            from datetime import datetime
-            
-            print(f"   🔍 COMPREHENSIVE PATH REMAPPING BEFORE EXPORT")
-            print(f"   📊 Scanning {len(nodes_to_export)} nodes for file path parameters...")
-            
-            # DEBUG: Check what we received
-            print(f"   🚨 DEBUG: Received for path remapping:")
-            print(f"      Texture info entries: {len(texture_info)}")
-            print(f"      Geometry info entries: {len(geometry_info)}")
-            if geometry_info:
-                pattern_count = sum(1 for geo in geometry_info if geo.get('is_pattern_mapping', False))
-                print(f"      Pattern mappings in geometry_info: {pattern_count}")
-                # Show first few geometry entries for debugging
-                for i, geo_info in enumerate(geometry_info[:3]):
-                    is_pattern = geo_info.get('is_pattern_mapping', False)
-                    filename = geo_info.get('filename', 'NO_FILENAME')
-                    original_path = geo_info.get('original_path', 'NO_ORIGINAL_PATH')
-                    library_path = geo_info.get('library_path', 'NO_LIBRARY_PATH')
-                    print(f"         Entry {i}: {'🔗PATTERN' if is_pattern else '📄REGULAR'}")
-                    print(f"            filename: {filename}")
-                    print(f"            original_path: {original_path[:80] if len(str(original_path)) > 80 else original_path}")
-                    print(f"            library_path: {library_path}")
-            else:
-                print(f"      ❌ geometry_info is EMPTY!")
-            
-            # 1. Collect all nodes recursively (including nested nodes)
-            all_nodes = []
-            
-            def collect_all_nodes(parent_node):
-                """Recursively collect all nodes"""
-                for child in parent_node.children():
-                    all_nodes.append(child)
-                    collect_all_nodes(child)  # Recurse into children
-            
-            collect_all_nodes(parent_node)
-            print(f"   📋 Found {len(all_nodes)} total nodes (including nested)")
-            
-            # 2. Build path mappings from copied file information
-            path_mappings = self.build_path_mappings_from_copied_files(texture_info, geometry_info)
-            print(f"   📝 Built {len(path_mappings)} initial path mappings from copied files")
-            
-            # 3. Scan all nodes for file path parameters and discover additional paths
-            discovered_paths = self.discover_all_file_paths(all_nodes)
-            print(f"   🔍 Discovered {len(discovered_paths)} file path parameters in nodes")
-            
-            # 4. Try to match discovered paths with copied files or create fallback mappings
-            additional_mappings = self.create_additional_path_mappings(discovered_paths, texture_info, geometry_info)
-            path_mappings.update(additional_mappings)
-            print(f"   ➕ Added {len(additional_mappings)} additional path mappings")
-            
-            # 5. Update all node parameters to use library paths
-            remapped_count = self.update_node_parameters_with_library_paths(all_nodes, path_mappings)
-            print(f"   ✅ Updated {remapped_count} node parameters with library paths")
-            
-            # 6. Save paths.json file in Data folder
-            paths_json_file = self.data_folder / "paths.json"
-            self.save_paths_json(paths_json_file, path_mappings)
-            print(f"   💾 Saved path mappings to: {paths_json_file}")
-            
-            return path_mappings
-            
-        except Exception as e:
-            print(f"   ❌ Error during path remapping: {e}")
-            import traceback
-            traceback.print_exc()
-            return {}
-
-    def build_path_mappings_from_copied_files(self, texture_info, geometry_info):
-        """Build path mappings dictionary from copied texture and geometry file information"""
-        mappings = {}
-        
-        try:
-            # Add texture path mappings
-            for tex_info in texture_info:
-                original_path = tex_info.get('original_path')
-                library_path = tex_info.get('library_path')
-                
-                if original_path and library_path:
-                    # Convert library relative path to full path
-                    full_library_path = str(self.asset_folder / library_path)
-                    mappings[original_path] = full_library_path
-                    print(f"      🖼️ Texture mapping: {os.path.basename(original_path)} → {library_path}")
-            
-            # Add geometry path mappings  
-            print(f"      🔍 Processing {len(geometry_info)} geometry entries...")
-            
-            # DEBUG: Show all pattern mapping entries first
-            pattern_count = 0
-            regular_count = 0
-            
-            print(f"      🔍 DETAILED PATTERN MAPPING DEBUG:")
-            for i, geo_info in enumerate(geometry_info):
-                is_pattern = geo_info.get('is_pattern_mapping', False)
-                if is_pattern:
-                    pattern_count += 1
-                    print(f"         🔗 PATTERN #{pattern_count}: Entry {i}")
-                    print(f"            file: {geo_info.get('file', 'MISSING')}")
-                    print(f"            original_path: {geo_info.get('original_path', 'MISSING')}")
-                    print(f"            library_path: {geo_info.get('library_path', 'MISSING')}")
-                    print(f"            is_pattern_mapping: {is_pattern}")
-                    print(f"            Keys in entry: {list(geo_info.keys())}")
-                else:
-                    regular_count += 1
-            
-            print(f"      📊 Geometry entries breakdown: {pattern_count} patterns, {regular_count} regular files")
-            
-            # If no patterns found but we expected some, show first few entries
-            if pattern_count == 0 and len(geometry_info) > 0:
-                print(f"      ⚠️ NO PATTERN MAPPINGS FOUND! Showing first 3 entries:")
-                for i in range(min(3, len(geometry_info))):
-                    geo_info = geometry_info[i]
-                    print(f"         Entry {i}: is_pattern_mapping={geo_info.get('is_pattern_mapping', 'MISSING')}")
-                    print(f"            Keys: {list(geo_info.keys())}")
-                    print(f"            original_path: {geo_info.get('original_path', 'MISSING')}")
-            
-            for geo_info in geometry_info:
-                original_path = geo_info.get('original_path')
-                library_path = geo_info.get('library_path')
-                is_pattern = geo_info.get('is_pattern_mapping', False)
-                
-                print(f"         📄 Geo entry: {os.path.basename(original_path) if original_path else 'NO ORIGINAL_PATH'}")
-                print(f"            original_path: {original_path}")
-                print(f"            library_path: {library_path}")
-                print(f"            is_pattern_mapping: {is_pattern}")
-                
-                if original_path and library_path:
-                    # Convert library relative path to full path
-                    full_library_path = str(self.asset_folder / library_path)
-                    mappings[original_path] = full_library_path
-                    
-                    if is_pattern:
-                        print(f"            ✅ BGEO Pattern mapping added: {os.path.basename(original_path)} → {library_path}")
-                        # Verify frame variables are preserved
-                        if "${F4}" in full_library_path or "${F}" in full_library_path:
-                            print(f"            🎯 Frame variables preserved in mapping!")
-                        else:
-                            print(f"            ⚠️ Frame variables NOT found in: {full_library_path}")
-                    else:
-                        print(f"            ✅ Regular geometry mapping added: {os.path.basename(original_path)} → {library_path}")
-                else:
-                    if not original_path:
-                        print(f"            ❌ Missing original_path")
-                    if not library_path:
-                        print(f"            ❌ Missing library_path")
-            
-            print(f"   📝 Built {len(mappings)} path mappings from copied files")
-            return mappings
-            
-        except Exception as e:
-            print(f"   ❌ Error building path mappings: {e}")
-            return {}
-
-    def discover_all_file_paths(self, all_nodes):
-        """Scan all nodes and parameters to discover file path references"""
-        discovered_paths = {}  # {parameter_key: path_value}
-        
-        try:
-            # Common file extensions to look for
-            file_extensions = [
-                # Geometry files
-                '.abc', '.fbx', '.obj', '.bgeo', '.geo', '.ply', '.stl', '.usd', '.usda', '.usdc',
-                # Texture files  
-                '.jpg', '.jpeg', '.png', '.tiff', '.tif', '.exr', '.hdr', '.pic', '.rat', '.tx',
-                # Cache files
-                '.sim', '.cache', '.vdb', '.f3d',
-                # Other formats
-                '.mov', '.mp4', '.avi', '.exr', '.dpx'
-            ]
-            
-            for node in all_nodes:
-                node_path = node.path()
-                print(f"      🔍 Scanning node: {node_path}")
-                
-                # Get all parameters
-                all_parms = node.parms()
-                
-                for parm in all_parms:
-                    try:
-                        parm_value = parm.eval()
-                        
-                        # Check if this looks like a file path
-                        if (isinstance(parm_value, str) and 
-                            parm_value.strip() and 
-                            len(parm_value.strip()) > 3 and
-                            any(ext in parm_value.lower() for ext in file_extensions)):
-                            
-                            # Store with unique key
-                            param_key = f"{node_path}::{parm.name()}"
-                            discovered_paths[param_key] = parm_value.strip()
-                            
-                            print(f"         📄 Found file path: {parm.name()} = '{parm_value}'")
-                            
-                    except Exception as e:
-                        # Skip parameters that can't be evaluated
-                        continue
-            
-            print(f"   🔍 Discovered {len(discovered_paths)} file path parameters")
-            return discovered_paths
-            
-        except Exception as e:
-            print(f"   ❌ Error discovering file paths: {e}")
-            return {}
-
-    def create_additional_path_mappings(self, discovered_paths, texture_info, geometry_info):
-        """Create additional path mappings for discovered paths that weren't in copied files"""
-        additional_mappings = {}
-        
-        try:
-            # Get lists of copied files for matching
-            copied_texture_files = [tex['original_path'] for tex in texture_info if 'original_path' in tex]
-            copied_geometry_files = [geo['original_path'] for geo in geometry_info if 'original_path' in geo]
-            
-            for param_key, discovered_path in discovered_paths.items():
-                # Skip if we already have a mapping for this exact path
-                if discovered_path in additional_mappings:
-                    continue
-                
-                # Try to find this path in our copied files
-                if discovered_path in copied_texture_files or discovered_path in copied_geometry_files:
-                    # This path was already handled in build_path_mappings_from_copied_files
-                    continue
-                
-                # Try to find a similar file by name matching
-                library_path = self._find_matching_library_file(discovered_path, texture_info, geometry_info)
-                
-                if library_path:
-                    full_library_path = str(self.asset_folder / library_path)
-                    additional_mappings[discovered_path] = full_library_path
-                    print(f"      🔗 Additional mapping: {os.path.basename(discovered_path)} → {library_path}")
-                else:
-                    print(f"      ⚠️ No library match found for: {discovered_path}")
-            
-            return additional_mappings
-            
-        except Exception as e:
-            print(f"   ❌ Error creating additional mappings: {e}")
-            return {}
-
-    def _find_matching_library_file(self, original_path, texture_info, geometry_info):
-        """Find matching library file by filename comparison"""
-        try:
-            original_filename = os.path.basename(original_path)
-            
-            # Check texture files
-            for tex_info in texture_info:
-                tex_original = tex_info.get('original_path', '')
-                tex_library = tex_info.get('library_path', '')
-                
-                if tex_original and tex_library and os.path.basename(tex_original) == original_filename:
-                    return tex_library
-            
-            # Check geometry files
-            for geo_info in geometry_info:
-                geo_original = geo_info.get('original_path', '')
-                geo_library = geo_info.get('library_path', '')
-                
-                if geo_original and geo_library and os.path.basename(geo_original) == original_filename:
-                    return geo_library
-            
-            return None
-            
-        except Exception as e:
-            print(f"      ❌ Error matching library file: {e}")
-            return None
-
-    def update_node_parameters_with_library_paths(self, all_nodes, path_mappings):
-        """Update all node parameters to use library paths"""
-        remapped_count = 0
-        
-        print(f"   🔄 Starting parameter remapping with {len(path_mappings)} available path mappings:")
-        for i, (old_path, new_path) in enumerate(list(path_mappings.items())[:3]):  # Show first 3
-            print(f"      {i+1}. {os.path.basename(old_path)} → {os.path.basename(new_path)}")
-        if len(path_mappings) > 3:
-            print(f"      ... and {len(path_mappings) - 3} more mappings")
-        
-        try:
-            for node in all_nodes:
-                node_path = node.path()
-                
-                # Get all parameters
-                all_parms = node.parms()
-                
-                for parm in all_parms:
-                    try:
-                        # For BGEO sequence patterns, we need the unexpanded value to preserve frame variables
-                        try:
-                            unexpanded_value = parm.unexpandedString()
-                        except:
-                            unexpanded_value = None
-                        
-                        current_value = parm.eval()
-                        
-                        if isinstance(current_value, str) and current_value.strip():
-                            # First check unexpanded value (preserves frame variables like ${F4})
-                            if unexpanded_value and unexpanded_value in path_mappings:
-                                new_path = path_mappings[unexpanded_value]
-                                
-                                print(f"      🔄 Remapping {node_path}::{parm.name()} (pattern)")
-                                print(f"         FROM: {unexpanded_value}")
-                                print(f"         TO: {new_path}")
-                                
-                                # Verify frame variables in BGEO sequences
-                                if "${F4}" in unexpanded_value or "${F}" in unexpanded_value:
-                                    if "${F4}" in new_path or "${F}" in new_path:
-                                        print(f"         🎯 BGEO sequence: Frame variables preserved!")
-                                    else:
-                                        print(f"         ⚠️ BGEO sequence: Frame variables LOST!")
-                                
-                                # Update the parameter with the new pattern path
-                                parm.set(new_path)
-                                remapped_count += 1
-                                
-                            # Otherwise check expanded value (regular file paths)  
-                            elif current_value in path_mappings:
-                                new_path = path_mappings[current_value]
-                                
-                                print(f"      🔄 Remapping {node_path}::{parm.name()}")
-                                print(f"         FROM: {current_value}")
-                                print(f"         TO: {new_path}")
-                                
-                                # Update the parameter
-                                parm.set(new_path)
-                                remapped_count += 1
-                            else:
-                                # Debug: Show what wasn't found
-                                if unexpanded_value and ("${F4}" in unexpanded_value or "${F}" in unexpanded_value):
-                                    print(f"      ❌ BGEO pattern NOT FOUND in mappings:")
-                                    print(f"         Unexpanded: {unexpanded_value}")
-                                    print(f"         Expanded: {current_value}")
-                                    print(f"         Available mappings: {len(path_mappings)} total")
-                            
-                    except Exception as e:
-                        # Skip parameters that can't be updated
-                        continue
-            
-            return remapped_count
-            
-        except Exception as e:
-            print(f"   ❌ Error updating parameters: {e}")
-            return 0
-
-    def save_paths_json(self, paths_json_file, path_mappings):
-        """Save path mappings to paths.json file"""
-        try:
-            import json
-            from datetime import datetime
-            
-            paths_data = {
-                "metadata": {
-                    "export_date": datetime.now().isoformat(),
-                    "total_remapped": len(path_mappings),
-                    "asset_id": self.asset_id,
-                    "asset_name": self.asset_name
-                },
-                "mappings": path_mappings
-            }
-            
-            with open(paths_json_file, 'w') as f:
-                json.dump(paths_data, f, indent=2)
-            
-            print(f"   💾 Saved {len(path_mappings)} path mappings to paths.json")
-            
-        except Exception as e:
-            print(f"   ❌ Error saving paths.json: {e}")
 
     def remap_texture_paths(self, imported_subnet):
         """Remap texture paths from original locations to library locations using metadata mapping"""
@@ -2483,7 +2284,6 @@ class TemplateAssetImporter:
                 print(f"   ⚠️ No metadata file found, skipping texture remapping")
                 return
             
-            import json
             with open(metadata_file, 'r') as f:
                 metadata = json.load(f)
             
@@ -2550,7 +2350,6 @@ class TemplateAssetImporter:
             
         except Exception as e:
             print(f"   ⚠️ Error during texture remapping: {e}")
-            import traceback
             traceback.print_exc()
 
     def _fallback_texture_remapping(self, imported_subnet, metadata):
@@ -2565,15 +2364,7 @@ class TemplateAssetImporter:
                 return
             
             # Get all nodes recursively in the imported subnet
-            all_nodes = []
-            
-            def collect_all_nodes(parent_node):
-                """Recursively collect all nodes"""
-                for child in parent_node.children():
-                    all_nodes.append(child)
-                    collect_all_nodes(child)  # Recurse into children
-            
-            collect_all_nodes(imported_subnet)
+            all_nodes = self._collect_all_nodes(imported_subnet)
             print(f"   📋 Fallback scanning {len(all_nodes)} nodes...")
             
             # Find all VOP and SHOP nodes that might have texture parameters
@@ -2700,7 +2491,6 @@ class TemplateAssetImporter:
                 print(f"   ⚠️ No metadata file found, skipping geometry remapping")
                 return
             
-            import json
             with open(metadata_file, 'r') as f:
                 metadata = json.load(f)
             
@@ -2763,7 +2553,6 @@ class TemplateAssetImporter:
             
         except Exception as e:
             print(f"   ⚠️ Error during geometry file remapping: {e}")
-            import traceback
             traceback.print_exc()
 
     def _fallback_geometry_remapping(self, imported_subnet, metadata):
@@ -2778,15 +2567,7 @@ class TemplateAssetImporter:
                 return
             
             # Get all nodes recursively in the imported subnet
-            all_nodes = []
-            
-            def collect_all_nodes(parent_node):
-                """Recursively collect all nodes"""
-                for child in parent_node.children():
-                    all_nodes.append(child)
-                    collect_all_nodes(child)
-            
-            collect_all_nodes(imported_subnet)
+            all_nodes = self._collect_all_nodes(imported_subnet)
             print(f"   📋 Fallback scanning {len(all_nodes)} nodes for geometry files...")
             
             # Common geometry file extensions
@@ -2863,7 +2644,6 @@ class TemplateAssetImporter:
                             original_pattern = original_pattern.replace(var, '*')
                         
                         # Use glob-like matching
-                        import fnmatch
                         if fnmatch.fnmatch(geo_basename, original_pattern):
                             # Return the pattern with the correct library path structure
                             library_pattern = geometry_file.replace(geo_basename, os.path.basename(original_path))
@@ -2874,23 +2654,16 @@ class TemplateAssetImporter:
     def _ingest_to_database(self, metadata_file, metadata):
         """Automatically ingest the exported asset into the database via API"""
         try:
-            print(f"🔴 DEBUG: Starting auto-ingestion process...")
-            print(f"🔴 DEBUG: Metadata file: {metadata_file}")
-            print(f"🔴 DEBUG: Metadata keys: {list(metadata.keys()) if metadata else 'None'}")
+            print(f"   🔄 Starting auto-ingestion process...")
             
-            # Import subprocess for curl commands (no external dependencies needed)
-            import subprocess
-            import json
+            # Use subprocess for curl commands (no external dependencies needed)
             
             # Define API endpoint
             api_url = "http://localhost:8000/api/v1/assets"
-            print(f"🔴 DEBUG: API URL: {api_url}")
             
             # Prepare asset data for API (match AssetCreateRequest schema)
             # Use ONLY the 12-character UID as database key (no suffix)
             database_key = self.asset_id  # Always use the pure 12-character UID
-            print(f"🔴 DEBUG: Using database key: {database_key} (forced to asset_id)")
-            print(f"🔴 DEBUG: Metadata id was: {metadata.get('id', 'NOT_FOUND')}")
             
             asset_data = {
                 "name": metadata.get("name", self.asset_name),
@@ -2920,21 +2693,12 @@ class TemplateAssetImporter:
                 "file_sizes": metadata.get("file_sizes", {})
             }
             
-            print(f"🔴 DEBUG: Asset data prepared:")
-            print(f"🔴 DEBUG:   Name: {asset_data['name']}")
-            print(f"🔴 DEBUG:   Category: {asset_data['category']}")
-            print(f"🔴 DEBUG:   Asset folder: {asset_data['paths']['asset_folder']}")
-            print(f"🔴 DEBUG:   Tags: {asset_data['tags']}")
-            print(f"🔴 DEBUG: Full asset_data keys: {list(asset_data.keys())}")
             
             # Make API request using curl
             try:
-                print(f"🔴 DEBUG: Making POST request to {api_url} via curl")
-                print(f"🔴 DEBUG: Request headers: Content-Type: application/json")
                 
                 # Convert asset_data to JSON for curl
                 json_data = json.dumps(asset_data)
-                print(f"🔴 DEBUG: JSON data length: {len(json_data)} characters")
                 
                 # Use curl via subprocess
                 curl_cmd = [
@@ -2949,10 +2713,6 @@ class TemplateAssetImporter:
                 
                 result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=30)
                 
-                print(f"🔴 DEBUG: Curl return code: {result.returncode}")
-                print(f"🔴 DEBUG: Curl stdout (first 500 chars): {result.stdout[:500]}")
-                if result.stderr:
-                    print(f"🔴 DEBUG: Curl stderr: {result.stderr}")
                 
                 if result.returncode == 0:
                     try:
@@ -2977,14 +2737,11 @@ class TemplateAssetImporter:
                 return False
             
             except Exception as e:
-                print(f"🔴 DEBUG: Request exception details: {e}")
                 print(f"   ❌ Request failed with error: {e}")
                 return False
                 
         except Exception as e:
-            print(f"🔴 DEBUG: General exception in _ingest_to_database: {e}")
             print(f"   ❌ Error during auto-ingestion: {e}")
             print(f"   💡 Manual ingestion: python /net/dev/alex.parks/scm/int/Blacksmith-Atlas/scripts/utilities/ingest_metadata_curl.py {metadata_file}")
-            import traceback
             traceback.print_exc()
             return False

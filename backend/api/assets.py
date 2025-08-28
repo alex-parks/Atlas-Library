@@ -39,6 +39,8 @@ class AssetResponse(BaseModel):
     name: str
     category: str
     asset_type: str = "3D"
+    variant_id: Optional[str] = None  # 2-character variant ID (AA, AB, etc.)
+    variant_name: Optional[str] = None  # Human-readable variant name
     paths: dict
     file_sizes: dict = {}
     tags: List[str] = []
@@ -134,12 +136,33 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
             logger.error(f"❌ asset_data type: {type(asset_data)}")
             logger.error(f"❌ asset_data keys: {list(asset_data.keys()) if isinstance(asset_data, dict) else 'not a dict'}")
             raise
+    # Extract variant information from asset ID and metadata
+    asset_id = asset_data.get('_key', asset_data.get('id', ''))
+    variant_id = None
+    variant_name = None
+    
+    # Extract variant_id from asset ID (characters 9-11 in a 14-character ID)
+    logger.info(f"🔍 Extracting variant info from asset_id: '{asset_id}' (length: {len(asset_id)})")
+    if len(asset_id) >= 11:
+        variant_id = asset_id[9:11]
+        logger.info(f"🔍 Extracted variant_id: '{variant_id}'")
+    
+    # Extract variant_name from metadata (check export_metadata first, then other locations)
+    if isinstance(metadata, dict):
+        variant_name = (asset_data.get('variant_name') or 
+                       metadata.get('variant_name') or
+                       metadata.get('export_metadata', {}).get('variant_name') or
+                       asset_data.get('metadata', {}).get('variant_name') or
+                       asset_data.get('metadata', {}).get('export_metadata', {}).get('variant_name'))
+        logger.info(f"🔍 Extracted variant_name: '{variant_name}'")
     
     return AssetResponse(
-        id=asset_data.get('_key', asset_data.get('id', '')),
+        id=asset_id,
         name=asset_data.get('name', ''),
         category=asset_data.get('category', 'General'),
         asset_type=asset_data.get('asset_type', '3D'),
+        variant_id=variant_id,
+        variant_name=variant_name,
         paths=paths,
         file_sizes=asset_data.get('file_sizes', {}),
         tags=asset_data.get('tags', []),
@@ -158,6 +181,11 @@ class PaginationResponse(BaseModel):
     limit: int
     offset: int
     has_more: bool
+
+@router.get("/assets/debug/test-endpoint")
+async def test_endpoint():
+    """Test endpoint to verify API is working"""
+    return {"message": "API is working!", "status": "ok"}
 
 @router.get("/assets", response_model=PaginationResponse)
 async def list_assets(
@@ -474,7 +502,8 @@ def is_safe_asset_folder(folder_path: str) -> bool:
     folder_name = path.name
     
     # Asset folders should match pattern: {ID}_{name} or just {ID}
-    asset_id_pattern = r'^[A-Z0-9]{6,12}(_.*)?$'
+    # Updated to support 14-character asset IDs (base_uid + variant_id + version)
+    asset_id_pattern = r'^[A-Z0-9]{6,14}(_.*)?$'
     if not re.match(asset_id_pattern, folder_name):
         logger.error(f"🚫 SECURITY: Folder name doesn't match asset pattern: {folder_name}")
         return False
@@ -553,6 +582,7 @@ def move_asset_to_trashbin(asset_folder_path: str, dimension: str = "3D") -> dic
         # Preserve original folder name, only add timestamp if conflict exists
         folder_name = source_path.name
         trashbin_path = Path(f"/app/assets/TrashBin/{dimension}/{folder_name}")
+        timestamp = None  # Initialize timestamp variable
         
         # Only add timestamp if a folder with the same name already exists in TrashBin
         if trashbin_path.exists():
@@ -686,32 +716,36 @@ async def delete_asset(asset_id: str):
         # Check if folder actually exists before attempting move
         from pathlib import Path
         folder_path = Path(container_folder_path)
-        if not folder_path.exists():
-            logger.error(f"❌ CRITICAL: Folder does not exist at container path: {container_folder_path} (original: {asset_folder_path})")
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Cannot delete asset: Folder not found at {asset_folder_path}. Asset will NOT be removed from database without successful folder move."
-            )
+        folder_moved = False
+        folder_move_result = None
         
-        if not folder_path.is_dir():
+        if not folder_path.exists():
+            logger.warning(f"⚠️ Folder does not exist at container path: {container_folder_path} (original: {asset_folder_path})")
+            logger.info(f"🧹 Treating as orphaned database entry - will delete from database without folder move")
+            folder_moved = False
+            folder_move_result = {"success": False, "message": "Folder did not exist - orphaned database entry"}
+        elif not folder_path.is_dir():
             logger.error(f"❌ CRITICAL: Path exists but is not a directory: {container_folder_path} (original: {asset_folder_path})")
             raise HTTPException(
                 status_code=400, 
                 detail=f"Cannot delete asset: Path is not a directory: {asset_folder_path}. Asset will NOT be removed from database."
             )
+        else:
+            # Folder exists, attempt to move it to TrashBin
+            logger.info(f"🗑️ Attempting to move asset folder to TrashBin: {container_folder_path} (original: {asset_folder_path})")
+            folder_move_result = move_asset_to_trashbin(container_folder_path, dimension)
+            
+            if not folder_move_result["success"]:
+                # If folder move fails, don't delete from database
+                logger.error(f"❌ FOLDER MOVE FAILED: {folder_move_result.get('error', 'Unknown error')}")
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"FOLDER MOVE FAILED: {folder_move_result.get('error', 'Unknown error')}. Asset will NOT be removed from database without successful folder move."
+                )
+            else:
+                logger.info(f"✅ SUCCESS: Folder successfully moved to TrashBin at: {folder_move_result.get('trashbin_path')}")
+                folder_moved = True
         
-        logger.info(f"🗑️ Attempting to move asset folder to TrashBin: {container_folder_path} (original: {asset_folder_path})")
-        folder_move_result = move_asset_to_trashbin(container_folder_path, dimension)
-        
-        if not folder_move_result["success"]:
-            # STRICT: If folder move fails for ANY reason, don't delete from database
-            logger.error(f"❌ FOLDER MOVE FAILED: {folder_move_result.get('error', 'Unknown error')}")
-            raise HTTPException(
-                status_code=500, 
-                detail=f"FOLDER MOVE FAILED: {folder_move_result.get('error', 'Unknown error')}. Asset will NOT be removed from database without successful folder move."
-            )
-        
-        logger.info(f"✅ SUCCESS: Folder successfully moved to TrashBin at: {folder_move_result.get('trashbin_path')}")
         logger.info(f"🗑️ Now proceeding to delete from database...")
         
         # Delete from database ONLY after confirmed successful folder move
@@ -734,7 +768,7 @@ async def delete_asset(asset_id: str):
             "message": f"Asset '{asset_name}' deleted successfully",
             "deleted_id": asset_id,
             "deleted_name": asset_name,
-            "folder_moved": folder_move_result["success"],
+            "folder_moved": folder_moved,
             "folder_move_details": folder_move_result,
             "dimension": dimension
         }
@@ -952,52 +986,71 @@ async def get_creators():
 
 @router.post("/assets/{asset_id}/open-folder")
 async def open_asset_folder(asset_id: str):
-    """Open the asset folder in the file system"""
+    """Open asset folder in system file manager"""
+    import subprocess
+    import platform
+    
+    # Get asset from database
     asset_queries = get_asset_queries()
     if not asset_queries:
         raise HTTPException(status_code=503, detail="Database not available")
     
     try:
-        # Get asset data
         asset_data = asset_queries.get_asset_with_dependencies(asset_id).get('asset')
         if not asset_data:
             raise HTTPException(status_code=404, detail="Asset not found")
         
-        asset_folder = asset_data.get('asset_folder')
-        if not asset_folder:
-            raise HTTPException(status_code=404, detail="Asset folder path not found")
+        # Get folder path from asset data
+        folder_path = asset_data.get('folder_path') or asset_data.get('paths', {}).get('folder_path')
         
-        import subprocess
-        import platform
+        if not folder_path:
+            raise HTTPException(status_code=404, detail="Asset folder path not configured")
         
-        # Check if folder exists
-        if not Path(asset_folder).exists():
-            raise HTTPException(status_code=404, detail=f"Asset folder does not exist: {asset_folder}")
+        # Convert network path to container mount path if needed
+        if folder_path.startswith('/net/library/atlaslib/'):
+            # Convert host path to container mount path
+            container_path = folder_path.replace('/net/library/atlaslib/', '/app/assets/')
+            logger.info(f"Converted path: {folder_path} -> {container_path}")
+        else:
+            container_path = folder_path
         
-        # Open folder based on operating system
-        system = platform.system()
-        try:
-            if system == "Windows":
-                subprocess.Popen(f'explorer "{asset_folder}"')
-            elif system == "Darwin":  # macOS
-                subprocess.Popen(['open', asset_folder])
-            elif system == "Linux":
-                subprocess.Popen(['xdg-open', asset_folder])
+        # Verify folder exists (check container path)
+        from pathlib import Path
+        if not Path(container_path).exists():
+            # Try original path as fallback
+            if not Path(folder_path).exists():
+                raise HTTPException(status_code=404, detail=f"Asset folder not found at {folder_path} or {container_path}")
             else:
-                raise HTTPException(status_code=500, detail=f"Unsupported operating system: {system}")
-            
-            return {
-                "success": True,
-                "message": f"Opened folder: {asset_folder}",
-                "folder_path": asset_folder
-            }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to open folder: {str(e)}")
+                # Use original path if container path doesn't exist
+                folder_path = folder_path
+        else:
+            # Use container path
+            folder_path = container_path
+        
+        logger.info(f"Opening folder: {folder_path}")
+        
+        # In containerized environment, we can't directly open GUI applications
+        # Instead, we'll verify the folder exists and return success
+        # In production, this would need a different approach (e.g., mounting host X11 socket)
+        
+        logger.info(f"✅ Folder verified accessible: {folder_path}")
+        
+        # For now, just return success since we've verified the folder exists
+        # TODO: In production, implement proper folder opening mechanism
+        # (e.g., via host system integration or remote desktop protocols)
+        
+        return {
+            "success": True, 
+            "message": f"Folder verified and accessible: {folder_path}",
+            "note": "Folder opening in containerized environment requires host system integration",
+            "folder_path": folder_path
+        }
         
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+        logger.error(f"Error opening folder for asset {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to open folder: {str(e)}")
 
 @router.post("/admin/sync")
 async def sync_filesystem_to_database():

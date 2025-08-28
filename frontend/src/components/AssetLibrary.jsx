@@ -78,9 +78,10 @@ const AssetLibrary = () => {
   const [editFormData, setEditFormData] = useState({});
 
   const [selectedFilters, setSelectedFilters] = useState({
-    noVariants: true,    // Hide non-AA variants by default
-    noVersions: true,    // Show only highest version by default  
-    creator: 'all'
+    showVariants: false,    // Show variants when checked (default unchecked = hide variants)
+    showVersions: false,    // Show all versions when checked (default unchecked = show only latest)
+    creator: 'all',
+    showBranded: true       // Show branded assets when checked (default: on)
   });
 
   // Active navigation filters (from square button navigation)
@@ -234,6 +235,42 @@ const AssetLibrary = () => {
     // Don't clear assets - keep them loaded for filtering
   };
 
+  const handleJumpToLibrary = () => {
+    setCurrentView('assets');
+    
+    // Set filters based on current navigation state
+    let newFilters = [];
+    
+    if (selectedDimension) {
+      newFilters.push({
+        id: `dimension-${selectedDimension}`,
+        type: 'dimension',
+        value: selectedDimension,
+        label: selectedDimension
+      });
+    }
+    
+    if (selectedCategory) {
+      newFilters.push({
+        id: `category-${selectedCategory}`,
+        type: 'category', 
+        value: selectedCategory,
+        label: selectedCategory
+      });
+    }
+    
+    if (selectedSubcategory) {
+      newFilters.push({
+        id: `subcategory-${selectedSubcategory}`,
+        type: 'subcategory',
+        value: selectedSubcategory,
+        label: selectedSubcategory
+      });
+    }
+    
+    setActiveFilters(newFilters);
+  };
+
   const loadAssets = () => {
     setLoading(true);
     fetch(settings.apiEndpoint)
@@ -314,22 +351,59 @@ const AssetLibrary = () => {
 
   const clearFilters = () => {
     setSelectedFilters({
-      noVariants: true,    // Reset to default ON
-      noVersions: true,    // Reset to default ON
-      creator: 'all'
+      showVariants: false,    // Reset to default OFF (hide variants)
+      showVersions: false,    // Reset to default OFF (show only latest)
+      creator: 'all',
+      showBranded: true       // Reset to default ON (show branded assets)
     });
   };
 
+  // Format asset name to show "{Original Name} - {Variant Name}" for variants
+  const formatAssetName = (asset) => {
+    // Check if this is a variant (variant_id is not "AA" - the original)
+    const variantId = asset.variant_id || (asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA');
+    const variantName = asset.variant_name || asset.metadata?.variant_name;
+    
+    // If it's the original (AA variant) or no variant name, just show the original name
+    if (variantId === 'AA' || !variantName || variantName === 'default') {
+      return asset.name;
+    }
+    
+    // For variants, show "Original Name - Variant Name"
+    return `${asset.name} - ${variantName}`;
+  };
+
+  // Format asset name with JSX styling for hover cards (variant name darker)
+  const formatAssetNameJSX = (asset) => {
+    const variantId = asset.variant_id || (asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA');
+    const variantName = asset.variant_name || asset.metadata?.variant_name;
+    
+    // If it's the original (AA variant) or no variant name, just show the original name
+    if (variantId === 'AA' || !variantName || variantName === 'default') {
+      return <span>{asset.name}</span>;
+    }
+    
+    // For variants, show "Original Name" in white and "- Variant Name" in darker gray
+    return (
+      <span>
+        {asset.name} <span className="text-neutral-400">- {variantName}</span>
+      </span>
+    );
+  };
+
   const filteredAssets = assets.filter(asset => {
-    const matchesSearch = (asset.name && asset.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    const matchesSearch = (asset.name && formatAssetName(asset).toLowerCase().includes(searchTerm.toLowerCase())) ||
                          (asset.description && asset.description.toLowerCase().includes(searchTerm.toLowerCase()));
 
-    const matchesCreator = selectedFilters.creator === 'all' || asset.metadata?.ingested_by === selectedFilters.creator;
+    const matchesCreator = selectedFilters.creator === 'all' || asset.artist === selectedFilters.creator;
+
+    // Branded filtering logic
+    const matchesBrandedFilter = selectedFilters.showBranded ? true : !(asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded);
 
     // Variant filtering logic
     let matchesVariantFilter = true;
-    if (selectedFilters.noVariants) {
-      // Only show assets where variant_id is 'AA' (original assets)
+    if (!selectedFilters.showVariants) {
+      // When showVariants is OFF (unchecked): Only show assets where variant_id is 'AA' (original assets)
       // Check for variant_id in multiple possible locations
       const variantId = asset.metadata?.variant_id || asset.variant_id || 
                        (asset.metadata?.hierarchy?.variant_id) || 
@@ -337,11 +411,12 @@ const AssetLibrary = () => {
                        (asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA');
       matchesVariantFilter = variantId === 'AA';
     }
-    // When noVariants is OFF, matchesVariantFilter stays true (show all variants)
+    // When showVariants is ON (checked), matchesVariantFilter stays true (show all variants)
 
     // Version filtering logic  
     let matchesVersionFilter = true;
-    if (selectedFilters.noVersions) {
+    if (!selectedFilters.showVersions) {
+      // When showVersions is OFF (unchecked): Only show the highest version for each base ID
       // For version filtering, we need to group assets by their base ID (first 11 characters: 9-char base + 2-char variant)
       // and only show the highest version (last 3 digits) for each base ID
       
@@ -366,7 +441,7 @@ const AssetLibrary = () => {
         matchesVersionFilter = versionNum === highestVersion;
       }
     }
-    // When noVersions is OFF, matchesVersionFilter stays true (show all versions)
+    // When showVersions is ON (checked), matchesVersionFilter stays true (show all versions)
 
     // Apply navigation filters based on current navigation state and ArangoDB data structure
     let matchesNavigation = true;
@@ -409,7 +484,7 @@ const AssetLibrary = () => {
       return true;
     });
 
-    return matchesSearch && matchesCreator && matchesVariantFilter && matchesVersionFilter && matchesNavigation && matchesActiveFilters;
+    return matchesSearch && matchesCreator && matchesBrandedFilter && matchesVariantFilter && matchesVersionFilter && matchesNavigation && matchesActiveFilters;
   });
 
   // Debug logging for filtering
@@ -423,8 +498,8 @@ const AssetLibrary = () => {
     console.log('Selected subcategory:', selectedSubcategory);
     console.log('Active filters:', activeFilters);
     console.log('Selected filters:', selectedFilters);
-    console.log('No Variants filter:', selectedFilters.noVariants, '(true = hide non-AA variants)');
-    console.log('No Versions filter:', selectedFilters.noVersions, '(true = show only highest version)');
+    console.log('Show Variants filter:', selectedFilters.showVariants, '(true = show all variants, false = hide non-AA)');
+    console.log('Show Versions filter:', selectedFilters.showVersions, '(true = show all versions, false = show only latest)');
     
     if (assets.length > 0) {
       console.log('Sample asset structure:', assets[0]);
@@ -438,7 +513,7 @@ const AssetLibrary = () => {
                          (asset.metadata?.hierarchy?.variant_id) || 
                          (asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA');
         const derivedVariantId = asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA';
-        console.log(`  ID: ${assetId}, variant_id: ${variantId}, derived: ${derivedVariantId}, name: ${asset.name}`);
+        console.log(`  ID: ${assetId}, variant_id: ${variantId}, derived: ${derivedVariantId}, name: ${formatAssetName(asset)}`);
       });
       
       // Show filtering results for a few assets
@@ -531,16 +606,13 @@ const AssetLibrary = () => {
 
   const copyAssetToClipboard = async (asset) => {
     try {
-      // Simply copy the Asset ID to clipboard
+      // Copy the full Asset ID to clipboard
       const assetId = asset.id;
       
-      // Copy just the ID to clipboard
       await navigator.clipboard.writeText(assetId);
       
       // Show success feedback
       console.log('Asset ID copied to clipboard:', assetId);
-      
-      // Show a simple notification
       alert(`✅ Asset ID copied: ${assetId}`);
       
     } catch (error) {
@@ -549,10 +621,44 @@ const AssetLibrary = () => {
     }
   };
 
+  const copyVersionId = async (asset) => {
+    try {
+      // Extract version ID (remove last 3 characters)
+      // CBA8403F4AA001 -> CBA8403F4AA
+      const versionId = asset.id.slice(0, -3);
+      
+      await navigator.clipboard.writeText(versionId);
+      
+      console.log('Version ID copied to clipboard:', versionId);
+      alert(`✅ Version ID copied: ${versionId}`);
+      
+    } catch (error) {
+      console.error('Failed to copy version ID to clipboard:', error);
+      alert('❌ Failed to copy version ID to clipboard. Please try again.');
+    }
+  };
+
+  const copyVariantId = async (asset) => {
+    try {
+      // Extract variant ID (remove last 5 characters)
+      // CBA8403F4AA001 -> CBA8403F4
+      const variantId = asset.id.slice(0, -5);
+      
+      await navigator.clipboard.writeText(variantId);
+      
+      console.log('Variant ID copied to clipboard:', variantId);
+      alert(`✅ Variant ID copied: ${variantId}`);
+      
+    } catch (error) {
+      console.error('Failed to copy variant ID to clipboard:', error);
+      alert('❌ Failed to copy variant ID to clipboard. Please try again.');
+    }
+  };
+
   const handleDeleteAsset = async (asset) => {
     try {
       // Show single confirmation dialog
-      const confirmMessage = `⚠️  MOVE TO TRASHBIN ⚠️\n\nAre you sure you want to move this asset to the TrashBin?\n\nAsset: "${asset.name}"\nID: ${asset.id}\nCategory: ${asset.category}\n\n🗑️ The asset will be moved to:\n/net/library/atlaslib/TrashBin/${asset.metadata?.dimension || '3D'}/\n\n✅ This is RECOVERABLE - the asset folder will be moved to TrashBin, not permanently deleted.\n\n❌ The database entry will be removed.`;
+      const confirmMessage = `⚠️  MOVE TO TRASHBIN ⚠️\n\nAre you sure you want to move this asset to the TrashBin?\n\nAsset: "${formatAssetName(asset)}"\nID: ${asset.id}\nCategory: ${asset.category}\n\n🗑️ The asset will be moved to:\n/net/library/atlaslib/TrashBin/${asset.metadata?.dimension || '3D'}/\n\n✅ This is RECOVERABLE - the asset folder will be moved to TrashBin, not permanently deleted.\n\n❌ The database entry will be removed.`;
       
       if (!confirm(confirmMessage)) {
         return;
@@ -560,7 +666,7 @@ const AssetLibrary = () => {
 
       // Show loading state
       setLoading(true);
-      console.log(`🗑️ Deleting asset: ${asset.id} (${asset.name})`);
+      console.log(`🗑️ Deleting asset: ${asset.id} (${formatAssetName(asset)})`);
 
       // Call delete API
       const response = await fetch(`${settings.apiEndpoint}/${asset.id}`, {
@@ -629,7 +735,7 @@ const AssetLibrary = () => {
   }, [activeDropdown]);
 
   const assetCategories = [...new Set(assets.map(asset => asset.category))];
-  const creators = [...new Set(assets.map(asset => asset.metadata?.ingested_by).filter(Boolean))];
+  const creators = [...new Set(assets.map(asset => asset.artist).filter(Boolean))];
 
   return (
     <div className="min-h-screen bg-neutral-900 text-white">
@@ -717,13 +823,19 @@ const AssetLibrary = () => {
               >
                 <Filter size={18} />
                 Filter
-                {(selectedFilters.creator !== 'all' || !selectedFilters.noVariants || !selectedFilters.noVersions) && (
+                {(selectedFilters.creator !== 'all' || selectedFilters.showVariants || selectedFilters.showVersions || !selectedFilters.showBranded) && (
                   <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
                 )}
               </button>
 
               {showFilterMenu && (
-                <div className="absolute right-0 top-12 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg z-10 w-80">
+                <>
+                  {/* Backdrop to block interaction with assets behind */}
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowFilterMenu(false)}
+                  ></div>
+                  <div className="absolute right-0 top-12 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg z-50 w-80 pointer-events-auto">
                   <div className="p-4">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-white font-medium">Filters</h3>
@@ -741,22 +853,32 @@ const AssetLibrary = () => {
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={selectedFilters.noVariants}
-                            onChange={(e) => handleFilterChange('noVariants', e.target.checked)}
+                            checked={selectedFilters.showVariants}
+                            onChange={(e) => handleFilterChange('showVariants', e.target.checked)}
                             className="text-blue-600 focus:ring-blue-500"
                           />
-                          <span className="text-neutral-300 text-sm">No Variants</span>
-                          <span className="text-neutral-500 text-xs">(Hide non-AA variants)</span>
+                          <span className="text-neutral-300 text-sm">Variants</span>
+                          <span className="text-neutral-500 text-xs">(Show all variants)</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={selectedFilters.noVersions}
-                            onChange={(e) => handleFilterChange('noVersions', e.target.checked)}
+                            checked={selectedFilters.showVersions}
+                            onChange={(e) => handleFilterChange('showVersions', e.target.checked)}
                             className="text-blue-600 focus:ring-blue-500"
                           />
-                          <span className="text-neutral-300 text-sm">No Versions</span>
-                          <span className="text-neutral-500 text-xs">(Show only highest version)</span>
+                          <span className="text-neutral-300 text-sm">Versions</span>
+                          <span className="text-neutral-500 text-xs">(Show all versions)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedFilters.showBranded}
+                            onChange={(e) => handleFilterChange('showBranded', e.target.checked)}
+                            className="text-yellow-600 focus:ring-yellow-500"
+                          />
+                          <span className="text-neutral-300 text-sm">Branded</span>
+                          <span className="text-neutral-500 text-xs">(Show branded assets)</span>
                         </label>
                       </div>
                     </div>
@@ -783,6 +905,7 @@ const AssetLibrary = () => {
                     </button>
                   </div>
                 </div>
+                </>
               )}
             </div>
 
@@ -1177,9 +1300,15 @@ const AssetLibrary = () => {
                     <span className="px-2 py-1 bg-purple-600/20 text-purple-300 rounded">{previewAsset.metadata?.asset_type || previewAsset.category}</span>
                     <span className="text-neutral-400">→</span>
                     <span className="px-2 py-1 bg-green-600/20 text-green-300 rounded">{previewAsset.metadata?.subcategory || 'General'}</span>
+                    {(previewAsset.branded || previewAsset.metadata?.branded || previewAsset.metadata?.export_metadata?.branded) && (
+                      <>
+                        <span className="text-neutral-400">→</span>
+                        <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded font-bold">⚠ BRANDED</span>
+                      </>
+                    )}
                   </div>
                   <div className="text-neutral-400 text-sm">•</div>
-                  <div className="text-neutral-400 text-sm">{previewAsset.metadata?.ingested_by || 'Unknown Artist'}</div>
+                  <div className="text-neutral-400 text-sm">{previewAsset.artist || 'Unknown Artist'}</div>
                 </div>
               </div>
               <button
@@ -1225,6 +1354,10 @@ const AssetLibrary = () => {
                     <h3 className="text-lg font-medium text-white mb-2">Asset Information</h3>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
+                        <span className="text-neutral-400">Asset Name:</span>
+                        <span className="text-white font-medium">{formatAssetNameJSX(previewAsset)}</span>
+                      </div>
+                      <div className="flex justify-between">
                         <span className="text-neutral-400">ID:</span>
                         <span className="text-white font-mono">{previewAsset.id}</span>
                       </div>
@@ -1234,7 +1367,7 @@ const AssetLibrary = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-neutral-400">Artist:</span>
-                        <span className="text-green-400">{previewAsset.metadata?.ingested_by || 'Unknown'}</span>
+                        <span className="text-green-400">{previewAsset.artist || 'Unknown'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-neutral-400">Render Engine:</span>
@@ -1302,6 +1435,7 @@ const AssetLibrary = () => {
 
                   {/* Action Buttons */}
                   <div className="space-y-3 pt-4">
+                    {/* Main Action Buttons */}
                     <button 
                       onClick={() => copyAssetToClipboard(previewAsset)}
                       className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
@@ -1312,16 +1446,22 @@ const AssetLibrary = () => {
                     <button 
                       onClick={async () => {
                         try {
+                          console.log('DEBUG: Opening folder for asset:', previewAsset.id);
+                          console.log('DEBUG: Asset data:', previewAsset);
+                          console.log('DEBUG: Full URL:', `http://localhost:8000/api/v1/assets/${previewAsset.id}/open-folder`);
+                          
                           const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/open-folder`, {
                             method: 'POST'
                           });
                           
                           if (response.ok) {
                             const result = await response.json();
+                            console.log('DEBUG: Folder open success:', result);
                             alert(`✅ ${result.message}`);
                           } else {
                             const error = await response.json();
-                            alert(`❌ Failed to open folder: ${error.detail}`);
+                            console.log('DEBUG: Folder open failed:', error);
+                            alert(`❌ Failed to open folder: ${error.detail || 'Unknown error'}\n\nAsset ID: ${previewAsset.id}`);
                           }
                         } catch (error) {
                           console.error('Error opening folder:', error);
@@ -1333,6 +1473,24 @@ const AssetLibrary = () => {
                       <FolderOpen size={20} />
                       Open Asset Folder
                     </button>
+                    
+                    {/* Smaller ID Copy Buttons */}
+                    <div className="flex gap-2 pt-2">
+                      <button 
+                        onClick={() => copyVersionId(previewAsset)}
+                        className="flex-1 bg-neutral-600 hover:bg-neutral-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
+                      >
+                        <Copy size={14} />
+                        Copy Version ID
+                      </button>
+                      <button 
+                        onClick={() => copyVariantId(previewAsset)}
+                        className="flex-1 bg-neutral-600 hover:bg-neutral-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
+                      >
+                        <Copy size={14} />
+                        Copy Variant ID
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1374,6 +1532,19 @@ const AssetLibrary = () => {
                 </button>
               ))}
             </div>
+            
+            {/* Jump To Library Button */}
+            <div className="flex justify-center mt-12">
+              <button
+                onClick={handleJumpToLibrary}
+                className="group bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-blue-500 text-white px-6 py-2 rounded-xl font-medium transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:scale-105"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base group-hover:text-blue-400 transition-colors">Jump To Library</span>
+                  <ArrowLeft className="rotate-180 group-hover:text-blue-400 transition-colors" size={16} />
+                </div>
+              </button>
+            </div>
           </div>
         )}
 
@@ -1407,6 +1578,19 @@ const AssetLibrary = () => {
                   </div>
                 </button>
               ))}
+            </div>
+            
+            {/* Jump To Library Button */}
+            <div className="flex justify-center mt-12">
+              <button
+                onClick={handleJumpToLibrary}
+                className="group bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-blue-500 text-white px-6 py-2 rounded-xl font-medium transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:scale-105"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base group-hover:text-blue-400 transition-colors">Jump To Library</span>
+                  <ArrowLeft className="rotate-180 group-hover:text-blue-400 transition-colors" size={16} />
+                </div>
+              </button>
             </div>
           </div>
         )}
@@ -1442,6 +1626,19 @@ const AssetLibrary = () => {
                 </button>
               ))}
             </div>
+            
+            {/* Jump To Library Button */}
+            <div className="flex justify-center mt-12">
+              <button
+                onClick={handleJumpToLibrary}
+                className="group bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-blue-500 text-white px-6 py-2 rounded-xl font-medium transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:scale-105"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base group-hover:text-blue-400 transition-colors">Jump To Library</span>
+                  <ArrowLeft className="rotate-180 group-hover:text-blue-400 transition-colors" size={16} />
+                </div>
+              </button>
+            </div>
           </div>
         )}
 
@@ -1459,7 +1656,7 @@ const AssetLibrary = () => {
                     <span>{filteredAssets.length} assets found</span>
                     <span>Path: /net/library/atlaslib/{selectedDimension}/{selectedCategory}{selectedSubcategory ? `/${selectedSubcategory}` : ''}</span>
                     <span>Database: {dbStatus.database_type || 'JSON'}</span>
-                    {(selectedFilters.creator !== 'all' || !selectedFilters.noVariants || !selectedFilters.noVersions) && (
+                    {(selectedFilters.creator !== 'all' || selectedFilters.showVariants || selectedFilters.showVersions || !selectedFilters.showBranded) && (
                       <span className="text-blue-400">Filtered</span>
                     )}
                   </div>
@@ -1469,7 +1666,11 @@ const AssetLibrary = () => {
                   <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                     {filteredAssets.map(asset => (
                       <div key={asset.id} className="group relative">
-                        <div className="bg-neutral-800 rounded-lg overflow-hidden border border-neutral-700 hover:border-blue-500 transition-all duration-200 hover:shadow-lg hover:shadow-blue-500/10 relative">
+                        <div className={`bg-neutral-800 rounded-lg overflow-hidden border transition-all duration-200 hover:shadow-lg relative ${
+                          asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded 
+                            ? 'border-yellow-600/60 hover:border-yellow-500/80 hover:shadow-yellow-500/5 ring-1 ring-yellow-600/10' 
+                            : 'border-neutral-700 hover:border-blue-500 hover:shadow-blue-500/10'
+                        }`}>
                           <div 
                             className="aspect-square bg-neutral-700 flex items-center justify-center relative overflow-hidden cursor-pointer"
                             onClick={() => openPreview(asset)}
@@ -1477,7 +1678,7 @@ const AssetLibrary = () => {
                             {asset.thumbnail_path && asset.thumbnail_path !== 'null' ? (
                               <img
                                 src={asset.thumbnail_path}
-                                alt={asset.name}
+                                alt={formatAssetName(asset)}
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
                                   e.target.style.display = 'none';
@@ -1563,11 +1764,22 @@ const AssetLibrary = () => {
                           </div>
                         </div>
                         
+                        {/* Branded warning indicator - top left if branded */}
+                        {(asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded) && (
+                          <div className="absolute top-0 left-0 pointer-events-none z-20">
+                            <div className="w-0 h-0 border-l-[24px] border-l-yellow-500/90 border-b-[24px] border-b-transparent">
+                              <div className="absolute -top-[18px] -left-[18px] text-black text-xs font-bold">
+                                ⚠
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Position container for tag/menu interchange - OUTSIDE clickable area */}
                         <div className="absolute top-2 right-2 pointer-events-none">
                           {/* 3D Tag - visible by default, hidden on hover */}
                           <span className="px-2 py-1 text-xs rounded-full font-medium bg-blue-600/80 text-blue-100 group-hover:opacity-0 transition-opacity duration-200 block">
-                            {selectedDimension}
+                            {asset.dimension || asset.hierarchy?.dimension || '3D'}
                           </span>
                           
                           {/* Three-dot menu button and dropdown container */}
@@ -1637,10 +1849,10 @@ const AssetLibrary = () => {
                         </div>
 
                         {/* Asset information panel - only appears on hover */}
-                        <div className="absolute bottom-0 left-0 right-0 bg-neutral-800 border border-neutral-700 rounded-b-lg p-3 transform translate-y-full group-hover:translate-y-0 transition-transform duration-200 z-10 shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto">
-                          <h3 className="text-white font-semibold text-sm mb-1 truncate">{asset.name}</h3>
-                          <p className="text-neutral-400 text-xs mb-2 line-clamp-2">{asset.description || 'No description available'}</p>
-
+                        <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-neutral-800/95 border border-neutral-700 rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 shadow-lg pointer-events-none group-hover:pointer-events-auto">
+                          <h3 className="absolute top-4 left-3 right-3 text-white font-semibold text-base truncate">{formatAssetNameJSX(asset)}</h3>
+                          
+                          <div className="absolute bottom-3 left-3 right-3">
                           {/* Technical Details Grid - 2x3 layout */}
                           <div className="grid grid-cols-2 gap-2 text-xs text-neutral-500">
                             <div>
@@ -1672,7 +1884,7 @@ const AssetLibrary = () => {
                             </div>
                             <div>
                               <span className="text-neutral-400">Artist:</span>
-                              <div className="text-green-400 font-medium truncate">{asset.metadata?.ingested_by || 'Unknown'}</div>
+                              <div className="text-green-400 font-medium truncate">{asset.artist || 'Unknown'}</div>
                             </div>
                             <div>
                               <span className="text-neutral-400">Houdini Ver:</span>
@@ -1691,6 +1903,7 @@ const AssetLibrary = () => {
                               </div>
                             </div>
                           </div>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1705,13 +1918,22 @@ const AssetLibrary = () => {
                       <div className="col-span-2">Actions</div>
                     </div>
                     {filteredAssets.map(asset => (
-                      <div key={asset.id} className="grid grid-cols-12 gap-4 p-4 border-b border-neutral-700 hover:bg-neutral-750 transition-colors">
+                      <div key={asset.id} className={`grid grid-cols-12 gap-4 p-4 border-b transition-colors ${
+                        asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded
+                          ? 'border-yellow-600/30 bg-yellow-600/5 hover:bg-yellow-600/8'
+                          : 'border-neutral-700 hover:bg-neutral-750'
+                      }`}>
                         <div className="col-span-4">
-                          <div className="font-medium text-white">{asset.name}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-medium text-white">{formatAssetName(asset)}</div>
+                            {(asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded) && (
+                              <span className="text-yellow-500 text-sm font-bold">⚠</span>
+                            )}
+                          </div>
                           <div className="text-sm text-neutral-400 truncate">{asset.description || 'No description'}</div>
                         </div>
                         <div className="col-span-2 text-blue-400">{asset.category}</div>
-                        <div className="col-span-2 text-green-400">{asset.metadata?.ingested_by || 'Unknown'}</div>
+                        <div className="col-span-2 text-green-400">{asset.artist || 'Unknown'}</div>
                         <div className="col-span-2 text-neutral-300">
                           {Math.round(Object.values(asset.file_sizes || {}).reduce((sum, size) => sum + (typeof size === 'number' ? size : 0), 0) / 1024)} KB
                         </div>
