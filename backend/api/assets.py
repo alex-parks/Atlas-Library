@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 import os
 import logging
-from backend.assetlibrary.config import BlacksmithAtlasConfig
+from backend.core.config_manager import config as atlas_config
 
 # Setup logging for this module
 logger = logging.getLogger(__name__)
@@ -18,7 +18,18 @@ def get_asset_queries():
     try:
         from backend.assetlibrary.database.arango_queries import AssetQueries
         environment = os.getenv('ATLAS_ENV', 'development')
-        arango_config = BlacksmithAtlasConfig.get_database_config(environment)
+        
+        # Use new Atlas config for database settings
+        db_config = atlas_config.get('api.database', {})
+        arango_config = {
+            'hosts': [f"http://{db_config.get('host', 'localhost')}:{db_config.get('port', '8529')}"],
+            'database': db_config.get('name', 'blacksmith_atlas'),
+            'username': db_config.get('username', 'root'),
+            'password': db_config.get('password', 'atlas_password'),
+            'collections': {
+                'assets': 'Atlas_Library'
+            }
+        }
         logger.info(f"🔍 Creating AssetQueries with config: {arango_config}")
         queries = AssetQueries(arango_config)
         logger.info(f"✅ AssetQueries created successfully")
@@ -455,35 +466,40 @@ def is_safe_asset_folder(folder_path: str) -> bool:
     
     # Convert container path to host path for consistent security checking
     if path_str.startswith('/app/assets/'):
-        # Convert container path to host path for validation
-        host_path_str = path_str.replace('/app/assets/', '/net/library/atlaslib/')
+        # Convert container path to host path for validation using config
+        host_path_str = path_str.replace('/app/assets/', f"{atlas_config.asset_library_root}/")
         logger.info(f"🔄 SECURITY: Converted container path for validation: {path_str} -> {host_path_str}")
     else:
         host_path_str = path_str
     
     # CRITICAL SECURITY: Protected folders that should NEVER be moved/deleted (host paths)
+    # Get paths from Atlas configuration
+    asset_lib_root = atlas_config.asset_library_root
+    asset_lib_3d = atlas_config.asset_library_3d
+    asset_lib_2d = atlas_config.asset_library_2d
+    
     protected_folders = [
-        "/net/library/atlaslib",
-        "/net/library/atlaslib/3D", 
-        "/net/library/atlaslib/2D",
-        "/net/library/atlaslib/3D/Assets",
-        "/net/library/atlaslib/3D/FX", 
-        "/net/library/atlaslib/3D/Materials",
-        "/net/library/atlaslib/3D/HDAs",
-        "/net/library/atlaslib/3D/Textures",
-        "/net/library/atlaslib/3D/HDRI",
-        "/net/library/atlaslib/2D/Textures",
-        "/net/library/atlaslib/2D/References", 
-        "/net/library/atlaslib/2D/UI"
+        asset_lib_root,
+        asset_lib_3d, 
+        asset_lib_2d,
+        f"{asset_lib_3d}/Assets",
+        f"{asset_lib_3d}/FX", 
+        f"{asset_lib_3d}/Materials",
+        f"{asset_lib_3d}/HDAs",
+        f"{asset_lib_3d}/Textures",
+        f"{asset_lib_3d}/HDRI",
+        f"{asset_lib_2d}/Textures",
+        f"{asset_lib_2d}/References", 
+        f"{asset_lib_2d}/UI"
     ]
     
-    # Add subcategory folders to protected list
+    # Add subcategory folders to protected list using config paths
     subcategory_patterns = [
-        r"/net/library/atlaslib/3D/Assets/[^/]+$",           # e.g. /3D/Assets/BlacksmithAssets
-        r"/net/library/atlaslib/3D/FX/[^/]+$",              # e.g. /3D/FX/Pyro  
-        r"/net/library/atlaslib/3D/Materials/[^/]+$",       # e.g. /3D/Materials/Redshift
-        r"/net/library/atlaslib/3D/HDAs/[^/]+$",            # e.g. /3D/HDAs/BlacksmithHDAs
-        r"/net/library/atlaslib/2D/[^/]+/[^/]+$"            # e.g. /2D/Textures/Metals
+        rf"{re.escape(asset_lib_3d)}/Assets/[^/]+$",           # e.g. /3D/Assets/BlacksmithAssets
+        rf"{re.escape(asset_lib_3d)}/FX/[^/]+$",              # e.g. /3D/FX/Pyro  
+        rf"{re.escape(asset_lib_3d)}/Materials/[^/]+$",       # e.g. /3D/Materials/Redshift
+        rf"{re.escape(asset_lib_3d)}/HDAs/[^/]+$",            # e.g. /3D/HDAs/BlacksmithHDAs
+        rf"{re.escape(asset_lib_2d)}/[^/]+/[^/]+$"            # e.g. /2D/Textures/Metals
     ]
     
     # Check exact matches against protected folders (use host path for consistency)
@@ -509,13 +525,14 @@ def is_safe_asset_folder(folder_path: str) -> bool:
         return False
     
     # Must be within atlaslib structure (check both host and container paths)
-    if "/net/library/atlaslib/" not in host_path_str and "/app/assets/" not in path_str:
+    asset_lib_prefix = f"{atlas_config.asset_library_root}/"
+    if asset_lib_prefix not in host_path_str and "/app/assets/" not in path_str:
         logger.error(f"🚫 SECURITY: Folder not within atlaslib: {path_str}")
         return False
     
     # Must be at least 4 levels deep (e.g. /atlaslib/3D/Assets/Subcategory/AssetFolder)
-    if "/net/library/atlaslib/" in host_path_str:
-        atlaslib_relative = host_path_str.split("/net/library/atlaslib/")[1]
+    if asset_lib_prefix in host_path_str:
+        atlaslib_relative = host_path_str.split(asset_lib_prefix)[1]
     elif "/app/assets/" in path_str:
         atlaslib_relative = path_str.split("/app/assets/")[1]
     else:
@@ -663,8 +680,8 @@ async def delete_asset(asset_id: str):
         original_metadata_file = asset_data.get('metadata', {}).get('original_metadata_file')
         if original_metadata_file:
             # Extract folder path from metadata file path
-            # e.g. '/net/library/atlaslib/3D/Assets/BlacksmithAssets/6F950393_atlas_asset/metadata.json'
-            # becomes '/net/library/atlaslib/3D/Assets/BlacksmithAssets/6F950393_atlas_asset'
+            # e.g. '{asset_library_root}/3D/Assets/BlacksmithAssets/6F950393_atlas_asset/metadata.json'
+            # becomes '{asset_library_root}/3D/Assets/BlacksmithAssets/6F950393_atlas_asset'
             from pathlib import Path
             folder_from_metadata = str(Path(original_metadata_file).parent)
             possible_paths.insert(0, folder_from_metadata)  # Add as first priority
@@ -702,8 +719,9 @@ async def delete_asset(asset_id: str):
             Host: /net/library/atlaslib/3D/Assets/... 
             Container: /app/assets/3D/Assets/...
             """
-            if host_path.startswith('/net/library/atlaslib/'):
-                container_path = host_path.replace('/net/library/atlaslib/', '/app/assets/')
+            asset_lib_prefix = f"{atlas_config.asset_library_root}/"
+            if host_path.startswith(asset_lib_prefix):
+                container_path = host_path.replace(asset_lib_prefix, '/app/assets/')
                 logger.info(f"🔄 Path translation: {host_path} -> {container_path}")
                 return container_path
             else:
@@ -1007,9 +1025,10 @@ async def open_asset_folder(asset_id: str):
             raise HTTPException(status_code=404, detail="Asset folder path not configured")
         
         # Convert network path to container mount path if needed
-        if folder_path.startswith('/net/library/atlaslib/'):
+        asset_lib_prefix = f"{atlas_config.asset_library_root}/"
+        if folder_path.startswith(asset_lib_prefix):
             # Convert host path to container mount path
-            container_path = folder_path.replace('/net/library/atlaslib/', '/app/assets/')
+            container_path = folder_path.replace(asset_lib_prefix, '/app/assets/')
             logger.info(f"Converted path: {folder_path} -> {container_path}")
         else:
             container_path = folder_path
@@ -1060,8 +1079,8 @@ async def sync_filesystem_to_database():
     from datetime import datetime
     
     try:
-        # Asset library base path
-        library_root = Path("/net/library/atlaslib/3D")
+        # Asset library base path from Atlas config
+        library_root = Path(atlas_config.asset_library_3d)
         
         if not library_root.exists():
             raise HTTPException(status_code=404, detail=f"Asset library not found: {library_root}")

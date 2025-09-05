@@ -20,6 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY backend/ ./backend/
 
+# Copy configuration
+COPY config/ ./config/
+
 # Create necessary directories
 RUN mkdir -p /app/assets /app/logs
 

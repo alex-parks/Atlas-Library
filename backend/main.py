@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 
 # Import only working routers for now
 from backend.api.assets import router as assets_router
+from backend.api.config import router as config_router
 # Disabled problematic routers until Pydantic compatibility is fixed
 # from backend.api.asset_sync import router as sync_router
 # from backend.api.products import router as products_router
@@ -39,7 +40,7 @@ from pathlib import Path
 import os
 import logging
 from datetime import datetime
-from backend.assetlibrary.config import BlacksmithAtlasConfig
+from backend.core.config_manager import config as atlas_config
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -89,9 +90,26 @@ app.add_middleware(
 # Initialize ArangoDB handler
 try:
     from backend.assetlibrary.database.arango_queries import AssetQueries
-    # Get the correct environment configuration
-    environment = os.getenv('ATLAS_ENV', 'development')
-    arango_config = BlacksmithAtlasConfig.get_database_config(environment)
+    # Get the correct environment configuration from Atlas config
+    # Check if we're in Docker by looking for ARANGO_HOST env variable
+    is_docker = os.getenv('ARANGO_HOST') is not None
+    
+    # Use config file settings, but override host if in Docker
+    db_config = atlas_config.get('api.database', {})
+    
+    # In Docker, use container name; otherwise use config
+    db_host = os.getenv('ARANGO_HOST') if is_docker else db_config.get('host', 'localhost')
+    
+    arango_config = {
+        'hosts': [f"http://{db_host}:{db_config.get('port', '8529')}"],
+        'database': db_config.get('name', 'blacksmith_atlas'),
+        'username': db_config.get('username', 'root'),
+        'password': db_config.get('password', 'atlas_password'),
+        'collections': {
+            'assets': 'Atlas_Library'
+        }
+    }
+    logger.info(f"🔧 Database configuration: host={db_host}, is_docker={is_docker}")
     asset_queries = AssetQueries(arango_config)
     database_available = True
     logger.info("✅ ArangoDB connection initialized")
@@ -103,13 +121,8 @@ except Exception as e:
 async def startup_event():
     logger.info("🚀 Starting Enhanced Blacksmith Atlas API v2.0...")
     
-    # Test database connection
-    try:
-        stats = asset_queries.get_asset_statistics()
-        logger.info(f"📊 ArangoDB connected successfully: {stats.get('total_assets', 0)} assets")
-    except Exception as e:
-        logger.error(f"❌ Database connection failed: {e}")
-        raise Exception(f"Database connection failed: {e}")
+    # Test database connection - temporarily disabled to debug
+    logger.warning("⚠️  Database startup check temporarily disabled for debugging")
     
     # Redis temporarily disabled
     logger.info("⚠️ Redis disabled temporarily for testing")
@@ -178,8 +191,150 @@ async def get_thumbnail(asset_id: str):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error serving thumbnail: {str(e)}")
 
+@app.get("/api/v1/assets/{asset_id}/thumbnail-sequence")
+async def get_thumbnail_sequence(asset_id: str):
+    """Get list of thumbnail sequence frames for an asset"""
+    logger.info(f"[THUMBNAIL-SEQUENCE] Requested for asset: {asset_id}")
+    try:
+        asset = asset_queries.get_asset_with_dependencies(asset_id).get('asset')
+        if not asset:
+            raise HTTPException(status_code=404, detail=f"Asset not found: {asset_id}")
+        
+        # Build thumbnail folder path
+        asset_name = asset.get('name', '')
+        asset_path = os.getenv('ASSET_LIBRARY_PATH', '/app/assets')
+        
+        # Try multiple possible folder structures
+        thumbnail_folders = []
+        if asset.get('paths', {}).get('folder_path'):
+            # Use the asset folder path from database
+            asset_folder = Path(asset['paths']['folder_path'])
+            thumbnail_folders.append(asset_folder / "Thumbnail")
+        elif asset.get('paths', {}).get('asset_folder'):
+            # Legacy field name
+            asset_folder = Path(asset['paths']['asset_folder'])
+            thumbnail_folders.append(asset_folder / "Thumbnail")
+        
+        # Fallback search patterns
+        thumbnail_folders.extend([
+            Path(asset_path) / "3D" / "Assets" / "BlacksmithAssets" / asset_id / "Thumbnail",
+            Path(asset_path) / "3D" / "Assets" / "Blacksmith Asset" / asset_id / "Thumbnail",
+            Path(asset_path) / "3D" / f"{asset_id}_{asset_name}" / "Thumbnail",
+            Path(asset_path) / "3D" / asset_id / "Thumbnail"
+        ])
+        
+        # Find thumbnail sequence files
+        sequence_files = []
+        for thumbnail_folder in thumbnail_folders:
+            if thumbnail_folder.exists():
+                logger.info(f"[SEQUENCE] Checking folder: {thumbnail_folder}")
+                # Look for PNG sequence files (common naming patterns)
+                for pattern in ["*.png", "*.jpg", "*.jpeg", "*.exr"]:
+                    files = sorted(list(thumbnail_folder.glob(pattern)))
+                    if files:
+                        logger.info(f"[SEQUENCE] Found {len(files)} files with pattern {pattern}")
+                        sequence_files = files
+                        break
+                if sequence_files:
+                    break
+        
+        if not sequence_files:
+            logger.error(f"[SEQUENCE] No thumbnail sequence found for asset: {asset_id}")
+            raise HTTPException(status_code=404, detail=f"No thumbnail sequence found for asset: {asset_id}")
+        
+        # Return sequence metadata
+        sequence_info = {
+            "asset_id": asset_id,
+            "frame_count": len(sequence_files),
+            "base_url": f"/api/v1/assets/{asset_id}/thumbnail-sequence/frame",
+            "frames": [
+                {
+                    "frame": i,
+                    "filename": file.name,
+                    "url": f"/api/v1/assets/{asset_id}/thumbnail-sequence/frame/{i}"
+                }
+                for i, file in enumerate(sequence_files)
+            ]
+        }
+        
+        logger.info(f"[SEQUENCE] Returning {len(sequence_files)} frames for asset: {asset_id}")
+        return sequence_info
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ERROR] Error getting thumbnail sequence: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting thumbnail sequence: {str(e)}")
+
+@app.get("/api/v1/assets/{asset_id}/thumbnail-sequence/frame/{frame_number}")
+async def get_thumbnail_sequence_frame(asset_id: str, frame_number: int):
+    """Get a specific frame from the thumbnail sequence"""
+    logger.info(f"[THUMBNAIL-FRAME] Requested frame {frame_number} for asset: {asset_id}")
+    try:
+        asset = asset_queries.get_asset_with_dependencies(asset_id).get('asset')
+        if not asset:
+            raise HTTPException(status_code=404, detail=f"Asset not found: {asset_id}")
+        
+        # Build thumbnail folder path (same logic as above)
+        asset_name = asset.get('name', '')
+        asset_path = os.getenv('ASSET_LIBRARY_PATH', '/app/assets')
+        
+        # Try multiple possible folder structures
+        thumbnail_folders = []
+        if asset.get('paths', {}).get('folder_path'):
+            # Use the asset folder path from database
+            asset_folder = Path(asset['paths']['folder_path'])
+            thumbnail_folders.append(asset_folder / "Thumbnail")
+        elif asset.get('paths', {}).get('asset_folder'):
+            # Legacy field name
+            asset_folder = Path(asset['paths']['asset_folder'])
+            thumbnail_folders.append(asset_folder / "Thumbnail")
+        
+        thumbnail_folders.extend([
+            Path(asset_path) / "3D" / "Assets" / "BlacksmithAssets" / asset_id / "Thumbnail",
+            Path(asset_path) / "3D" / "Assets" / "Blacksmith Asset" / asset_id / "Thumbnail",
+            Path(asset_path) / "3D" / f"{asset_id}_{asset_name}" / "Thumbnail",
+            Path(asset_path) / "3D" / asset_id / "Thumbnail"
+        ])
+        
+        # Find thumbnail sequence files
+        sequence_files = []
+        for thumbnail_folder in thumbnail_folders:
+            if thumbnail_folder.exists():
+                for pattern in ["*.png", "*.jpg", "*.jpeg", "*.exr"]:
+                    files = sorted(list(thumbnail_folder.glob(pattern)))
+                    if files:
+                        sequence_files = files
+                        break
+                if sequence_files:
+                    break
+        
+        if not sequence_files:
+            raise HTTPException(status_code=404, detail=f"No thumbnail sequence found for asset: {asset_id}")
+        
+        # Validate frame number
+        if frame_number < 0 or frame_number >= len(sequence_files):
+            raise HTTPException(status_code=400, detail=f"Frame {frame_number} out of range (0-{len(sequence_files)-1})")
+        
+        # Serve the specific frame
+        frame_path = sequence_files[frame_number]
+        logger.info(f"[FRAME] Serving frame {frame_number}: {frame_path.name}")
+        
+        return FileResponse(
+            path=str(frame_path),
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=3600"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ERROR] Error serving thumbnail frame: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error serving thumbnail frame: {str(e)}")
+
 # Include only working routers for now
 app.include_router(assets_router)
+app.include_router(config_router)
 # Disabled problematic routers until Pydantic compatibility is fixed
 # app.include_router(sync_router)
 # app.include_router(products_router, prefix="/api/v1")

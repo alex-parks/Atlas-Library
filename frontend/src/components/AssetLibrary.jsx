@@ -1,6 +1,8 @@
 // New Asset Library with Navigation Structure
 import React, { useState, useEffect } from 'react';
 import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench } from 'lucide-react';
+import SequenceThumbnail from './SequenceThumbnail';
+import CollapsibleAssetInfo from './CollapsibleAssetInfo';
 
 const AssetLibrary = () => {
   const [assets, setAssets] = useState([]);
@@ -1322,30 +1324,21 @@ const AssetLibrary = () => {
             {/* Modal Body */}
             <div className="p-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Large Preview Image */}
-                <div className="aspect-square bg-neutral-700 rounded-lg overflow-hidden flex items-center justify-center">
-                  {previewAsset.thumbnail_path && previewAsset.thumbnail_path !== 'null' ? (
-                    <img
-                      src={previewAsset.thumbnail_path}
-                      alt={previewAsset.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'flex';
-                      }}
-                    />
-                  ) : null}
-                  <div
-                    className="text-neutral-500 text-6xl flex items-center justify-center w-full h-full"
-                    style={{ display: (previewAsset.thumbnail_path && previewAsset.thumbnail_path !== 'null') ? 'none' : 'flex' }}
-                  >
-                    {previewAsset.category === 'Characters' ? '🎭' :
-                     previewAsset.category === 'Props' ? '📦' :
-                     previewAsset.category === 'Environments' ? '🏞️' :
-                     previewAsset.category === 'Vehicles' ? '🚗' :
-                     previewAsset.category === 'Effects' ? '✨' :
-                     '🎨'}
-                  </div>
+                {/* Large Preview Image with Interactive Sequence */}
+                <div className="aspect-square bg-neutral-700 rounded-lg overflow-hidden">
+                  <SequenceThumbnail
+                    assetId={previewAsset.id || previewAsset._key}
+                    assetName={formatAssetName(previewAsset)}
+                    fallbackIcon={
+                      previewAsset.category === 'Characters' ? '🎭' :
+                      previewAsset.category === 'Props' ? '📦' :
+                      previewAsset.category === 'Environments' ? '🏞️' :
+                      previewAsset.category === 'Vehicles' ? '🚗' :
+                      previewAsset.category === 'Effects' ? '✨' :
+                      '🎨'
+                    }
+                    className="w-full h-full object-cover"
+                  />
                 </div>
 
                 {/* Asset Details */}
@@ -1671,30 +1664,20 @@ const AssetLibrary = () => {
                             ? 'border-yellow-600/60 hover:border-yellow-500/80 hover:shadow-yellow-500/5 ring-1 ring-yellow-600/10' 
                             : 'border-neutral-700 hover:border-blue-500 hover:shadow-blue-500/10'
                         }`}>
-                          <div 
-                            className="aspect-square bg-neutral-700 flex items-center justify-center relative overflow-hidden cursor-pointer"
-                            onClick={() => openPreview(asset)}
-                          >
-                            {asset.thumbnail_path && asset.thumbnail_path !== 'null' ? (
-                              <img
-                                src={asset.thumbnail_path}
-                                alt={formatAssetName(asset)}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  e.target.style.display = 'none';
-                                  e.target.nextSibling.style.display = 'flex';
-                                }}
-                              />
-                            ) : null}
-                            <div className="text-neutral-500 text-3xl flex items-center justify-center w-full h-full"
-                                 style={{ display: (asset.thumbnail_path && asset.thumbnail_path !== 'null') ? 'none' : 'flex' }}>
-                              {asset.category === 'Characters' ? '🎭' :
-                               asset.category === 'Props' ? '📦' :
-                               asset.category === 'Environments' ? '🏞️' :
-                               asset.category === 'Vehicles' ? '🚗' :
-                               asset.category === 'Effects' ? '✨' :
-                               '🎨'}
-                            </div>
+                          <div className="aspect-square bg-neutral-700 relative overflow-hidden">
+                            <SequenceThumbnail
+                              assetId={asset.id || asset._key}
+                              assetName={formatAssetName(asset)}
+                              fallbackIcon={
+                                asset.category === 'Characters' ? '🎭' :
+                                asset.category === 'Props' ? '📦' :
+                                asset.category === 'Environments' ? '🏞️' :
+                                asset.category === 'Vehicles' ? '🚗' :
+                                asset.category === 'Effects' ? '✨' :
+                                '🎨'
+                              }
+                              onClick={() => openPreview(asset)}
+                            />
 
 
                             {/* Version Tag - Bottom Left */}
@@ -1738,8 +1721,8 @@ const AssetLibrary = () => {
                               )}
                             </div>
 
-                            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center z-20">
-                              <div className="flex gap-2">
+                            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center z-20 pointer-events-none">
+                              <div className="flex gap-2 pointer-events-auto">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1848,62 +1831,9 @@ const AssetLibrary = () => {
                           </div>
                         </div>
 
-                        {/* Asset information panel - only appears on hover */}
-                        <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-neutral-800/95 border border-neutral-700 rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 shadow-lg pointer-events-none group-hover:pointer-events-auto">
-                          <h3 className="absolute top-4 left-3 right-3 text-white font-semibold text-base truncate">{formatAssetNameJSX(asset)}</h3>
-                          
-                          <div className="absolute bottom-3 left-3 right-3">
-                          {/* Technical Details Grid - 2x3 layout */}
-                          <div className="grid grid-cols-2 gap-2 text-xs text-neutral-500">
-                            <div>
-                              <span className="text-neutral-400">Render Engine:</span>
-                              <div className="text-orange-400 font-medium">{asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine || 'Unknown'}</div>
-                            </div>
-                            <div>
-                              <span className="text-neutral-400">Size:</span>
-                              <div className="text-neutral-300">
-                                {(() => {
-                                  // Use estimated_total_size from database
-                                  const totalBytes = asset.file_sizes?.estimated_total_size || 0;
-                                  
-                                  if (totalBytes === 0) {
-                                    // If no size data, show placeholder
-                                    return <span className="text-neutral-500">Calculating...</span>;
-                                  }
-                                  
-                                  // Convert to appropriate unit
-                                  if (totalBytes < 1024 * 1024) {
-                                    return `${Math.round(totalBytes / 1024)} KB`;
-                                  } else if (totalBytes < 1024 * 1024 * 1024) {
-                                    return `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
-                                  } else {
-                                    return `${(totalBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-                                  }
-                                })()}
-                              </div>
-                            </div>
-                            <div>
-                              <span className="text-neutral-400">Artist:</span>
-                              <div className="text-green-400 font-medium truncate">{asset.artist || 'Unknown'}</div>
-                            </div>
-                            <div>
-                              <span className="text-neutral-400">Houdini Ver:</span>
-                              <div className="text-blue-300 font-medium">{asset.metadata?.houdini_version || 'Unknown'}</div>
-                            </div>
-                            <div>
-                              <span className="text-neutral-400">Asset Ver:</span>
-                              <div className="text-purple-300 font-medium">
-                                {(() => {
-                                  const assetId = asset.id || asset._key || '';
-                                  if (assetId.length >= 14) {
-                                    return `v${assetId.substring(11)}`;
-                                  }
-                                  return 'v001';
-                                })()}
-                              </div>
-                            </div>
-                          </div>
-                          </div>
+                        {/* Collapsible Asset Information Tab - appears on hover */}
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                          <CollapsibleAssetInfo asset={asset} formatAssetNameJSX={formatAssetNameJSX} />
                         </div>
                       </div>
                     ))}

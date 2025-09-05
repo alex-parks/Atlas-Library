@@ -1,0 +1,58 @@
+{
+  "paths": {
+    "asset_library_root": "/net/library/atlaslib",
+    "asset_library_3d": "/net/library/atlaslib/3D",
+    "asset_library_2d": "/net/library/atlaslib/2D",
+    "houdini": {
+      "render_farm_hda": "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/hdas/object_AtlasThumbnail.1.0.hda",
+      "hda_type_name": "AtlasThumbnail::1.0",
+      "shelf_tools_path": "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend/assetlibrary/houdini/shelftools"
+    },
+    "backend_root": "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/backend",
+    "frontend_root": "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/frontend",
+    "temp": "/tmp/atlas_temp"
+  },
+  "api": {
+    "backend_url": "http://localhost:8000",
+    "frontend_url": "http://localhost:3011",
+    "database": {
+      "host": "arangodb",
+      "port": 8529,
+      "name": "blacksmith_atlas",
+      "username": "root",
+      "password": "atlas_password"
+    },
+    "redis": {
+      "host": "redis",
+      "port": 6379
+    }
+  },
+  "asset_structure": {
+    "categories": {
+      "3D": {
+        "Assets": ["Blacksmith Asset", "Megascans", "Kitbash"],
+        "FX": ["Blacksmith FX", "Atmosphere", "FLIP", "Pyro"],
+        "Materials": ["Blacksmith Materials", "Redshift", "Karma"],
+        "HDAs": ["Blacksmith HDAs"]
+      },
+      "2D": {
+        "Textures": ["Studio Textures", "Stock Photos", "Generated"],
+        "References": ["Character Refs", "Environment Refs", "Prop Refs"],
+        "UI": ["Icons", "Logos", "Interface Elements"]
+      }
+    },
+    "supported_formats": {
+      "geometry": [".obj", ".fbx", ".abc", ".usd", ".bgeo", ".bgeo.sc"],
+      "textures": [".png", ".jpg", ".jpeg", ".exr", ".tiff", ".tga", ".hdr"],
+      "templates": [".hip", ".hipnc", ".hda"]
+    }
+  },
+  "render_settings": {
+    "default_engine": "Redshift",
+    "supported_engines": ["Redshift", "Karma", "Arnold", "Mantra"],
+    "thumbnail_size": [512, 512],
+    "thumbnail_format": "png"
+  },
+  "version": "1.0.0",
+  "last_updated": "2025-01-09T00:00:00Z"
+}

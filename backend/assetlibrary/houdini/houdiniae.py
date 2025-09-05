@@ -30,6 +30,25 @@ try:
 except ImportError:
     print("⚠️  Houdini not available - running in standalone mode")
 
+# Import Atlas configuration
+try:
+    from core.config_manager import config as atlas_config
+    print("✅ Atlas configuration loaded successfully")
+except ImportError as e:
+    print(f"⚠️  Could not import Atlas config: {e}")
+    # Create a minimal fallback config
+    class FallbackConfig:
+        @property
+        def asset_library_3d(self):
+            return "/net/library/atlaslib/3D"
+        @property
+        def houdini_hda_path(self):
+            return "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/hdas/render_farm.hda"
+        @property
+        def houdini_hda_type(self):
+            return "blacksmith::render_farm::1.0"
+    atlas_config = FallbackConfig()
+
 class TemplateAssetExporter:
     """Export assets using Houdini's template system"""
     
@@ -100,8 +119,8 @@ class TemplateAssetExporter:
         # Sanitize asset name for display purposes only
         self.sanitized_asset_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
         
-        # Set up paths based on hierarchy structure
-        self.library_root = Path("/net/library/atlaslib/3D")
+        # Set up paths based on hierarchy structure using Atlas config
+        self.library_root = Path(atlas_config.asset_library_3d)
         
         # Create proper directory structure based on asset type and subcategory
         # Convert subcategory names to folder names
@@ -126,6 +145,7 @@ class TemplateAssetExporter:
         self.data_folder = self.asset_folder / "Data"
         self.textures_folder = self.asset_folder / "Textures"
         self.geometry_folder = self.asset_folder / "Geometry"
+        self.thumbnail_folder = self.asset_folder / "Thumbnail"
         
         # Database key is the full 14-character UID
         self.database_key = self.asset_id
@@ -577,6 +597,268 @@ class TemplateAssetExporter:
             print(f"   ⚠️ Error building export metadata: {e}")
             return {}
     
+    def load_and_configure_render_hda(self, parent_node, nodes_to_export, metadata):
+        """Load the render farm HDA and configure it with Atlas asset information"""
+        try:
+            if not HOU_AVAILABLE:
+                print("❌ Houdini not available - cannot load HDA")
+                return False
+            
+            # Get HDA path from Atlas configuration
+            hda_path = atlas_config.houdini_hda_path
+            print(f"   🔍 Looking for HDA at: {hda_path}")
+            
+            # Check if HDA file exists
+            if not os.path.exists(hda_path):
+                print(f"   ❌ HDA not found at: {hda_path}")
+                print(f"   🔍 Please verify the file exists and path is correct")
+                return False
+            
+            print(f"   ✅ HDA file found: {hda_path}")
+            
+            # Install the HDA definition if not already loaded
+            hda_installed = False
+            try:
+                # Try to install the HDA
+                hou.hda.installFile(hda_path)
+                hda_installed = True
+                print(f"   📦 HDA installed from: {hda_path}")
+            except Exception as e:
+                print(f"   ⚠️ Could not install HDA: {e}")
+                # Continue anyway - maybe it's already installed
+            
+            # Get HDA type name from Atlas configuration
+            hda_type_name = atlas_config.houdini_hda_type
+            print(f"   🔍 Looking for HDA type: {hda_type_name}")
+            
+            # Try to find the HDA type
+            try:
+                # First, let's see what HDA types are available
+                print(f"   🔍 Checking available HDA types in Object category...")
+                obj_category = hou.objNodeTypeCategory()
+                hda_definition = obj_category.nodeType(hda_type_name)
+                
+                if not hda_definition:
+                    print(f"   ⚠️ HDA type '{hda_type_name}' not found in Object category")
+                    # Try in other categories
+                    print(f"   🔍 Searching in other categories...")
+                    category_functions = [
+                        ("Driver", hou.ropNodeTypeCategory),
+                        ("Rop", hou.ropNodeTypeCategory), 
+                        ("Sop", hou.sopNodeTypeCategory),
+                        ("Shop", hou.shopNodeTypeCategory),
+                        ("Vop", hou.vopNodeTypeCategory)
+                    ]
+                    
+                    for category_name, category_func in category_functions:
+                        try:
+                            category = category_func()
+                            hda_definition = category.nodeType(hda_type_name)
+                            if hda_definition:
+                                print(f"   ✅ Found HDA type in {category_name} category")
+                                break
+                            else:
+                                print(f"   🔍 Not found in {category_name} category")
+                        except Exception as e:
+                            print(f"   ⚠️ Error checking {category_name} category: {e}")
+                
+                if not hda_definition:
+                    print(f"   ❌ Could not find HDA type: {hda_type_name}")
+                    print(f"   💡 Try checking the HDA type name in the Type Properties")
+                    print(f"   💡 Common formats: 'namespace::name::version' or just 'name::version'")
+                    
+                    # List available HDAs to help debug
+                    print(f"   🔍 Available HDAs in Object category:")
+                    try:
+                        obj_types = obj_category.nodeTypes()
+                        hda_types = [nt.name() for nt in obj_types.values() if nt.definition() and nt.definition().libraryFilePath()]
+                        if hda_types:
+                            for hda in hda_types[:10]:  # Show first 10
+                                print(f"      - {hda}")
+                            if len(hda_types) > 10:
+                                print(f"      ... and {len(hda_types) - 10} more")
+                        else:
+                            print(f"      (No HDAs found in Object category)")
+                    except Exception as e:
+                        print(f"      Error listing HDAs: {e}")
+                    
+                    return False
+                else:
+                    print(f"   ✅ Found HDA definition: {hda_definition.name()}")
+                    
+            except Exception as e:
+                print(f"   ⚠️ Error finding HDA type: {e}")
+                return False
+            
+            # Create an instance of the HDA
+            try:
+                # Create HDA right next to (as sibling of) the exported node
+                hda_parent = parent_node.parent()
+                if hda_parent is None:
+                    # If parent is None, we're at root level, use /obj
+                    hda_parent = hou.node("/obj")
+                
+                print(f"   📍 Creating HDA as sibling to {parent_node.name()} in {hda_parent.path()}")
+                
+                hda_node_name = f"render_{self.asset_name}_{self.asset_id}"
+                hda_node = hda_parent.createNode(hda_type_name, node_name=hda_node_name)
+                
+                # Position the HDA node right below the exported asset node
+                try:
+                    export_pos = parent_node.position()
+                    hda_node.setPosition([export_pos[0], export_pos[1] - 1.0])  # Place 1 unit below
+                    print(f"   📍 Positioned HDA below exported asset at {hda_node.position()}")
+                except Exception as e:
+                    print(f"   ⚠️ Could not position HDA node: {e}")
+                
+                print(f"   🎬 Created HDA node: {hda_node.path()}")
+                
+            except Exception as e:
+                print(f"   ❌ Failed to create HDA node: {e}")
+                return False
+            
+            # Configure HDA parameters with Atlas asset information
+            try:
+                # REQUIRED PARAMETER 1: assetname (string) - Name of the asset
+                if hda_node.parm("assetname"):
+                    hda_node.parm("assetname").set(self.asset_name)
+                    print(f"      ✅ Set assetname: {self.asset_name}")
+                
+                # REQUIRED PARAMETER 2: atlasassetpath (string) - Relative Houdini path to exported subnet
+                if hda_node.parm("atlasassetpath"):
+                    # Create relative path to the exported asset node (e.g., "../Helicopter")
+                    atlas_asset_path = f"../{parent_node.name()}"
+                    hda_node.parm("atlasassetpath").set(atlas_asset_path)
+                    print(f"      ✅ Set atlasassetpath: {atlas_asset_path}")
+                
+                # REQUIRED PARAMETER 3: thumbnailpath (string) - Full path to Thumbnail folder
+                thumbnail_path_valid = False
+                if hda_node.parm("thumbnailpath"):
+                    hda_node.parm("thumbnailpath").set(str(self.thumbnail_folder))
+                    print(f"      ✅ Set thumbnailpath: {self.thumbnail_folder}")
+                    
+                    # Check if thumbnail path is valid (folder exists and is an actual asset thumbnail folder)
+                    if self.thumbnail_folder.exists() and self.thumbnail_folder.is_dir():
+                        thumbnail_path_valid = True
+                        print(f"      ✅ Thumbnail path is valid: {self.thumbnail_folder}")
+                    else:
+                        print(f"      ⚠️  Thumbnail path does not exist: {self.thumbnail_folder}")
+                
+                # Store HDA node and thumbnail path validity for later execution
+                self._hda_node = hda_node
+                self._thumbnail_path_valid = thumbnail_path_valid
+                
+                # Legacy parameters (keep for backward compatibility)
+                if hda_node.parm("asset_name"):
+                    hda_node.parm("asset_name").set(self.asset_name)
+                    print(f"      ✅ Set asset_name: {self.asset_name}")
+                
+                if hda_node.parm("asset_id"):
+                    hda_node.parm("asset_id").set(self.asset_id)
+                    print(f"      ✅ Set asset_id: {self.asset_id}")
+                
+                if hda_node.parm("asset_folder"):
+                    hda_node.parm("asset_folder").set(str(self.asset_folder))
+                    print(f"      ✅ Set asset_folder: {self.asset_folder}")
+                
+                if hda_node.parm("template_file"):
+                    render_engine_lower = self.render_engine.lower()
+                    template_file_path = str(self.asset_folder / f"template_{render_engine_lower}.hip")
+                    hda_node.parm("template_file").set(template_file_path)
+                    print(f"      ✅ Set template_file: template_{render_engine_lower}.hip")
+                
+                if hda_node.parm("render_engine"):
+                    hda_node.parm("render_engine").set(self.render_engine)
+                    print(f"      ✅ Set render_engine: {self.render_engine}")
+                
+                if hda_node.parm("subcategory"):
+                    hda_node.parm("subcategory").set(self.subcategory)
+                    print(f"      ✅ Set subcategory: {self.subcategory}")
+                
+                if hda_node.parm("asset_type"):
+                    hda_node.parm("asset_type").set(self.asset_type)
+                    print(f"      ✅ Set asset_type: {self.asset_type}")
+                
+                # Set metadata as JSON string if HDA has a metadata parameter
+                if hda_node.parm("metadata"):
+                    metadata_json = json.dumps(metadata, indent=2)
+                    hda_node.parm("metadata").set(metadata_json)
+                    print(f"      ✅ Set metadata JSON ({len(metadata_json)} chars)")
+                
+                # Set additional parameters you might have in your HDA
+                if hda_node.parm("description"):
+                    hda_node.parm("description").set(self.description)
+                    print(f"      ✅ Set description: {self.description}")
+                
+                if hda_node.parm("tags") and self.tags:
+                    tags_str = ", ".join(self.tags)
+                    hda_node.parm("tags").set(tags_str)
+                    print(f"      ✅ Set tags: {tags_str}")
+                
+                # Set thumbnail folder path (for saving thumbnails)
+                if hda_node.parm("thumbnail_folder"):
+                    hda_node.parm("thumbnail_folder").set(str(self.thumbnail_folder))
+                    print(f"      ✅ Set thumbnail_folder: {self.thumbnail_folder}")
+                
+                # Set expected thumbnail file path
+                expected_thumbnail = self.thumbnail_folder / f"{self.asset_name}_thumbnail.png"
+                if hda_node.parm("thumbnail_path"):
+                    hda_node.parm("thumbnail_path").set(str(expected_thumbnail))
+                    print(f"      ✅ Set thumbnail_path: {expected_thumbnail.name}")
+                
+                print(f"   ✅ HDA parameters configured successfully")
+                return True
+                
+            except Exception as e:
+                print(f"   ❌ Failed to configure HDA parameters: {e}")
+                return False
+                
+        except Exception as e:
+            print(f"   ❌ Error loading render HDA: {e}")
+            traceback.print_exc()
+            return False
+
+    def auto_execute_dl_submit(self):
+        """Simple auto-execute dl_Submit button after HDA is loaded"""
+        try:
+            if not hasattr(self, '_hda_node') or not self._hda_node:
+                print(f"   ℹ️ No HDA node available for auto-execution")
+                return False
+                
+            hda_node = self._hda_node
+            
+            print(f"   ⏱️ Waiting 1 second for HDA to fully initialize...")
+            
+            if HOU_AVAILABLE:
+                import time
+                time.sleep(1.0)  # Wait for HDA to be ready
+                
+                # Check if dl_Submit parameter exists
+                if not hda_node.parm("dl_Submit"):
+                    print(f"   ℹ️ No dl_Submit parameter found on HDA")
+                    return False
+                    
+                # Check if thumbnail path is valid (optional safety check)
+                thumbnail_parm = hda_node.parm("thumbnailpath")
+                if thumbnail_parm:
+                    thumbnail_path = thumbnail_parm.evalAsString()
+                    if thumbnail_path and not os.path.exists(thumbnail_path):
+                        print(f"   ⚠️ Thumbnail path doesn't exist, skipping auto-execution: {thumbnail_path}")
+                        return False
+                
+                # Execute the button
+                print(f"   🎯 Auto-executing dl_Submit button...")
+                hda_node.parm("dl_Submit").pressButton()
+                print(f"   ✅ Successfully executed dl_Submit button!")
+                return True
+            else:
+                print(f"   ❌ Houdini not available for auto-execution")
+                return False
+                
+        except Exception as e:
+            print(f"   ❌ Error during auto-execution: {e}")
+            return False
+
     def export_as_template(self, parent_node, nodes_to_export):
         """Export nodes as template using saveChildrenToFile"""
         try:
@@ -590,6 +872,8 @@ class TemplateAssetExporter:
             # Create directories
             self.asset_folder.mkdir(parents=True, exist_ok=True)
             self.data_folder.mkdir(exist_ok=True)
+            self.thumbnail_folder.mkdir(exist_ok=True)
+            print(f"   📁 Created thumbnail folder: {self.thumbnail_folder}")
             
             # PRE-SCAN: Detect BGEO sequences with original paths (before any remapping)
             print(f"   🎬 PRE-SCANNING FOR BGEO SEQUENCES WITH ORIGINAL PATHS...")
@@ -627,6 +911,22 @@ class TemplateAssetExporter:
             print(f"   📋 Creating metadata...")
             metadata = self.create_asset_metadata(template_file, nodes_to_export, texture_info, geometry_info, path_mappings)
             print(f"   ✅ Metadata created successfully")
+            
+            # 🆕 LOAD AND CONFIGURE RENDER FARM HDA
+            print(f"   🎬 Loading and configuring render farm HDA...")
+            render_hda_success = self.load_and_configure_render_hda(parent_node, nodes_to_export, metadata)
+            if render_hda_success:
+                print(f"   ✅ Render farm HDA loaded and configured successfully")
+                
+                # Auto-execute dl_Submit button after HDA is loaded
+                print(f"   🚀 Auto-executing dl_Submit button...")
+                auto_exec_success = self.auto_execute_dl_submit()
+                if auto_exec_success:
+                    print(f"   ✅ dl_Submit button executed successfully - render should start!")
+                else:
+                    print(f"   ℹ️ dl_Submit button not executed - check console for details")
+            else:
+                print(f"   ⚠️ Render farm HDA configuration had issues (check console)")
             
             print(f"✅ Export complete: {self.asset_folder}")
             return True

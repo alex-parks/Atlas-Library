@@ -6,7 +6,7 @@ import os
 import json
 import logging
 from datetime import datetime
-from backend.assetlibrary.config import BlacksmithAtlasConfig
+from backend.core.config_manager import config as atlas_config
 from backend.assetlibrary.database.arango_queries import AssetQueries
 from backend.assetlibrary.database.graph_parser import AtlasGraphParser
 
@@ -18,7 +18,16 @@ def get_asset_queries():
     """Get AssetQueries instance"""
     try:
         environment = os.getenv('ATLAS_ENV', 'development')
-        arango_config = BlacksmithAtlasConfig.get_database_config(environment)
+        db_config = atlas_config.get('api.database', {})
+        arango_config = {
+            'hosts': [f"http://{db_config.get('host', 'localhost')}:{db_config.get('port', '8529')}"],
+            'database': db_config.get('name', 'blacksmith_atlas'),
+            'username': db_config.get('username', 'root'),
+            'password': db_config.get('password', 'atlas_password'),
+            'collections': {
+                'assets': 'Atlas_Library'
+            }
+        }
         return AssetQueries(arango_config)
     except Exception as e:
         logger.error(f"Failed to get asset queries: {e}")
@@ -195,8 +204,8 @@ async def sync_assets():
         if not asset_queries:
             raise HTTPException(status_code=503, detail="Database not available")
         
-        # Get asset library path
-        asset_path = BlacksmithAtlasConfig.BASE_LIBRARY_PATH
+        # Get asset library path from Atlas config
+        asset_path = Path(atlas_config.asset_library_3d)
         logger.info(f"Syncing assets from: {asset_path}")
         
         # Scan for assets
@@ -273,8 +282,8 @@ async def sync_assets():
 async def preview_sync():
     """Preview what would be synced without actually syncing"""
     try:
-        # Get asset library path
-        asset_path = BlacksmithAtlasConfig.BASE_LIBRARY_PATH
+        # Get asset library path from Atlas config
+        asset_path = Path(atlas_config.asset_library_3d)
         
         # Scan for assets
         found_assets = scan_asset_directory(asset_path)
@@ -360,8 +369,8 @@ async def sync_assets_with_graph():
         # Initialize graph parser
         graph_parser = AtlasGraphParser(asset_queries.db)
         
-        # Get asset library path
-        asset_path = BlacksmithAtlasConfig.BASE_LIBRARY_PATH
+        # Get asset library path from Atlas config
+        asset_path = Path(atlas_config.asset_library_3d)
         logger.info(f"Graph syncing assets from: {asset_path}")
         
         # Find all metadata.json files

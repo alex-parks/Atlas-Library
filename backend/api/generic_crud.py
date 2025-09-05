@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, create_model
 from datetime import datetime
 import uuid
 import logging
-from backend.assetlibrary.config import BlacksmithAtlasConfig
+from backend.core.config_manager import config as atlas_config
 from backend.assetlibrary.database.arango_queries import AssetQueries
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,16 @@ class GenericCRUDHandler(Generic[T, CreateT, UpdateT]):
         """Get database connection"""
         try:
             environment = os.getenv('ATLAS_ENV', 'development')
-            arango_config = BlacksmithAtlasConfig.get_database_config(environment)
+            db_config = atlas_config.get('api.database', {})
+            arango_config = {
+                'hosts': [f"http://{db_config.get('host', 'localhost')}:{db_config.get('port', '8529')}"],
+                'database': db_config.get('name', 'blacksmith_atlas'),
+                'username': db_config.get('username', 'root'),
+                'password': db_config.get('password', 'atlas_password'),
+                'collections': {
+                    'assets': 'Atlas_Library'
+                }
+            }
             queries = AssetQueries(arango_config)
             
             # Ensure collection exists
