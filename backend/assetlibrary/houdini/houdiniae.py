@@ -806,7 +806,20 @@ class TemplateAssetExporter:
                     hda_node.parm("thumbnail_path").set(str(expected_thumbnail))
                     print(f"      ✅ Set thumbnail_path: {expected_thumbnail.name}")
                 
-                print(f"   ✅ HDA parameters configured successfully")
+                # 🎯 SET FRAME RANGE PARAMETERS (NEW!)
+                if hda_node.parm("framein"):
+                    hda_node.parm("framein").set(self.framein)
+                    print(f"      🎯 Set framein: {self.framein}")
+                else:
+                    print(f"      ⚠️ No framein parameter found on HDA")
+                
+                if hda_node.parm("frameout"):
+                    hda_node.parm("frameout").set(self.frameout)
+                    print(f"      🎯 Set frameout: {self.frameout}")
+                else:
+                    print(f"      ⚠️ No frameout parameter found on HDA")
+                
+                print(f"   ✅ HDA parameters configured successfully (including frame range {self.framein}-{self.frameout})")
                 return True
                 
             except Exception as e:
@@ -875,15 +888,26 @@ class TemplateAssetExporter:
             self.thumbnail_folder.mkdir(exist_ok=True)
             print(f"   📁 Created thumbnail folder: {self.thumbnail_folder}")
             
-            # PRE-SCAN: Detect BGEO sequences with original paths (before any remapping)
+            # PRE-SCAN: Detect BGEO and VDB sequences with original paths (before any remapping)
             print(f"   🎬 PRE-SCANNING FOR BGEO SEQUENCES WITH ORIGINAL PATHS...")
             bgeo_sequences = self.detect_bgeo_sequences_early(parent_node)
+            
+            print(f"   💨 PRE-SCANNING FOR VDB SEQUENCES WITH ORIGINAL PATHS...")
+            vdb_sequences = self.detect_vdb_sequences_early(parent_node)
             
             # Process materials and copy textures FIRST
             texture_info = self.process_materials_and_textures(parent_node, nodes_to_export)
             
-            # Process geometry files and copy them (now with BGEO sequence info)
-            geometry_info = self.process_geometry_files(parent_node, nodes_to_export, bgeo_sequences)
+            # Process geometry files and copy them (now with BGEO and VDB sequence info)
+            geometry_info = self.process_geometry_files(parent_node, nodes_to_export, bgeo_sequences, vdb_sequences)
+            
+            # 🎯 DETECT SMART FRAME RANGE based on sequences
+            framein, frameout = self.detect_frame_range(bgeo_sequences, vdb_sequences)
+            print(f"   🎯 Smart frame range detected: {framein}-{frameout}")
+            
+            # Store frame range for HDA configuration and metadata
+            self.framein = framein
+            self.frameout = frameout
             
             # 🆕 REMAP ALL FILE PATHS FROM JOB LOCATIONS TO LIBRARY LOCATIONS
             print(f"   🔄 Remapping file paths before export...")
@@ -1341,7 +1365,411 @@ class TemplateAssetExporter:
             traceback.print_exc()
             return {}
 
-    def process_geometry_files(self, parent_node, nodes_to_export, bgeo_sequences=None):
+    def detect_vdb_sequences_early(self, parent_node):
+        """Detect VDB sequences before any path remapping occurs - based on BGEO logic"""
+        vdb_sequences = {}
+        
+        try:
+            print("      🔍 EARLY VDB SCAN: Scanning for VDB sequences with original frame variables...")
+            
+            # Get ALL nodes recursively
+            all_nodes = self._collect_all_nodes(parent_node)
+            print(f"      📋 EARLY VDB SCAN: Checking {len(all_nodes)} nodes for VDB sequence patterns...")
+            
+            # Debug: Show what nodes we found
+            cache_nodes_found = 0
+            for node in all_nodes[:10]:  # Show first 10 nodes
+                node_type = node.type().name()
+                print(f"         • {node.path()} ({node_type})")
+                if (node_type.lower() in ['filecache', 'rop_geometry', 'geometry', 'file'] or 
+                    'cache' in node_type.lower() or 
+                    node_type.startswith('filecache::')):
+                    cache_nodes_found += 1
+            
+            if len(all_nodes) > 10:
+                print(f"         ... and {len(all_nodes) - 10} more nodes")
+                
+            print(f"      🎯 EARLY VDB SCAN: Found {cache_nodes_found} potential cache nodes")
+            
+            # Look for file cache nodes and geometry ROPs with frame variables
+            for node in all_nodes:
+                node_type = node.type().name()
+                
+                # Check file cache, rop_geometry, and regular file nodes
+                # Include versioned file cache nodes like 'filecache::2.0'
+                is_cache_node = (
+                    node_type.lower() in ['filecache', 'rop_geometry', 'geometry', 'file'] or 
+                    'cache' in node_type.lower() or 
+                    node_type.startswith('filecache::')
+                )
+                
+                if is_cache_node:
+                    print(f"         🎯 Found cache node: {node.path()} ({node_type})")
+                    
+                    # Check the 'file' parameter specifically (this is where VDB sequences are typically stored)
+                    file_parm = node.parm('file')
+                    if file_parm:
+                        try:
+                            raw_value = file_parm.unexpandedString()
+                            eval_value = file_parm.evalAsString()
+                            
+                            print(f"            🔍 Checking 'file' parameter:")
+                            print(f"               Raw: '{raw_value}'")
+                            print(f"               Evaluated: '{eval_value}'")
+                            
+                            # Look for VDB files with frame variables in the RAW value
+                            if (isinstance(raw_value, str) and 
+                                raw_value.strip() and
+                                ('.vdb' in raw_value.lower()) and
+                                any(var in raw_value for var in ['${F4}', '${F}', '${FF}', '$F4', '$F', '${OS}', '$OS'])):
+                                
+                                print(f"            ✅ VDB SEQUENCE FOUND: {raw_value}")
+                                
+                                # Process this sequence using the raw value with variables
+                                sequence_info = self._process_vdb_sequence(node, file_parm, raw_value, raw_value)
+                                if sequence_info:
+                                    sequence_key = f"{node.path()}:file"
+                                    vdb_sequences[sequence_key] = {
+                                        'node': node,
+                                        'parameter': file_parm,
+                                        'original_pattern': raw_value,
+                                        'sequence_info': sequence_info,
+                                        'node_name': node.name()
+                                    }
+                                    print(f"            📊 Stored {len(sequence_info)} VDB sequence files for {sequence_key}")
+                            else:
+                                print(f"            ❌ No VDB sequence pattern found in 'file' parameter")
+                                    
+                        except Exception as e:
+                            print(f"            ❌ Error checking 'file' parameter: {e}")
+                    else:
+                        print(f"            ❌ No 'file' parameter found on {node.path()}")
+            
+            print(f"      ✅ Found {len(vdb_sequences)} VDB sequences total")
+            for seq_key, seq_data in vdb_sequences.items():
+                print(f"         • {seq_key}: {len(seq_data['sequence_info'])} files")
+            
+            return vdb_sequences
+            
+        except Exception as e:
+            print(f"      ❌ Error in VDB sequence detection: {e}")
+            traceback.print_exc()
+            return {}
+
+    def _process_vdb_sequence(self, node, parm, parm_value, expanded_path):
+        """Process VDB sequence and discover all files in the sequence - based on BGEO logic"""
+        try:
+            print(f"            🎬 Processing VDB sequence from node: {node.name()}")
+            print(f"            📄 Raw pattern: {parm_value}")
+            
+            # Step 1: Replace ${OS} with node name to get the actual folder path
+            actual_path = parm_value
+            if '${OS}' in actual_path:
+                actual_path = actual_path.replace('${OS}', node.name())
+            if '$OS' in actual_path and '${OS}' not in actual_path:
+                actual_path = actual_path.replace('$OS', node.name())
+            
+            # Step 2: Extract directory path and filename pattern
+            sequence_file_pattern = Path(actual_path).name
+            sequence_dir = str(Path(actual_path).parent)
+            
+            print(f"            📂 Target directory: {sequence_dir}")
+            print(f"            🔍 Looking for pattern: {sequence_file_pattern}")
+            
+            # Step 3: Extract base filename by removing frame variables
+            # From: JOB_0180_simExplosion_v026.${F4}.vdb
+            # Get: JOB_0180_simExplosion_v026
+            base_filename = sequence_file_pattern
+            frame_vars = ['${F4}', '${F}', '${FF}', '$F4', '$F']
+            
+            # Remove frame variable to get prefix
+            prefix = ""
+            for var in frame_vars:
+                if var in base_filename:
+                    prefix = base_filename.split(var)[0]
+                    break
+            
+            # If no frame variable found, use the whole name minus extension as prefix
+            if not prefix:
+                if '.vdb' in base_filename:
+                    prefix = base_filename.split('.vdb')[0]
+                else:
+                    prefix = base_filename
+                    
+            # Extract sequence base name (remove trailing dots and frame separators)
+            sequence_base_name = prefix.rstrip('._')
+            
+            print(f"            🏷️  Base prefix: '{prefix}'")
+            print(f"            🏷️  Sequence name: '{sequence_base_name}'")
+            
+            # Step 4: Find all VDB files in the directory that match the pattern
+            sequence_files = []
+            sequence_dir_path = Path(sequence_dir)
+            
+            if sequence_dir_path.exists():
+                print(f"            🔍 Scanning directory for VDB files...")
+                
+                for file_path in sequence_dir_path.iterdir():
+                    if file_path.is_file():
+                        filename = file_path.name
+                        # Check if it's a VDB file and starts with our prefix
+                        if (filename.lower().endswith('.vdb') and 
+                            filename.startswith(prefix)):
+                            sequence_files.append(str(file_path))
+                            
+                print(f"            ✅ Found {len(sequence_files)} VDB files matching pattern")
+                
+                if sequence_files:
+                    # Sort files to ensure proper sequence order
+                    sequence_files.sort()
+                    print(f"            📋 Range: {os.path.basename(sequence_files[0])} → {os.path.basename(sequence_files[-1])}")
+                else:
+                    print(f"            ❌ No files found starting with '{prefix}' and ending with .vdb")
+                    # Show what files are actually in the directory
+                    all_files = [f.name for f in sequence_dir_path.iterdir() if f.is_file()]
+                    if all_files:
+                        print(f"            📋 Files in directory: {all_files[:5]}{'...' if len(all_files) > 5 else ''}")
+                    return None
+            else:
+                print(f"            ❌ Directory doesn't exist: {sequence_dir_path}")
+                return None
+            
+            # Create geometry info entries for the sequence
+            sequence_info = []
+            
+            # Add a pattern mapping entry for path remapping (preserves frame variables)
+            pattern_info = {
+                'node_path': node.path(),
+                'parameter': 'file', 
+                'original_path': parm_value,  # Keep the frame variables
+                'library_path': f"Geometry/VDB/{node.name()}/{sequence_file_pattern}",  # Pattern with variables
+                'file_type': f'VDB/{node.name()}',  # 🔧 FIX: Set file_type for VDB sequences!
+                'is_pattern_mapping': True,
+                'sequence_pattern': parm_value,
+                'sequence_base_name': sequence_base_name,
+                'filename': sequence_file_pattern
+            }
+            sequence_info.append(pattern_info)
+            print(f"            🔗 Pattern mapping: {parm_value} → Geometry/VDB/{node.name()}/{sequence_file_pattern}")
+            
+            # Add individual file entries for copying
+            for seq_file in sequence_files:
+                file_path = Path(seq_file)
+                file_info = {
+                    'node_path': node.path(),
+                    'parameter': 'file',
+                    'file': str(file_path),
+                    'original_path': str(file_path), 
+                    'library_path': f"Geometry/VDB/{node.name()}/{file_path.name}",
+                    'file_type': f'VDB/{node.name()}',  # 🔧 FIX: Set file_type for individual VDB files!
+                    'filename': file_path.name,
+                    'is_pattern_mapping': False,
+                    'sequence_pattern': parm_value,
+                    'sequence_base_name': sequence_base_name
+                }
+                sequence_info.append(file_info)
+            
+            print(f"            ✅ Created {len(sequence_info)} VDB sequence entries ({1} pattern + {len(sequence_files)} files)")
+            return sequence_info
+            
+        except Exception as e:
+            print(f"            ❌ Error processing VDB sequence: {e}")
+            traceback.print_exc()
+            return None
+
+    def _copy_vdb_sequence(self, geometry_folder, file_type, files, copied_files):
+        """Copy VDB sequence files to node-specific subfolders - based on BGEO logic"""
+        try:
+            print(f"   💨 VDB SEQUENCE COPYING STARTED")
+            print(f"      file_type: '{file_type}'")
+            print(f"      geometry_folder: '{geometry_folder}'")
+            print(f"      files to copy: {len(files)}")
+            
+            # Create the VDB/node_name folder structure
+            type_folder = geometry_folder / file_type
+            type_folder.mkdir(parents=True, exist_ok=True)
+            print(f"   📁 Created VDB sequence folder: {type_folder}")
+            print(f"      Full path: {type_folder.absolute()}")
+            
+            # Group files by sequence pattern and node name
+            sequences = {}
+            for geo_info in files:
+                sequence_pattern = geo_info.get('sequence_pattern', geo_info['original_path'])
+                node_name = geo_info.get('sequence_base_name', 'unknown')
+                sequence_key = f"{sequence_pattern}_{node_name}"
+                if sequence_key not in sequences:
+                    sequences[sequence_key] = []
+                sequences[sequence_key].append(geo_info)
+            
+            # Process each sequence
+            for sequence_key, sequence_files in sequences.items():
+                # Get sequence base name from the first file for logging
+                sequence_base_name = sequence_files[0].get('sequence_base_name', 'unknown')
+                print(f"      💨 Processing VDB sequence: {sequence_base_name}")
+                
+                # Create node-specific subfolder
+                node_folder = type_folder / sequence_base_name
+                node_folder.mkdir(exist_ok=True)
+                print(f"         📁 Copying {len(sequence_files)} files to VDB/{sequence_base_name}/")
+                
+                copied_in_sequence = 0
+                
+                for geo_info in sequence_files:
+                    # Skip pattern mapping entries during file copying - they don't have real files
+                    if geo_info.get('is_pattern_mapping', False):
+                        print(f"         🔒 VDB PATTERN MAPPING PRESERVATION:")
+                        print(f"            original_path: {geo_info.get('original_path')}")
+                        print(f"            library_path: {geo_info.get('library_path')}")
+                        print(f"            is_pattern_mapping: {geo_info.get('is_pattern_mapping')}")
+                        
+                        # Make a deep copy to ensure pattern mapping isn't modified
+                        pattern_copy = copy.deepcopy(geo_info)
+                        
+                        # Verify the copy preserved the original_path
+                        print(f"            AFTER COPY - original_path: {pattern_copy.get('original_path')}")
+                        print(f"            AFTER COPY - is_pattern_mapping: {pattern_copy.get('is_pattern_mapping')}")
+                        
+                        copied_files.append(pattern_copy)
+                        continue
+                    
+                    source_file = Path(geo_info['file'])
+                    if source_file.exists():
+                        # Create destination filename in node-specific folder
+                        dest_file = node_folder / source_file.name
+                        
+                        # Copy the VDB file
+                        shutil.copy2(source_file, dest_file)
+                        
+                        print(f"         ✅ Copied: {source_file.name} → VDB/{sequence_base_name}/{dest_file.name}")
+                        
+                        # Update geometry info with new relative path
+                        geo_info['copied_file'] = str(dest_file)
+                        
+                        # Don't overwrite library_path for pattern mappings - they need to preserve frame variables
+                        if not geo_info.get('is_pattern_mapping', False):
+                            geo_info['library_path'] = f"Geometry/VDB/{sequence_base_name}/{dest_file.name}"
+                        else:
+                            print(f"         🔒 Preserving pattern mapping library_path: {geo_info.get('library_path')}")
+                        
+                        copied_files.append(geo_info)
+                        copied_in_sequence += 1
+                        
+                    else:
+                        print(f"         ⚠️ VDB file not found: {source_file}")
+                
+                print(f"      ✅ Sequence complete: {copied_in_sequence}/{len(sequence_files)} files copied")
+                print(f"      📂 Files saved to: Geometry/VDB/{sequence_base_name}/")
+                    
+        except Exception as e:
+            print(f"      ❌ Error copying VDB sequence: {e}")
+            traceback.print_exc()
+
+    def detect_frame_range(self, bgeo_sequences=None, vdb_sequences=None):
+        """Detect smart frame range based on sequences or use defaults"""
+        try:
+            print("   🎯 DETECTING FRAME RANGE...")
+            
+            # Default frame range for static assets
+            default_framein = 1001
+            default_frameout = 1018  # 18 frame render
+            
+            # Check if we have any sequences that would extend the frame range
+            all_sequences = {}
+            
+            # Combine BGEO and VDB sequences
+            if bgeo_sequences:
+                all_sequences.update(bgeo_sequences)
+                print(f"      📊 Found {len(bgeo_sequences)} BGEO sequences to analyze")
+            
+            if vdb_sequences:
+                all_sequences.update(vdb_sequences)
+                print(f"      📊 Found {len(vdb_sequences)} VDB sequences to analyze")
+            
+            if not all_sequences:
+                print(f"      📊 No sequences detected - using defaults: {default_framein}-{default_frameout}")
+                return default_framein, default_frameout
+            
+            # Extract frame numbers from all sequence files
+            all_frame_numbers = []
+            
+            for seq_key, seq_data in all_sequences.items():
+                sequence_info = seq_data.get('sequence_info', [])
+                sequence_name = seq_data.get('node_name', 'unknown')
+                
+                print(f"      🔍 Analyzing sequence '{sequence_name}' with {len(sequence_info)} files")
+                
+                for file_info in sequence_info:
+                    # Skip pattern mappings - look at actual files only
+                    if file_info.get('is_pattern_mapping', False):
+                        continue
+                        
+                    filename = file_info.get('filename', '')
+                    if filename:
+                        # Extract frame number from filename
+                        frame_number = self._extract_frame_number_from_filename(filename)
+                        if frame_number is not None:
+                            all_frame_numbers.append(frame_number)
+                            print(f"         📄 {filename} → frame {frame_number}")
+            
+            if all_frame_numbers:
+                # Find the range of frame numbers
+                min_frame = min(all_frame_numbers)
+                max_frame = max(all_frame_numbers)
+                
+                # Always start at 1001, but extend to the longest sequence
+                framein = default_framein  # Always 1001
+                frameout = max(max_frame, default_frameout)  # At least to 1018 or end of sequence
+                
+                print(f"      📊 Sequence analysis:")
+                print(f"         Actual frame range: {min_frame}-{max_frame} ({len(all_frame_numbers)} frames)")
+                print(f"         Smart frame range: {framein}-{frameout} (start at 1001, end at sequence end)")
+                
+                return framein, frameout
+            else:
+                print(f"      📊 No frame numbers extracted from sequences - using defaults: {default_framein}-{default_frameout}")
+                return default_framein, default_frameout
+                
+        except Exception as e:
+            print(f"      ❌ Error detecting frame range: {e}")
+            traceback.print_exc()
+            # Return defaults on error
+            return 1001, 1018
+
+    def _extract_frame_number_from_filename(self, filename):
+        """Extract frame number from filename (e.g., 'sim_1005.bgeo' -> 1005)"""
+        try:
+            import re
+            
+            # Look for 4-digit frame numbers (most common)
+            match = re.search(r'\.(\d{4})\.', filename)
+            if match:
+                return int(match.group(1))
+            
+            # Look for other digit patterns
+            match = re.search(r'_(\d{4})[._]', filename)
+            if match:
+                return int(match.group(1))
+                
+            # Look for 3-digit patterns  
+            match = re.search(r'\.(\d{3})\.', filename)
+            if match:
+                return int(match.group(1))
+                
+            # Look for any digits at end before extension
+            match = re.search(r'(\d+)\.[^.]+$', filename)
+            if match:
+                frame_num = int(match.group(1))
+                # Only consider reasonable frame numbers (avoid version numbers, etc.)
+                if 1 <= frame_num <= 9999:
+                    return frame_num
+            
+            return None
+            
+        except Exception as e:
+            print(f"         ⚠️ Error extracting frame number from '{filename}': {e}")
+            return None
+
+    def process_geometry_files(self, parent_node, nodes_to_export, bgeo_sequences=None, vdb_sequences=None):
         """Process geometry files (Alembic, FBX, etc.) and copy them to library"""
         geometry_info = []
         
@@ -1378,6 +1806,39 @@ class TemplateAssetExporter:
                     for item in seq_info:
                         if item.get('is_pattern_mapping', False):
                             print(f"         🔗 Pattern: {item.get('filename', 'NO_FILENAME')}")
+                            print(f"            original_path: {item.get('original_path', 'NO_ORIGINAL')}")
+                            print(f"            library_path: {item.get('library_path', 'NO_LIBRARY')}")
+            
+            # Add pre-detected VDB sequences to geometry_info
+            if vdb_sequences:
+                print(f"   💨 Adding {len(vdb_sequences)} pre-detected VDB sequences...")
+                
+                # Consolidate VDB sequences by sequence base name to avoid duplicates
+                consolidated_vdb_sequences = {}
+                for seq_key, seq_data in vdb_sequences.items():
+                    sequence_info = seq_data['sequence_info']
+                    if sequence_info:  # Make sure we have sequence files
+                        sequence_base_name = sequence_info[0].get('sequence_base_name', 'unknown')
+                        if sequence_base_name not in consolidated_vdb_sequences:
+                            consolidated_vdb_sequences[sequence_base_name] = sequence_info
+                            print(f"      💨 Adding VDB sequence '{sequence_base_name}': {len(sequence_info)} files")
+                        else:
+                            print(f"      🔄 Skipping duplicate VDB sequence '{sequence_base_name}' (already have {len(consolidated_vdb_sequences[sequence_base_name])} files)")
+                
+                # Add consolidated VDB sequences to geometry_info
+                for seq_name, seq_info in consolidated_vdb_sequences.items():
+                    geometry_info.extend(seq_info)
+                    
+                    # Count pattern mappings for debugging
+                    pattern_count = sum(1 for item in seq_info if item.get('is_pattern_mapping', False))
+                    regular_count = len(seq_info) - pattern_count
+                    
+                    print(f"      ✅ Added {len(seq_info)} files for VDB sequence '{seq_name}' ({pattern_count} patterns, {regular_count} regular files)")
+                    
+                    # Debug: Show pattern mappings
+                    for item in seq_info:
+                        if item.get('is_pattern_mapping', False):
+                            print(f"         💨 VDB Pattern: {item.get('filename', 'NO_FILENAME')}")
                             print(f"            original_path: {item.get('original_path', 'NO_ORIGINAL')}")
                             print(f"            library_path: {item.get('library_path', 'NO_LIBRARY')}")
             
@@ -1481,6 +1942,11 @@ class TemplateAssetExporter:
                         print(f"      🎬 Using BGEO sequence method for: {file_type}")
                         # This is a BGEO sequence with sequence-specific subfolder
                         self._copy_bgeo_sequence(geometry_folder, file_type, files, copied_files)
+                    # Handle VDB sequences specially (both uppercase and lowercase)
+                    elif file_type.startswith('VDB/') or file_type.startswith('vdb/'):
+                        print(f"      💨 Using VDB sequence method for: {file_type}")
+                        # This is a VDB sequence with node-specific subfolder
+                        self._copy_vdb_sequence(geometry_folder, file_type, files, copied_files)
                     else:
                         print(f"      📁 Using standard method for: {file_type}")
                         # Standard file copying for other types
@@ -1964,6 +2430,14 @@ class TemplateAssetExporter:
                 
                 # Include any structured metadata passed from Houdini + essential variant info
                 "export_metadata": self._build_export_metadata(),
+                
+                # 🎯 FRAME RANGE INFORMATION (NEW!)
+                "frame_range": {
+                    "framein": getattr(self, 'framein', 1001),
+                    "frameout": getattr(self, 'frameout', 1018),
+                    "total_frames": getattr(self, 'frameout', 1018) - getattr(self, 'framein', 1001) + 1,
+                    "detection_method": "smart_sequence_detection" if hasattr(self, 'framein') else "default_static"
+                },
                 
                 # Template file info
                 "template_file": template_file.name,

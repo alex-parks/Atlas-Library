@@ -1172,7 +1172,7 @@ except Exception as e:
 '''
 
 def create_export_script():
-    """Create the export callback script - FIXED VERSION"""
+    """Create the export callback script - FIXED VERSION WITH HDA AUTO-EXECUTION"""
     return '''
 # 🏭 BLACKSMITH ATLAS EXPORT SCRIPT
 import sys
@@ -1412,8 +1412,12 @@ try:
             for i, node in enumerate(nodes_to_export, 1):
                 print(f"   {i}. {node.name()} ({node.type().name()})")
             
-            # CALL EXPORT LOGIC
+            # CALL EXPORT LOGIC (includes HDA loading and dl_Submit auto-execution)
             print("🚀 Starting template export...")
+            print("   📋 This includes:")
+            print("   • Template file export")  
+            print("   • HDA loading and configuration")
+            print("   • Auto-execution of dl_Submit button")
             success = exporter.export_as_template(subnet, nodes_to_export)
             
             if success:
