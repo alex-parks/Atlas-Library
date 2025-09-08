@@ -1542,15 +1542,15 @@ class TemplateAssetExporter:
                 'node_path': node.path(),
                 'parameter': 'file', 
                 'original_path': parm_value,  # Keep the frame variables
-                'library_path': f"Geometry/VDB/{node.name()}/{sequence_file_pattern}",  # Pattern with variables
-                'file_type': f'VDB/{node.name()}',  # 🔧 FIX: Set file_type for VDB sequences!
+                'library_path': f"Geometry/vdb/{sequence_base_name}/{sequence_file_pattern}",  # Use truncated filename, lowercase vdb
+                'file_type': f'vdb/{sequence_base_name}',  # 🔧 FIX: Use lowercase vdb + truncated filename!
                 'is_pattern_mapping': True,
                 'sequence_pattern': parm_value,
                 'sequence_base_name': sequence_base_name,
                 'filename': sequence_file_pattern
             }
             sequence_info.append(pattern_info)
-            print(f"            🔗 Pattern mapping: {parm_value} → Geometry/VDB/{node.name()}/{sequence_file_pattern}")
+            print(f"            🔗 Pattern mapping: {parm_value} → Geometry/vdb/{sequence_base_name}/{sequence_file_pattern}")
             
             # Add individual file entries for copying
             for seq_file in sequence_files:
@@ -1560,8 +1560,8 @@ class TemplateAssetExporter:
                     'parameter': 'file',
                     'file': str(file_path),
                     'original_path': str(file_path), 
-                    'library_path': f"Geometry/VDB/{node.name()}/{file_path.name}",
-                    'file_type': f'VDB/{node.name()}',  # 🔧 FIX: Set file_type for individual VDB files!
+                    'library_path': f"Geometry/vdb/{sequence_base_name}/{file_path.name}",
+                    'file_type': f'vdb/{sequence_base_name}',  # 🔧 FIX: Use lowercase vdb + truncated filename!
                     'filename': file_path.name,
                     'is_pattern_mapping': False,
                     'sequence_pattern': parm_value,
@@ -1578,25 +1578,25 @@ class TemplateAssetExporter:
             return None
 
     def _copy_vdb_sequence(self, geometry_folder, file_type, files, copied_files):
-        """Copy VDB sequence files to node-specific subfolders - based on BGEO logic"""
+        """Copy VDB sequence files to filename-based subfolders - updated for lowercase vdb"""
         try:
             print(f"   💨 VDB SEQUENCE COPYING STARTED")
             print(f"      file_type: '{file_type}'")
             print(f"      geometry_folder: '{geometry_folder}'")
             print(f"      files to copy: {len(files)}")
             
-            # Create the VDB/node_name folder structure
+            # Create the vdb/filename_truncated folder structure (file_type is already 'vdb/filename_truncated')
             type_folder = geometry_folder / file_type
             type_folder.mkdir(parents=True, exist_ok=True)
             print(f"   📁 Created VDB sequence folder: {type_folder}")
             print(f"      Full path: {type_folder.absolute()}")
             
-            # Group files by sequence pattern and node name
+            # Group files by sequence pattern
             sequences = {}
             for geo_info in files:
                 sequence_pattern = geo_info.get('sequence_pattern', geo_info['original_path'])
-                node_name = geo_info.get('sequence_base_name', 'unknown')
-                sequence_key = f"{sequence_pattern}_{node_name}"
+                sequence_base_name = geo_info.get('sequence_base_name', 'unknown')
+                sequence_key = f"{sequence_pattern}_{sequence_base_name}"
                 if sequence_key not in sequences:
                     sequences[sequence_key] = []
                 sequences[sequence_key].append(geo_info)
@@ -1606,11 +1606,8 @@ class TemplateAssetExporter:
                 # Get sequence base name from the first file for logging
                 sequence_base_name = sequence_files[0].get('sequence_base_name', 'unknown')
                 print(f"      💨 Processing VDB sequence: {sequence_base_name}")
-                
-                # Create node-specific subfolder
-                node_folder = type_folder / sequence_base_name
-                node_folder.mkdir(exist_ok=True)
-                print(f"         📁 Copying {len(sequence_files)} files to VDB/{sequence_base_name}/")
+                print(f"         📁 Files will be copied directly to: {type_folder}")
+                print(f"         📁 Full structure: Geometry/vdb/{sequence_base_name}/")
                 
                 copied_in_sequence = 0
                 
@@ -1634,20 +1631,20 @@ class TemplateAssetExporter:
                     
                     source_file = Path(geo_info['file'])
                     if source_file.exists():
-                        # Create destination filename in node-specific folder
-                        dest_file = node_folder / source_file.name
+                        # Copy the VDB file directly to the type_folder (which is already Geometry/vdb/truncated_filename/)
+                        dest_file = type_folder / source_file.name
                         
                         # Copy the VDB file
                         shutil.copy2(source_file, dest_file)
                         
-                        print(f"         ✅ Copied: {source_file.name} → VDB/{sequence_base_name}/{dest_file.name}")
+                        print(f"         ✅ Copied: {source_file.name} → vdb/{sequence_base_name}/{dest_file.name}")
                         
                         # Update geometry info with new relative path
                         geo_info['copied_file'] = str(dest_file)
                         
                         # Don't overwrite library_path for pattern mappings - they need to preserve frame variables
                         if not geo_info.get('is_pattern_mapping', False):
-                            geo_info['library_path'] = f"Geometry/VDB/{sequence_base_name}/{dest_file.name}"
+                            geo_info['library_path'] = f"Geometry/vdb/{sequence_base_name}/{dest_file.name}"
                         else:
                             print(f"         🔒 Preserving pattern mapping library_path: {geo_info.get('library_path')}")
                         
@@ -1658,7 +1655,7 @@ class TemplateAssetExporter:
                         print(f"         ⚠️ VDB file not found: {source_file}")
                 
                 print(f"      ✅ Sequence complete: {copied_in_sequence}/{len(sequence_files)} files copied")
-                print(f"      📂 Files saved to: Geometry/VDB/{sequence_base_name}/")
+                print(f"      📂 Files saved to: Geometry/vdb/{sequence_base_name}/")
                     
         except Exception as e:
             print(f"      ❌ Error copying VDB sequence: {e}")
@@ -1889,7 +1886,9 @@ class TemplateAssetExporter:
                                 elif expanded_path_lower.endswith('.obj'):
                                     subfolder = 'OBJ'
                                 elif expanded_path_lower.endswith('.vdb'):
-                                    subfolder = 'VDB'
+                                    # Skip individual VDB files - they should be handled by VDB sequence detection
+                                    print(f"            🔄 SKIPPING individual VDB file (handled by sequence detection): {os.path.basename(expanded_path)}")
+                                    continue
                                 else:
                                     subfolder = 'Other'
                                 
@@ -1942,10 +1941,10 @@ class TemplateAssetExporter:
                         print(f"      🎬 Using BGEO sequence method for: {file_type}")
                         # This is a BGEO sequence with sequence-specific subfolder
                         self._copy_bgeo_sequence(geometry_folder, file_type, files, copied_files)
-                    # Handle VDB sequences specially (both uppercase and lowercase)
-                    elif file_type.startswith('VDB/') or file_type.startswith('vdb/'):
+                    # Handle VDB sequences specially (lowercase only now)
+                    elif file_type.startswith('vdb/'):
                         print(f"      💨 Using VDB sequence method for: {file_type}")
-                        # This is a VDB sequence with node-specific subfolder
+                        # This is a VDB sequence with filename-based subfolder
                         self._copy_vdb_sequence(geometry_folder, file_type, files, copied_files)
                     else:
                         print(f"      📁 Using standard method for: {file_type}")
@@ -2368,6 +2367,50 @@ class TemplateAssetExporter:
         print(f"         📋 Found {len(texture_info)} textures in material '{material_name}'")
         return texture_info
     
+    def _build_accumulative_tags(self):
+        """Build comprehensive tag list from multiple sources"""
+        tags = set()  # Use set to avoid duplicates
+        
+        # 1. Add original user-provided tags (split by spaces and commas)
+        if self.tags:
+            for tag in self.tags:
+                if isinstance(tag, str):
+                    # Split by both commas and spaces, clean up
+                    for word in tag.replace(',', ' ').split():
+                        word = word.strip().lower()
+                        if word:
+                            tags.add(word)
+                else:
+                    # Handle case where tag is already cleaned
+                    tags.add(str(tag).strip().lower())
+        
+        # 2. Add hierarchy-based tags (folder structure)
+        tags.add("3d")  # Always 3D from Houdini
+        tags.add(self.asset_type.lower().replace(' ', '_'))  # e.g., "assets", "fx", "materials"
+        tags.add(self.subcategory.lower().replace(' ', '_'))  # e.g., "blacksmith_asset", "megascans", "pyro"
+        
+        # 3. Add render engine as tag
+        tags.add(self.render_engine.lower())  # e.g., "redshift", "karma"
+        
+        # 4. Add asset name words as tags (common search terms)
+        for word in self.asset_name.lower().replace('_', ' ').split():
+            word = word.strip()
+            if word and len(word) > 2:  # Skip very short words
+                tags.add(word)
+        
+        # 5. Add description words as potential tags (if they look like keywords)
+        if self.description:
+            desc_words = self.description.lower().replace(',', ' ').replace('_', ' ').split()
+            for word in desc_words:
+                word = word.strip()
+                # Only add meaningful words (avoid articles, prepositions, etc.)
+                if (word and len(word) > 3 and 
+                    word not in ['with', 'from', 'this', 'that', 'have', 'been', 'will', 'they', 'were', 'said', 'each', 'which']):
+                    tags.add(word)
+        
+        # Convert back to sorted list
+        return sorted(list(tags))
+
     def create_asset_metadata(self, template_file, nodes_exported, texture_info=None, geometry_info=None, path_mappings=None):
         """Create metadata JSON for the asset"""
         try:
@@ -2412,7 +2455,7 @@ class TemplateAssetExporter:
                 "subcategory": self.subcategory,
                 "description": self.description,
                 "render_engine": self.render_engine,
-                "tags": self.tags,
+                "tags": self._build_accumulative_tags(),
                 "created_at": datetime.now().isoformat(),
                 "created_by": self._get_artist_name(),
                 

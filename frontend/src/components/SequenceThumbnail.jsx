@@ -14,6 +14,14 @@ const SequenceThumbnail = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const containerRef = useRef(null);
+  
+  // Zoom functionality state
+  const [zoom, setZoom] = useState(1);
+  const [zoomCenter, setZoomCenter] = useState({ x: 0.5, y: 0.5 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const imageRef = useRef(null);
 
   // Fetch sequence data when component mounts
   useEffect(() => {
@@ -56,9 +64,52 @@ const SequenceThumbnail = ({
     fetchSequenceData();
   }, [assetId]);
 
-  // Handle mouse movement for scrubbing
+  // Handle scroll wheel for zoom
+  const handleWheel = (e) => {
+    e.preventDefault();
+    
+    if (!containerRef.current) return;
+    
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) / rect.width;
+    const mouseY = (e.clientY - rect.top) / rect.height;
+    
+    // Zoom sensitivity
+    const zoomSensitivity = 0.1;
+    const deltaY = e.deltaY;
+    const zoomDelta = deltaY > 0 ? -zoomSensitivity : zoomSensitivity;
+    
+    setZoom(prevZoom => {
+      const newZoom = Math.max(1, Math.min(5, prevZoom + zoomDelta));
+      
+      // Update zoom center to mouse position when zooming in from 1x
+      if (prevZoom === 1 && newZoom > 1) {
+        setZoomCenter({ x: mouseX, y: mouseY });
+        setPanOffset({ x: 0, y: 0 }); // Reset pan when starting to zoom
+      }
+      
+      return newZoom;
+    });
+  };
+
+  // Handle mouse movement for scrubbing (updated to work with zoom)
   const handleMouseMove = (e) => {
-    if (!sequenceData || sequenceData.frame_count <= 1 || !isHovering || !containerRef.current) {
+    if (isDragging && zoom > 1) {
+      // Handle panning when zoomed in
+      const deltaX = e.clientX - dragStart.x;
+      const deltaY = e.clientY - dragStart.y;
+      
+      setPanOffset(prevOffset => ({
+        x: prevOffset.x + deltaX / zoom,
+        y: prevOffset.y + deltaY / zoom
+      }));
+      
+      setDragStart({ x: e.clientX, y: e.clientY });
+      return;
+    }
+    
+    // Original scrubbing functionality (only when not zoomed and not dragging)
+    if (!sequenceData || sequenceData.frame_count <= 1 || !isHovering || !containerRef.current || zoom > 1) {
       return;
     }
 
@@ -71,9 +122,31 @@ const SequenceThumbnail = ({
     setCurrentFrame(frameIndex);
   };
 
-  // Reset to first frame when mouse leaves
+  // Handle mouse down for panning
+  const handleMouseDown = (e) => {
+    if (zoom > 1) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX, y: e.clientY });
+      e.preventDefault(); // Prevent text selection
+    }
+  };
+
+  // Handle mouse up
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Reset to first frame and zoom when mouse leaves
   const handleMouseLeave = () => {
     setIsHovering(false);
+    setIsDragging(false);
+    
+    // Reset zoom and pan
+    setZoom(1);
+    setZoomCenter({ x: 0.5, y: 0.5 });
+    setPanOffset({ x: 0, y: 0 });
+    
+    // Reset to first frame
     if (sequenceData && sequenceData.frame_count > 1) {
       setCurrentFrame(0);
     }
@@ -82,6 +155,15 @@ const SequenceThumbnail = ({
   const handleMouseEnter = () => {
     setIsHovering(true);
   };
+
+  // Add global mouse up listener for when dragging extends outside the component
+  useEffect(() => {
+    if (isDragging) {
+      const handleGlobalMouseUp = () => setIsDragging(false);
+      document.addEventListener('mouseup', handleGlobalMouseUp);
+      return () => document.removeEventListener('mouseup', handleGlobalMouseUp);
+    }
+  }, [isDragging]);
 
   // Render loading state
   if (loading) {
@@ -116,29 +198,57 @@ const SequenceThumbnail = ({
 
   const frameUrl = getCurrentFrameUrl();
 
+  // Calculate transform style for zoom and pan
+  const getImageTransform = () => {
+    if (zoom === 1) return {};
+    
+    const centerX = zoomCenter.x * 100;
+    const centerY = zoomCenter.y * 100;
+    const offsetX = panOffset.x;
+    const offsetY = panOffset.y;
+    
+    return {
+      transform: `scale(${zoom}) translate(${offsetX}px, ${offsetY}px)`,
+      transformOrigin: `${centerX}% ${centerY}%`,
+      transition: isDragging ? 'none' : 'transform 0.1s ease-out'
+    };
+  };
+
   return (
     <div 
       ref={containerRef}
-      className="w-full h-full relative overflow-hidden cursor-pointer"
+      className={`w-full h-full relative overflow-hidden ${zoom > 1 ? 'cursor-grab' : 'cursor-pointer'} ${isDragging ? 'cursor-grabbing' : ''}`}
       onMouseMove={handleMouseMove}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      onClick={onClick}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onWheel={handleWheel}
+      onClick={(e) => {
+        // Only trigger onClick if not zoomed and not dragging
+        if (zoom === 1 && !isDragging) {
+          onClick(e);
+        }
+      }}
       title={sequenceData?.frame_count > 1 ? 
-        `Sequence: ${sequenceData.frame_count} frames (Frame ${currentFrame + 1})` : 
+        `Sequence: ${sequenceData.frame_count} frames (Frame ${currentFrame + 1})${zoom > 1 ? ` - Zoom: ${zoom.toFixed(1)}x` : ''}` : 
         assetName
       }
+      style={{ userSelect: 'none' }} // Prevent text selection when dragging
     >
       {frameUrl ? (
         <img
+          ref={imageRef}
           src={frameUrl}
           alt={`${assetName} - Frame ${currentFrame + 1}`}
           className={className}
+          style={getImageTransform()}
           onError={(e) => {
             console.error(`Failed to load frame ${currentFrame} for asset ${assetId}`);
             e.target.style.display = 'none';
             e.target.nextSibling.style.display = 'flex';
           }}
+          draggable={false} // Prevent image drag
         />
       ) : null}
       
@@ -150,10 +260,29 @@ const SequenceThumbnail = ({
         {fallbackIcon}
       </div>
 
-      {/* Frame indicator - only show when actively scrubbing */}
-      {sequenceData && sequenceData.frame_count > 1 && isHovering && (
-        <div className="absolute top-2 left-2 bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded">
-          {currentFrame + 1}/{sequenceData.frame_count}
+      {/* Frame indicator and zoom level - show when actively scrubbing or zoomed */}
+      {sequenceData && isHovering && (
+        <div className="absolute top-2 left-2 space-y-1">
+          {/* Frame indicator - only show for sequences */}
+          {sequenceData.frame_count > 1 && (
+            <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded">
+              Frame: {currentFrame + 1}/{sequenceData.frame_count}
+            </div>
+          )}
+          
+          {/* Zoom indicator - only show when zoomed */}
+          {zoom > 1 && (
+            <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded">
+              Zoom: {zoom.toFixed(1)}x
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Zoom instructions - show briefly when hovering */}
+      {isHovering && zoom === 1 && (
+        <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded opacity-70">
+          Scroll to zoom
         </div>
       )}
     </div>

@@ -20,7 +20,7 @@ class AssetQueries:
             FILTER (@search == "" OR CONTAINS(LOWER(asset.name), LOWER(@search)) OR 
                    CONTAINS(LOWER(asset.description || ""), LOWER(@search)))
             FILTER (@category == null OR @category == "" OR asset.category == @category)
-            FILTER (@tags == null OR LENGTH(@tags) == 0 OR LENGTH(INTERSECTION(asset.tags, @tags)) > 0)
+            FILTER (@tags == null OR LENGTH(@tags) == 0 OR LENGTH(INTERSECTION(asset.tags, @tags)) == LENGTH(@tags))
             SORT asset.created_at DESC
             RETURN asset
         """

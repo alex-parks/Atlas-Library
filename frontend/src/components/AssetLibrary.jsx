@@ -78,6 +78,7 @@ const AssetLibrary = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
   const [editFormData, setEditFormData] = useState({});
+  const [newTagInput, setNewTagInput] = useState('');
 
   const [selectedFilters, setSelectedFilters] = useState({
     showVariants: false,    // Show variants when checked (default unchecked = hide variants)
@@ -88,6 +89,10 @@ const AssetLibrary = () => {
 
   // Active navigation filters (from square button navigation)
   const [activeFilters, setActiveFilters] = useState([]);
+  
+  // Tag search functionality
+  const [tagSearchTerm, setTagSearchTerm] = useState('');
+  const [activeTagFilters, setActiveTagFilters] = useState([]);
 
   // Settings state
   const [settings, setSettings] = useState({
@@ -103,13 +108,26 @@ const AssetLibrary = () => {
   useEffect(() => {
     // Always load assets on component mount and when API endpoint changes
     try {
-      loadAssets();
+      loadAssets(searchTerm, activeTagFilters);
       checkDatabaseStatus();
     } catch (error) {
       console.error('Error in AssetLibrary useEffect:', error);
       setLoading(false);
     }
   }, [settings.apiEndpoint]);
+
+  // Debounced search effect - reload assets when search term changes
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      if (searchTerm !== '' || activeTagFilters.length > 0) {
+        loadAssets(searchTerm, activeTagFilters);
+      } else {
+        loadAssets(); // Load all assets when search is empty and no tag filters
+      }
+    }, 300); // 300ms debounce delay
+
+    return () => clearTimeout(debounceTimer);
+  }, [searchTerm]); // Only trigger when searchTerm changes, not activeTagFilters
 
   useEffect(() => {
     // Check database status when navigation changes
@@ -273,9 +291,19 @@ const AssetLibrary = () => {
     setActiveFilters(newFilters);
   };
 
-  const loadAssets = () => {
+  const loadAssets = (searchFilter = null, tagFilters = null) => {
     setLoading(true);
-    fetch(settings.apiEndpoint)
+    
+    // Build query parameters
+    const params = new URLSearchParams();
+    if (searchFilter) params.set('search', searchFilter);
+    if (tagFilters && tagFilters.length > 0) {
+      tagFilters.forEach(tag => params.append('tags', tag));
+    }
+    
+    const url = `${settings.apiEndpoint}${params.toString() ? '?' + params.toString() : ''}`;
+    
+    fetch(url)
       .then(res => {
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
@@ -286,7 +314,7 @@ const AssetLibrary = () => {
         console.log('Loaded assets from API:', data);
         // API returns {items: [...], total: n, limit: n, offset: n}
         const assets = data.items || [];
-        console.log('Number of assets loaded:', assets.length);
+        console.log(`Number of assets loaded: ${assets.length} ${tagFilters ? `(filtered by tags: ${tagFilters.join(', ')})` : ''}`);
         setAssets(Array.isArray(assets) ? assets : []);
         setLoading(false);
       })
@@ -360,6 +388,57 @@ const AssetLibrary = () => {
     });
   };
 
+  // Tag search functions
+  const handleTagSearch = (e) => {
+    if (e.key === 'Enter' && tagSearchTerm.trim()) {
+      const newTag = tagSearchTerm.trim().toLowerCase();
+      if (!activeTagFilters.includes(newTag)) {
+        const newTagFilters = [...activeTagFilters, newTag];
+        setActiveTagFilters(newTagFilters);
+        // Reload assets with new tag filter
+        loadAssets(searchTerm, newTagFilters);
+      }
+      setTagSearchTerm('');
+    }
+  };
+
+  const removeTagFilter = (tagToRemove) => {
+    const newTagFilters = activeTagFilters.filter(tag => tag !== tagToRemove);
+    setActiveTagFilters(newTagFilters);
+    // Reload assets without this tag filter
+    loadAssets(searchTerm, newTagFilters);
+  };
+
+  const clearAllTagFilters = () => {
+    setActiveTagFilters([]);
+    // Reload assets without any tag filters
+    loadAssets(searchTerm, []);
+  };
+
+  // Edit modal tag management functions
+  const handleAddTag = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Prevent form submission
+      if (newTagInput.trim()) {
+        const newTag = newTagInput.trim().toLowerCase();
+        if (!editFormData.tags.includes(newTag)) {
+          setEditFormData({
+            ...editFormData,
+            tags: [...editFormData.tags, newTag]
+          });
+        }
+        setNewTagInput('');
+      }
+    }
+  };
+
+  const removeEditTag = (tagToRemove) => {
+    setEditFormData({
+      ...editFormData,
+      tags: editFormData.tags.filter(tag => tag !== tagToRemove)
+    });
+  };
+
   // Format asset name to show "{Original Name} - {Variant Name}" for variants
   const formatAssetName = (asset) => {
     // Check if this is a variant (variant_id is not "AA" - the original)
@@ -394,9 +473,9 @@ const AssetLibrary = () => {
   };
 
   const filteredAssets = assets.filter(asset => {
-    const matchesSearch = (asset.name && formatAssetName(asset).toLowerCase().includes(searchTerm.toLowerCase())) ||
-                         (asset.description && asset.description.toLowerCase().includes(searchTerm.toLowerCase()));
-
+    // Note: Search and tag filtering is now handled server-side via API
+    // Only client-side filtering for creator, variants, versions, branded, and navigation
+    
     const matchesCreator = selectedFilters.creator === 'all' || asset.artist === selectedFilters.creator;
 
     // Branded filtering logic
@@ -486,7 +565,7 @@ const AssetLibrary = () => {
       return true;
     });
 
-    return matchesSearch && matchesCreator && matchesBrandedFilter && matchesVariantFilter && matchesVersionFilter && matchesNavigation && matchesActiveFilters;
+    return matchesCreator && matchesBrandedFilter && matchesVariantFilter && matchesVersionFilter && matchesNavigation && matchesActiveFilters;
   });
 
   // Debug logging for filtering
@@ -789,35 +868,40 @@ const AssetLibrary = () => {
 
         {/* Search and Controls - Only show in assets view */}
         {currentView === 'assets' && (
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-neutral-400" size={20} />
-              <input
-                type="text"
-                placeholder="Search assets..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-neutral-700 border border-neutral-600 rounded-lg pl-10 pr-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 transition-colors"
-              />
+          <div className="space-y-4">
+            {/* Main Controls Row */}
+            <div className="flex items-center gap-4">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-neutral-400" size={20} />
+                <input
+                  type="text"
+                  placeholder="Search assets..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-neutral-700 border border-neutral-600 rounded-lg pl-10 pr-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 bg-neutral-700 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-blue-600' : 'hover:bg-neutral-600'}`}
+                >
+                  <Grid3X3 size={18} />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded transition-colors ${viewMode === 'list' ? 'bg-blue-600' : 'hover:bg-neutral-600'}`}
+                >
+                  <List size={18} />
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 bg-neutral-700 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-blue-600' : 'hover:bg-neutral-600'}`}
-              >
-                <Grid3X3 size={18} />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-2 rounded transition-colors ${viewMode === 'list' ? 'bg-blue-600' : 'hover:bg-neutral-600'}`}
-              >
-                <List size={18} />
-              </button>
-            </div>
-
-            <div className="relative">
-              <button
+            {/* Filter Controls Row */}
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <button
                 onClick={() => setShowFilterMenu(!showFilterMenu)}
                 className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
                   showFilterMenu ? 'bg-blue-600' : 'bg-neutral-700 hover:bg-neutral-600'
@@ -910,6 +994,51 @@ const AssetLibrary = () => {
                 </>
               )}
             </div>
+            </div>
+
+            {/* Tag Search Input Row */}
+            <div className="flex items-center gap-4">
+              <div className="relative flex-1 max-w-md">
+                <input
+                  type="text"
+                  placeholder="Filter by tags (e.g., tree, human, redshift)..."
+                  value={tagSearchTerm}
+                  onChange={(e) => setTagSearchTerm(e.target.value)}
+                  onKeyDown={handleTagSearch}
+                  className="w-full bg-neutral-600/50 border border-neutral-500 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-green-400 focus:bg-neutral-600 transition-all text-sm"
+                />
+              </div>
+              
+              {/* Clear all tags button */}
+              {activeTagFilters.length > 0 && (
+                <button
+                  onClick={clearAllTagFilters}
+                  className="px-3 py-2 bg-neutral-600 hover:bg-neutral-500 border border-neutral-500 rounded-lg text-neutral-300 hover:text-white text-sm transition-colors"
+                  title="Clear all tag filters"
+                >
+                  Clear Tags
+                </button>
+              )}
+            </div>
+
+            {/* Active Tag Filters - Tag Bubbles */}
+            {activeTagFilters.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-xs text-neutral-400 font-medium">Active Tags:</span>
+                {activeTagFilters.map((tag, index) => (
+                  <div key={`${tag}-${index}`} className="flex items-center gap-1 bg-green-600/20 border border-green-500/60 rounded-full px-3 py-1 text-sm backdrop-blur-sm">
+                    <span className="text-green-200 font-medium">{tag}</span>
+                    <button
+                      onClick={() => removeTagFilter(tag)}
+                      className="text-green-300 hover:text-white transition-colors p-0.5 rounded-full hover:bg-green-500/20"
+                      title={`Remove "${tag}" tag filter`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Active Navigation Filters - positioned right after Filter button */}
             {activeFilters.length > 0 && (
@@ -1164,6 +1293,7 @@ const AssetLibrary = () => {
                   setShowEditModal(false);
                   setEditingAsset(null);
                   setEditFormData({});
+                  setNewTagInput('');
                 }}
                 className="text-neutral-400 hover:text-white transition-colors"
               >
@@ -1181,7 +1311,7 @@ const AssetLibrary = () => {
                   const updateData = {
                     name: editFormData.name,
                     description: editFormData.description,
-                    tags: editFormData.tags ? editFormData.tags.split(',').map(t => t.trim()) : []
+                    tags: editFormData.tags || []
                   };
                   
                   // Send PATCH request to update asset
@@ -1198,6 +1328,7 @@ const AssetLibrary = () => {
                     setShowEditModal(false);
                     setEditingAsset(null);
                     setEditFormData({});
+                    setNewTagInput('');
                     
                     // Show success message
                     alert('✅ Asset updated successfully!');
@@ -1247,15 +1378,39 @@ const AssetLibrary = () => {
                 {/* Tags */}
                 <div>
                   <label className="block text-sm font-medium text-neutral-300 mb-2">
-                    Tags (comma separated)
+                    Tags
                   </label>
-                  <textarea
-                    value={editFormData.tags || ''}
-                    onChange={(e) => setEditFormData({...editFormData, tags: e.target.value})}
-                    className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
-                    placeholder="tag1, tag2, tag3"
-                    rows={3}
+                  
+                  {/* Current Tags as Bubbles */}
+                  {editFormData.tags && editFormData.tags.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 mb-3 p-3 bg-neutral-700/50 border border-neutral-600 rounded-lg">
+                      <span className="text-xs text-neutral-400 font-medium">Current Tags:</span>
+                      {editFormData.tags.map((tag, index) => (
+                        <div key={`${tag}-${index}`} className="flex items-center gap-1 bg-green-600/20 border border-green-500/60 rounded-full px-3 py-1 text-sm backdrop-blur-sm">
+                          <span className="text-green-200 font-medium">{tag}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeEditTag(tag)}
+                            className="text-green-300 hover:text-white transition-colors p-0.5 rounded-full hover:bg-green-500/20"
+                            title={`Remove "${tag}" tag`}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add New Tag Input */}
+                  <input
+                    type="text"
+                    value={newTagInput}
+                    onChange={(e) => setNewTagInput(e.target.value)}
+                    onKeyDown={handleAddTag}
+                    className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-green-400 focus:bg-neutral-600 transition-all"
+                    placeholder="Type a tag and press Enter to add..."
                   />
+                  <p className="text-xs text-neutral-400 mt-1">Press Enter to add tags. Click the X on existing tags to remove them.</p>
                 </div>
 
 
@@ -1274,6 +1429,7 @@ const AssetLibrary = () => {
                       setShowEditModal(false);
                       setEditingAsset(null);
                       setEditFormData({});
+                      setNewTagInput('');
                     }}
                     className="bg-neutral-700 hover:bg-neutral-600 text-white py-2 px-4 rounded-lg transition-colors"
                   >
@@ -1793,7 +1949,7 @@ const AssetLibrary = () => {
                                     setEditFormData({
                                       name: asset.name,
                                       description: asset.description || '',
-                                      tags: asset.tags?.join(', ') || ''
+                                      tags: asset.tags || []
                                     });
                                     setShowEditModal(true);
                                     setActiveDropdown(null);
