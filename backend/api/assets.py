@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from pathlib import Path
 from datetime import datetime
 import os
+import sys
 import logging
 from backend.core.config_manager import config as atlas_config
 
@@ -1380,3 +1381,369 @@ async def sync_bidirectional():
         import traceback
         logger.error(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Bidirectional sync failed: {str(e)}")
+
+def convert_hdr_to_exact_png(hdr_path, png_path):
+    """Proper EXR to PNG conversion with automatic exposure adjustment"""
+    try:
+        logger.info(f"🔧 Converting EXR to PNG: {hdr_path} -> {png_path}")
+        
+        # Method 1: Try ImageIO first (excellent EXR support)
+        try:
+            import imageio.v3 as iio
+            import numpy as np
+            from PIL import Image
+            
+            logger.info(f"🔧 Using ImageIO for EXR conversion")
+            
+            # Read EXR image
+            image_array = iio.imread(str(hdr_path))
+            if image_array is None:
+                raise Exception(f"Could not read {hdr_path}")
+            
+            height, width = image_array.shape[:2]
+            channels = image_array.shape[2] if len(image_array.shape) > 2 else 1
+            
+            logger.info(f"📏 Original EXR dimensions: {width}x{height} ({channels} channels)")
+            logger.info(f"📊 Value range: min={np.min(image_array):.3f}, max={np.max(image_array):.3f}")
+            
+            # Handle negative values and infinities
+            image_array = np.nan_to_num(image_array, nan=0.0, posinf=1.0, neginf=0.0)
+            image_array = np.maximum(image_array, 0.0)  # Remove negative values
+            
+            # Automatic exposure adjustment based on image content
+            # Find a reasonable exposure level by looking at the 95th percentile
+            if np.max(image_array) > 1.0:
+                p95 = np.percentile(image_array[image_array > 0], 95)
+                if p95 > 1.0:
+                    # Scale down so 95th percentile maps to ~0.8
+                    exposure_scale = 0.8 / p95
+                    image_array = image_array * exposure_scale
+                    logger.info(f"🔧 Applied exposure scale: {exposure_scale:.3f}")
+            
+            # Soft clamp to avoid hard cutoffs
+            image_array = image_array / (image_array + 1.0)  # Soft compression
+            image_array = np.clip(image_array, 0.0, 1.0)
+            
+            # Convert to 8-bit
+            image_array = (image_array * 255).astype(np.uint8)
+            
+            # Handle channel configuration
+            if channels >= 4:
+                # RGBA
+                image_array = image_array[:, :, :4]
+                mode = 'RGBA'
+            elif channels == 3:
+                # RGB - add alpha channel
+                alpha_channel = np.ones((height, width, 1), dtype=np.uint8) * 255
+                image_array = np.concatenate([image_array, alpha_channel], axis=2)
+                mode = 'RGBA'
+            else:
+                # Grayscale
+                if len(image_array.shape) == 2:
+                    # Convert to RGBA
+                    gray_rgb = np.repeat(image_array[:, :, np.newaxis], 3, axis=2)
+                    alpha_channel = np.ones((height, width, 1), dtype=np.uint8) * 255
+                    image_array = np.concatenate([gray_rgb, alpha_channel], axis=2)
+                else:
+                    # Single channel with shape (h, w, 1)
+                    gray_rgb = np.repeat(image_array[:, :, :1], 3, axis=2)
+                    alpha_channel = np.ones((height, width, 1), dtype=np.uint8) * 255
+                    image_array = np.concatenate([gray_rgb, alpha_channel], axis=2)
+                mode = 'RGBA'
+            
+            # Create and save PNG
+            pil_image = Image.fromarray(image_array, mode)
+            pil_image.save(png_path, 'PNG')
+            logger.info(f"✅ Converted EXR to PNG: {width}x{height} -> {png_path}")
+            return True
+            
+        except ImportError:
+            logger.info(f"   ℹ️ ImageIO not available")
+        except Exception as e:
+            logger.info(f"   ⚠️ ImageIO conversion failed: {e}")
+        
+        # Method 2: Try OpenCV fallback
+        try:
+            import cv2
+            import numpy as np
+            from PIL import Image
+            
+            logger.info(f"🔧 Using OpenCV for EXR conversion")
+            
+            # Read EXR file
+            img = cv2.imread(str(hdr_path), cv2.IMREAD_UNCHANGED)
+            if img is None:
+                raise Exception(f"Could not read {hdr_path}")
+            
+            original_height, original_width = img.shape[:2]
+            logger.info(f"📏 Original EXR dimensions: {original_width}x{original_height}")
+            
+            # Convert BGR to RGB if needed
+            if len(img.shape) == 3 and img.shape[2] == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            elif len(img.shape) == 3 and img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
+            
+            # Handle negative values and infinities
+            img = np.nan_to_num(img, nan=0.0, posinf=1.0, neginf=0.0)
+            img = np.maximum(img, 0.0)
+            
+            # Automatic exposure adjustment
+            if np.max(img) > 1.0:
+                p95 = np.percentile(img[img > 0], 95)
+                if p95 > 1.0:
+                    exposure_scale = 0.8 / p95
+                    img = img * exposure_scale
+                    logger.info(f"🔧 Applied exposure scale: {exposure_scale:.3f}")
+            
+            # Soft compression and clamp
+            img = img / (img + 1.0)
+            img = np.clip(img, 0.0, 1.0)
+            img = (img * 255).astype(np.uint8)
+            
+            # Ensure RGBA format
+            if len(img.shape) == 2:
+                # Grayscale to RGBA
+                gray = img[:, :, np.newaxis]
+                rgb = np.repeat(gray, 3, axis=2)
+                alpha = np.ones((img.shape[0], img.shape[1], 1), dtype=np.uint8) * 255
+                img = np.concatenate([rgb, alpha], axis=2)
+            elif len(img.shape) == 3 and img.shape[2] == 3:
+                # RGB to RGBA
+                alpha = np.ones((img.shape[0], img.shape[1], 1), dtype=np.uint8) * 255
+                img = np.concatenate([img, alpha], axis=2)
+            
+            # Save as PNG
+            pil_image = Image.fromarray(img, 'RGBA')
+            pil_image.save(png_path, 'PNG')
+            logger.info(f"✅ Converted EXR to PNG: {original_width}x{original_height} -> {png_path}")
+            return True
+            
+        except ImportError:
+            logger.info(f"   ℹ️ OpenCV not available")
+        except Exception as e:
+            logger.info(f"   ⚠️ OpenCV conversion failed: {e}")
+        
+        logger.error(f"❌ All EXR conversion methods failed")
+        return False
+            
+    except Exception as e:
+        logger.error(f"❌ EXR conversion error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Upload Asset Request Model
+class UploadAssetRequest(BaseModel):
+    asset_type: str  # 'Textures' or 'HDRI'
+    name: str
+    file_path: str
+    description: Optional[str] = ""
+    dimension: str = "3D"
+    created_by: str = "web_uploader"
+
+@router.post("/assets/upload", response_model=AssetResponse)
+async def upload_asset(upload_request: UploadAssetRequest):
+    """Upload a Texture or HDRI asset to the Atlas library"""
+    asset_queries = get_asset_queries()
+    if not asset_queries:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        import uuid
+        import shutil
+        from datetime import datetime
+        from pathlib import Path
+        
+        logger.info(f"🔧 Processing upload request: {upload_request.dict()}")
+        
+        # Validate asset type
+        if upload_request.asset_type not in ['Textures', 'HDRI']:
+            raise HTTPException(status_code=400, detail="Asset type must be 'Textures' or 'HDRI'")
+        
+        # Validate file path exists (now accessible via Docker mount)
+        source_file = Path(upload_request.file_path)
+        if not source_file.exists():
+            # Provide helpful error with mount information
+            error_msg = f"Source file not found: {upload_request.file_path}\n\n"
+            error_msg += "Available mounted paths in container:\n"
+            error_msg += "- /app/assets (atlas library)\n"
+            error_msg += "- /net/general (general network drive)\n"
+            error_msg += "\nMake sure the file path starts with one of these mounted directories."
+            raise HTTPException(status_code=400, detail=error_msg)
+        
+        # Check if file is a supported image format
+        supported_extensions = {'.exr', '.hdr', '.hdri', '.jpg', '.jpeg', '.png', '.tiff', '.tif'}
+        if source_file.suffix.lower() not in supported_extensions:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Unsupported file format: {source_file.suffix}. Supported: {', '.join(supported_extensions)}"
+            )
+        
+        # Clean and validate asset name
+        clean_asset_name = upload_request.name.strip()
+        if not clean_asset_name:
+            raise HTTPException(status_code=400, detail="Asset name cannot be empty")
+        
+        # Generate unique asset ID using same convention as houdiniae.py
+        # 11-character base UID + 2-character variant (AA) + 3-character version (001) = 16 characters total
+        base_uid = str(uuid.uuid4()).replace('-', '')[:11].upper()
+        variant_id = "AA"  # Always start with AA variant for new assets
+        version = 1
+        asset_id = f"{base_uid}{variant_id}{version:03d}"  # 16-character ID
+        asset_base_id = f"{base_uid}{variant_id}"  # 13-character base ID
+        
+        # Create folder structure for uploaded asset
+        # Structure: /app/assets/3D/{Textures|HDRI}/ASSETID_AssetName/
+        #   ├── Asset/          # ACTUAL asset file (original .exr/.hdr/etc)  
+        #   ├── Thumbnail/      # Converted PNG for web (EXACT aspect ratio)
+        #   └── metadata.json   # Database entry
+        asset_library_path = Path(os.getenv('ASSET_LIBRARY_PATH', '/app/assets'))
+        category_path = asset_library_path / "3D" / upload_request.asset_type
+        asset_folder = category_path / f"{asset_id}_{clean_asset_name}"
+        
+        # Ensure category directory exists
+        category_path.mkdir(parents=True, exist_ok=True)
+        
+        # Create asset folder
+        if asset_folder.exists():
+            raise HTTPException(status_code=400, detail=f"Asset folder already exists: {asset_folder}")
+        
+        asset_folder.mkdir(parents=True, exist_ok=True)
+        logger.info(f"📁 Created asset folder: {asset_folder}")
+        
+        # Create subfolders for Textures/HDRI structure
+        asset_subfolder = asset_folder / "Asset"  # This holds the ACTUAL asset file
+        thumbnail_folder = asset_folder / "Thumbnail"
+        asset_subfolder.mkdir(exist_ok=True)
+        thumbnail_folder.mkdir(exist_ok=True)
+        
+        # Copy the actual asset file to the Asset folder (same for both Textures and HDRI)
+        target_file = asset_subfolder / source_file.name
+        shutil.copy2(source_file, target_file)
+        logger.info(f"📋 Copied {upload_request.asset_type.lower()} file to Asset folder: {source_file} -> {target_file}")
+        
+        # Create thumbnail from the copied file (inside container where libraries work)
+        thumbnail_created = False
+        thumbnail_file = thumbnail_folder / f"{clean_asset_name}_thumbnail.png"
+        
+        if target_file.suffix.lower() in {'.exr', '.hdr', '.hdri', '.jpg', '.jpeg', '.png', '.tiff', '.tif'}:
+            try:
+                if target_file.suffix.lower() in {'.exr', '.hdr', '.hdri'}:
+                    # Use the copied file (inside container) for EXR conversion with existing libraries
+                    logger.info(f"🔧 Converting EXR from copied file: {target_file}")
+                    success = convert_hdr_to_exact_png(target_file, thumbnail_file)
+                    if success:
+                        thumbnail_created = True
+                        logger.info(f"✅ Created exact aspect ratio thumbnail from copied {upload_request.asset_type}: {thumbnail_file}")
+                else:
+                    # For regular image formats, convert to PNG preserving EXACT dimensions and aspect ratio
+                    from PIL import Image
+                    with Image.open(target_file) as img:  # Use copied file
+                        # Convert to RGBA to ensure transparency support
+                        if img.mode != 'RGBA':
+                            img = img.convert('RGBA')
+                        
+                        # NO RESIZING - preserve exact dimensions and aspect ratio
+                        img.save(thumbnail_file, 'PNG')
+                        thumbnail_created = True
+                        logger.info(f"✅ Created exact thumbnail from copied image ({img.width}x{img.height}): {thumbnail_file}")
+                        
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to create thumbnail from copied file: {e}")
+                logger.info(f"💡 Thumbnail creation failed but continuing with upload...")
+                thumbnail_created = False
+        
+        # Create metadata.json file
+        metadata = {
+            "id": asset_id,
+            "name": clean_asset_name,
+            "asset_type": upload_request.asset_type,
+            "dimension": upload_request.dimension,
+            "created_by": upload_request.created_by,
+            "created_at": datetime.now().isoformat(),
+            "description": upload_request.description,
+            "file_info": {
+                "original_path": str(source_file),
+                "filename": source_file.name,
+                "size_bytes": source_file.stat().st_size,
+                "extension": source_file.suffix
+            },
+            "paths": {
+                "asset_folder": str(asset_folder),
+                "asset_subfolder": str(asset_subfolder),
+                "main_file": str(target_file),
+                "thumbnail": str(thumbnail_file) if thumbnail_created else None
+            }
+        }
+        
+        metadata_file = asset_folder / "metadata.json"
+        import json
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        logger.info(f"📄 Created metadata file: {metadata_file}")
+        
+        # Create asset document for database
+        asset_doc = {
+            "_key": asset_id,
+            "id": asset_id,
+            "name": clean_asset_name,
+            "category": upload_request.asset_type,
+            "dimension": upload_request.dimension,
+            "asset_type": upload_request.asset_type,
+            "hierarchy": {
+                "dimension": upload_request.dimension,
+                "asset_type": upload_request.asset_type,
+                "subcategory": "Uploaded"
+            },
+            "metadata": metadata,
+            "paths": {
+                "folder_path": str(asset_folder),
+                "asset_folder": str(asset_folder),
+                "asset_subfolder": str(asset_subfolder),
+                "main_file": str(target_file),
+                "thumbnail": str(thumbnail_file) if thumbnail_created else None
+            },
+            "file_sizes": {
+                "main_file": source_file.stat().st_size,
+                "estimated_total_size": source_file.stat().st_size
+            },
+            "tags": ["uploaded", upload_request.asset_type.lower()],
+            "created_at": datetime.now().isoformat(),
+            "created_by": upload_request.created_by,
+            "status": "active",
+            "folder_path": str(asset_folder)  # For compatibility with existing frontend
+        }
+        
+        # Insert into database using the same AssetQueries method as elsewhere
+        try:
+            # Use the same database connection as other endpoints
+            result = asset_queries.create_asset(asset_doc)
+            logger.info(f"✅ Inserted asset into database: {result}")
+            
+        except Exception as db_error:
+            # If database insert fails, clean up created files
+            logger.error(f"❌ Database insert failed: {db_error}")
+            logger.error(f"❌ Database error type: {type(db_error)}")
+            import traceback
+            logger.error(f"❌ Database traceback: {traceback.format_exc()}")
+            try:
+                shutil.rmtree(asset_folder)
+                logger.info(f"🧹 Cleaned up asset folder after database failure: {asset_folder}")
+            except Exception as cleanup_error:
+                logger.error(f"❌ Failed to cleanup asset folder: {cleanup_error}")
+            
+            raise HTTPException(status_code=500, detail=f"Database insert failed: {str(db_error)}")
+        
+        logger.info(f"✅ Successfully uploaded {upload_request.asset_type} asset: {clean_asset_name} (ID: {asset_id})")
+        
+        # Return asset response
+        return convert_asset_to_response(asset_doc)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Upload failed: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")

@@ -10,5 +10,7 @@ passlib[bcrypt]==1.7.4
 python-dotenv==1.0.0
 redis==5.0.1
 Pillow>=8.0.0
+opencv-python-headless==4.10.0.84
+imageio==2.36.1
 # ArangoDB is the primary database, Redis for caching and rate limiting
-# Pillow for EXR thumbnail conversion
+# Pillow for EXR thumbnail conversion, OpenCV and ImageIO for EXR file handling

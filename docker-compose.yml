@@ -56,9 +56,11 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-default-secret-key}
       - REDIS_HOST=${REDIS_HOST:-localhost}
       - REDIS_PORT=${REDIS_PORT:-6379}
+      - OPENCV_IO_ENABLE_OPENEXR=1
     volumes:
       - ${ASSET_LIBRARY_PATH:-/net/library/atlaslib}:/app/assets
       - ${LOG_PATH:-./logs}:/app/logs
+      - /net/general:/net/general  # Mount general network drive for asset uploads
     depends_on:
       - arangodb
       # - redis

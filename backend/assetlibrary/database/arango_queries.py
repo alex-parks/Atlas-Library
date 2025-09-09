@@ -153,6 +153,24 @@ class AssetQueries:
             print(f"Failed to update tags: {e}")
             return False
 
+    def create_asset(self, asset_data: Dict) -> Dict:
+        """Create a new asset in the database"""
+        try:
+            # Insert the document into the Atlas_Library collection
+            result = self.assets.insert(asset_data)
+            return {
+                'success': True,
+                'id': result['_key'],
+                'key': result['_key'],
+                'rev': result['_rev']
+            }
+        except Exception as e:
+            print(f"Failed to create asset: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
 
 # Example usage:
 if __name__ == "__main__":

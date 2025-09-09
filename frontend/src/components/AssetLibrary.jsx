@@ -2,7 +2,100 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette } from 'lucide-react';
 import SequenceThumbnail from './SequenceThumbnail';
-import CollapsibleAssetInfo from './CollapsibleAssetInfo';
+import HoudiniAssetBadge from './badges/HoudiniAssetBadge';
+import TextureBadge from './badges/TextureBadge';
+import HDRIBadge from './badges/HDRIBadge';
+import HoudiniAssetCard from './cards/HoudiniAssetCard';
+import TextureCard from './cards/TextureCard';
+import HDRICard from './cards/HDRICard';
+
+// Asset Badge Factory - determines which badge component to use
+const getAssetBadgeComponent = (asset) => {
+  // Determine asset type from various sources
+  let assetType = null;
+  
+  // Check asset_type field first (from uploads)
+  if (asset.asset_type) {
+    assetType = asset.asset_type;
+  } else if (asset.category) {
+    assetType = asset.category;
+  } else {
+    // Infer from file paths or other metadata
+    if (asset.paths?.template_file) {
+      const filename = asset.paths.template_file.toLowerCase();
+      if (filename.includes('.hdr') || filename.includes('.hdri') || filename.includes('.exr')) {
+        if (filename.includes('hdri') || asset.name?.toLowerCase().includes('hdri')) {
+          assetType = 'HDRI';
+        } else {
+          assetType = 'Textures';
+        }
+      } else if (filename.includes('.jpg') || filename.includes('.png') || filename.includes('.tiff') || filename.includes('.tga')) {
+        assetType = 'Textures';
+      } else {
+        assetType = 'Assets'; // Default to Houdini asset
+      }
+    } else {
+      assetType = 'Assets'; // Default to Houdini asset
+    }
+  }
+  
+  // Return appropriate badge component
+  switch (assetType) {
+    case 'HDRI':
+    case 'HDRIs':
+      return HDRIBadge;
+    case 'Textures':
+    case 'Texture':
+      return TextureBadge;
+    default:
+      // Default to Houdini Asset for anything else (Assets, FX, Materials, HDAs, etc.)
+      return HoudiniAssetBadge;
+  }
+};
+
+// Asset Card Factory - determines which card component to use for full card customization
+const getAssetCardComponent = (asset) => {
+  // Determine asset type from various sources
+  let assetType = null;
+  
+  // Check asset_type field first (from uploads)
+  if (asset.asset_type) {
+    assetType = asset.asset_type;
+  } else if (asset.category) {
+    assetType = asset.category;
+  } else {
+    // Infer from file paths or other metadata
+    if (asset.paths?.template_file) {
+      const filename = asset.paths.template_file.toLowerCase();
+      if (filename.includes('.hdr') || filename.includes('.hdri') || filename.includes('.exr')) {
+        if (filename.includes('hdri') || asset.name?.toLowerCase().includes('hdri')) {
+          assetType = 'HDRI';
+        } else {
+          assetType = 'Textures';
+        }
+      } else if (filename.includes('.jpg') || filename.includes('.png') || filename.includes('.tiff') || filename.includes('.tga')) {
+        assetType = 'Textures';
+      } else {
+        assetType = 'Assets'; // Default to Houdini asset
+      }
+    } else {
+      assetType = 'Assets'; // Default to Houdini asset
+    }
+  }
+  
+  // Return appropriate card component
+  switch (assetType) {
+    case 'HDRI':
+    case 'HDRIs':
+      return HDRICard;
+    case 'Textures':
+    case 'Texture':
+      return TextureCard;
+    default:
+      // Default to Houdini Asset for anything else (Assets, FX, Materials, HDAs, etc.)
+      return HoudiniAssetCard;
+  }
+};
 
 const AssetLibrary = ({ 
   darkMode = true, 
@@ -69,8 +162,12 @@ const AssetLibrary = ({
       { id: 'Blacksmith HDAs', name: 'Blacksmith HDAs', icon: '⚡', description: 'Custom Houdini Digital Assets' }
     ],
     // 2D and other categories can have subcategories too, but focusing on 3D for now
-    'Textures': [],
-    'HDRI': []
+    'Textures': [
+      { id: 'Uploaded', name: 'Uploaded', icon: '⬆️', description: 'Uploaded texture assets' }
+    ],
+    'HDRI': [
+      { id: 'Uploaded', name: 'Uploaded', icon: '⬆️', description: 'Uploaded HDRI assets' }
+    ]
   };
 
   // Preview modal state
@@ -85,6 +182,16 @@ const AssetLibrary = ({
   const [editingAsset, setEditingAsset] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [newTagInput, setNewTagInput] = useState('');
+
+  // Upload Asset modal state
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadData, setUploadData] = useState({
+    assetType: 'Textures', // 'Textures' or 'HDRI'
+    name: '',
+    filePath: '',
+    description: ''
+  });
+  const [uploading, setUploading] = useState(false);
 
   const [selectedFilters, setSelectedFilters] = useState({
     showVariants: false,    // Show variants when checked (default unchecked = hide variants)
@@ -735,6 +842,61 @@ const AssetLibrary = ({
     }
   };
 
+  // Upload Asset functionality
+  const handleUploadAsset = async () => {
+    if (!uploadData.name.trim() || !uploadData.filePath.trim()) {
+      alert('❌ Please fill in both Name and File Path fields');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      console.log('🔧 Uploading asset:', uploadData);
+
+      const response = await fetch('http://localhost:8000/api/v1/assets/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          asset_type: uploadData.assetType,
+          name: uploadData.name,
+          file_path: uploadData.filePath,
+          description: uploadData.description || '',
+          dimension: '3D',
+          created_by: 'web_uploader'
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Asset uploaded successfully:', result);
+        alert(`✅ Asset "${uploadData.name}" uploaded successfully!\n\nAsset ID: ${result.id}`);
+        
+        // Reset form
+        setUploadData({
+          assetType: 'Textures',
+          name: '',
+          filePath: '',
+          description: ''
+        });
+        setShowUploadModal(false);
+        
+        // Refresh asset list
+        loadAssets();
+      } else {
+        const error = await response.json();
+        console.error('❌ Upload failed:', error);
+        alert(`❌ Upload failed: ${error.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('❌ Upload error:', error);
+      alert(`❌ Upload error: ${error.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleDeleteAsset = async (asset) => {
     try {
       // Show single confirmation dialog
@@ -851,7 +1013,10 @@ const AssetLibrary = ({
               <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
               Sync DB
             </button>
-            <button className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
+            <button 
+              onClick={() => setShowUploadModal(true)}
+              className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            >
               <Upload size={20} />
               Upload Asset
             </button>
@@ -1445,6 +1610,114 @@ const AssetLibrary = ({
         </div>
       )}
 
+      {/* Upload Asset Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral-800 border border-neutral-700 rounded-lg w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-neutral-700">
+              <h2 className="text-xl font-semibold text-white">Upload Asset</h2>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Asset Type Selection */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  Asset Type <span className="text-red-400">*</span>
+                </label>
+                <select
+                  value={uploadData.assetType}
+                  onChange={(e) => setUploadData(prev => ({ ...prev, assetType: e.target.value }))}
+                  className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="Textures">🖼️ Textures</option>
+                  <option value="HDRI">🌅 HDRI</option>
+                </select>
+              </div>
+
+              {/* Asset Name */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  Asset Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={uploadData.name}
+                  onChange={(e) => setUploadData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter asset name..."
+                  className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* File Path */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  File Path <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={uploadData.filePath}
+                  onChange={(e) => setUploadData(prev => ({ ...prev, filePath: e.target.value }))}
+                  placeholder="/net/general/your/path/image.exr"
+                  className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-sm"
+                />
+                <p className="text-xs text-neutral-400 mt-1">
+                  Full path to the image file (supports: .exr, .hdr, .jpg, .png, .tiff)<br/>
+                  Available paths: /net/general/... or /app/assets/...<br/>
+                  File will be copied to Asset/ folder with exact aspect ratio thumbnail
+                </p>
+              </div>
+
+              {/* Description (Optional) */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  Description <span className="text-neutral-500">(optional)</span>
+                </label>
+                <textarea
+                  value={uploadData.description}
+                  onChange={(e) => setUploadData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Optional description..."
+                  rows={3}
+                  className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowUploadModal(false)}
+                  className="flex-1 px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUploadAsset}
+                  disabled={uploading || !uploadData.name.trim() || !uploadData.filePath.trim()}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {uploading ? (
+                    <>
+                      <RefreshCw size={16} className="animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={16} />
+                      Create Asset
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Preview Modal */}
       {showPreview && previewAsset && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 transition-all duration-300 ease-in-out">
@@ -1818,188 +2091,18 @@ const AssetLibrary = ({
 
                 {viewMode === 'grid' ? (
                   <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                    {filteredAssets.map(asset => (
-                      <div key={asset.id} className="group relative">
-                        <div className={`bg-neutral-800 rounded-lg overflow-hidden border transition-all duration-200 hover:shadow-lg relative ${
-                          asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded 
-                            ? 'border-yellow-600/60 hover:border-yellow-500/80 hover:shadow-yellow-500/5 ring-1 ring-yellow-600/10' 
-                            : 'border-neutral-700 hover:border-blue-500 hover:shadow-blue-500/10'
-                        }`}>
-                          <div className="aspect-square bg-neutral-700 relative overflow-hidden">
-                            <SequenceThumbnail
-                              assetId={asset.id || asset._key}
-                              assetName={formatAssetName(asset)}
-                              thumbnailFrame={asset.thumbnail_frame}
-                              fallbackIcon={
-                                asset.category === 'Characters' ? '🎭' :
-                                asset.category === 'Props' ? '📦' :
-                                asset.category === 'Environments' ? '🏞️' :
-                                asset.category === 'Vehicles' ? '🚗' :
-                                asset.category === 'Effects' ? '✨' :
-                                '🎨'
-                              }
-                              onClick={() => openPreview(asset)}
-                            />
-
-
-                            {/* Version Tag - Bottom Left */}
-                            <div className="absolute bottom-2 left-2">
-                              {(() => {
-                                const assetId = asset.id || asset._key || '';
-                                if (assetId.length >= 16) {
-                                  const versionNum = assetId.substring(13); // Last 3 digits
-                                  return (
-                                    <span className="px-2 py-1 text-xs rounded font-medium bg-blue-500/20 text-blue-300 backdrop-blur-sm">
-                                      v{versionNum}
-                                    </span>
-                                  );
-                                }
-                                return null;
-                              })()}
-                            </div>
-
-                            {/* Render Engine Tags - Bottom Right */}
-                            <div className="absolute bottom-2 right-2 flex flex-col gap-1 items-end">
-                              {((asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine) === 'Redshift' || (asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine)?.includes('Redshift')) && (
-                                <span className="px-2 py-1 text-xs rounded font-medium bg-red-500/20 text-red-300 backdrop-blur-sm">
-                                  Redshift
-                                </span>
-                              )}
-                              {((asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine) === 'Karma' || (asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine)?.includes('Karma')) && (
-                                <span className="px-2 py-1 text-xs rounded font-medium bg-gray-500/20 text-gray-300 backdrop-blur-sm">
-                                  Karma
-                                </span>
-                              )}
-                              {/* If asset has multiple exports with different engines, check tags */}
-                              {asset.metadata?.tags?.includes('redshift') && !(asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine)?.includes('Redshift') && (
-                                <span className="px-2 py-1 text-xs rounded font-medium bg-red-500/20 text-red-300 backdrop-blur-sm">
-                                  Redshift
-                                </span>
-                              )}
-                              {asset.metadata?.tags?.includes('karma') && !(asset.metadata?.hierarchy?.render_engine || asset.metadata?.render_engine)?.includes('Karma') && (
-                                <span className="px-2 py-1 text-xs rounded font-medium bg-gray-500/20 text-gray-300 backdrop-blur-sm">
-                                  Karma
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center z-20 pointer-events-none">
-                              <div className="flex gap-2 pointer-events-auto">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openPreview(asset);
-                                  }}
-                                  className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition-colors"
-                                >
-                                  <Eye size={16} />
-                                </button>
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    copyAssetToClipboard(asset);
-                                  }}
-                                  className="bg-green-700 hover:bg-green-600 text-white p-2 rounded-lg transition-colors"
-                                  title="Copy to Houdini"
-                                >
-                                  <Copy size={16} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {/* Branded warning indicator - top left if branded */}
-                        {(asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded) && (
-                          <div className="absolute top-0 left-0 pointer-events-none z-20">
-                            <div className="w-0 h-0 border-l-[24px] border-l-yellow-500/90 border-b-[24px] border-b-transparent">
-                              <div className="absolute -top-[18px] -left-[18px] text-black text-xs font-bold">
-                                ⚠
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Position container for tag/menu interchange - OUTSIDE clickable area */}
-                        <div className="absolute top-2 right-2 pointer-events-none">
-                          {/* 3D Tag - visible by default, hidden on hover */}
-                          <span className="px-2 py-1 text-xs rounded-full font-medium bg-blue-600/80 text-blue-100 group-hover:opacity-0 transition-opacity duration-200 block">
-                            {asset.dimension || asset.hierarchy?.dimension || '3D'}
-                          </span>
-                          
-                          {/* Three-dot menu button and dropdown container */}
-                          <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 asset-dropdown-menu pointer-events-auto z-30">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveDropdown(activeDropdown === asset.id ? null : asset.id);
-                              }}
-                              className="bg-neutral-800/90 hover:bg-neutral-700 p-1.5 rounded-lg transition-colors backdrop-blur-sm border border-neutral-600"
-                              title="Asset options"
-                            >
-                              <MoreVertical size={16} className="text-white" />
-                            </button>
-                            
-                            {/* Dropdown menu */}
-                            {activeDropdown === asset.id && (
-                              <div 
-                                className="absolute right-0 top-8 bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl z-50 w-48 py-1 pt-2"
-                                onMouseLeave={() => {
-                                  setActiveDropdown(null);
-                                }}
-                              >
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingAsset(asset);
-                                    setEditFormData({
-                                      name: asset.name,
-                                      description: asset.description || '',
-                                      tags: asset.tags || [],
-                                      thumbnail_frame: asset.thumbnail_frame || undefined
-                                    });
-                                    setShowEditModal(true);
-                                    setActiveDropdown(null);
-                                  }}
-                                  className="w-full px-4 py-2 text-left text-sm text-white hover:bg-neutral-700 transition-colors flex items-center gap-2"
-                                >
-                                  <Edit size={14} />
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteAsset(asset);
-                                    setActiveDropdown(null);
-                                  }}
-                                  className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-900/20 transition-colors flex items-center gap-2"
-                                >
-                                  <Trash2 size={14} />
-                                  Move to TrashBin
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    console.log('Modify asset:', asset.id);
-                                    setActiveDropdown(null);
-                                    // TODO: Open modify modal
-                                  }}
-                                  className="w-full px-4 py-2 text-left text-sm text-white hover:bg-neutral-700 transition-colors flex items-center gap-2"
-                                >
-                                  <Wrench size={14} />
-                                  Modify Asset
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Collapsible Asset Information Tab - appears on hover */}
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                          <CollapsibleAssetInfo asset={asset} formatAssetNameJSX={formatAssetNameJSX} />
-                        </div>
-                      </div>
-                    ))}
+                    {filteredAssets.map(asset => {
+                      const CardComponent = getAssetCardComponent(asset);
+                      return (
+                        <CardComponent 
+                          key={asset.id} 
+                          asset={asset} 
+                          formatAssetName={formatAssetName}
+                          formatAssetNameJSX={formatAssetNameJSX}
+                          openPreview={openPreview}
+                        />
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="bg-neutral-800 rounded-lg overflow-hidden">
