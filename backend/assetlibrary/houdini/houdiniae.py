@@ -861,66 +861,362 @@ class TemplateAssetExporter:
             from pathlib import Path
             import shutil
             import re
+            import glob
             
-            thumbnail_path = Path(self.thumbnail_file_path.strip())
+            thumbnail_path_str = self.thumbnail_file_path.strip()
+            print(f"   📁 Processing thumbnail path: {thumbnail_path_str}")
             
-            # Handle both single files and sequences
-            if not thumbnail_path.exists():
-                # Might be a sequence pattern, try to find files
-                parent_dir = thumbnail_path.parent
-                filename = thumbnail_path.name
+            # Check for Houdini-style frame variables
+            houdini_frame_patterns = [
+                r'\$F\d*',    # $F, $F4, $F04, etc.
+                r'\$SF',      # $SF (sub-frame)
+                r'#{2,}',     # ##, ####, etc.
+                r'%\d*d',     # %04d, %d, etc.
+            ]
+            
+            is_sequence = any(re.search(pattern, thumbnail_path_str) for pattern in houdini_frame_patterns)
+            
+            if is_sequence:
+                print(f"   🎬 Detected sequence pattern in: {thumbnail_path_str}")
                 
-                # Check for common sequence patterns like frame numbers
+                # Handle Houdini frame variables by expanding them
+                parent_dir = Path(thumbnail_path_str).parent
+                filename = Path(thumbnail_path_str).name
+                
+                # Convert Houdini patterns to glob patterns more precisely
+                glob_pattern = filename
+                
+                # Replace Houdini frame variables with specific wildcard patterns
+                # $F -> * but more specifically looking for numbers
+                if '$F' in glob_pattern:
+                    # For patterns like "name.$F.exr", we want to match "name.1001.exr", "name.1142.exr", etc.
+                    glob_pattern = re.sub(r'\$F\d*', '*', glob_pattern)
+                
+                glob_pattern = re.sub(r'\$SF', '*', glob_pattern)        # $SF -> *
+                glob_pattern = re.sub(r'#{2,}', '*', glob_pattern)       # #### -> *
+                glob_pattern = re.sub(r'%\d*d', '*', glob_pattern)       # %04d -> *
+                
+                print(f"   🔍 Searching for files matching: {parent_dir / glob_pattern}")
+                
+                # Find matching files
                 sequence_files = []
                 if parent_dir.exists():
-                    # Look for files that match the pattern
-                    # Handle patterns like "render.####.exr" or "render.%04d.png"
-                    base_pattern = re.sub(r'[#%]+\d*d?', '*', filename)  # Convert #### or %04d to *
-                    base_pattern = re.sub(r'\.\d+\.', '.*.', filename)  # Convert .0001. to .*. 
-                    
-                    sequence_files = list(parent_dir.glob(base_pattern))
-                    if not sequence_files:
-                        # Try direct glob pattern
-                        sequence_files = list(parent_dir.glob(filename))
-                    
+                    try:
+                        # Use glob to find all matching files
+                        all_matches = list(parent_dir.glob(glob_pattern))
+                        
+                        # Filter to only include files that have numeric frame numbers
+                        for match in all_matches:
+                            # Check if the file has a frame number pattern (3+ digits)
+                            if re.search(r'\.\d{3,6}\.', match.name) or re.search(r'_\d{3,6}\.', match.name):
+                                sequence_files.append(match)
+                        
+                        print(f"   📁 Found {len(sequence_files)} potential sequence files")
+                        
+                        # Sort files by frame number
+                        def extract_frame_number(filepath):
+                            """Extract frame number from filename - look for 3+ digit sequences"""
+                            # Look for patterns like .1001. or _1001. or just 1001 at the end
+                            matches = re.findall(r'[\._](\d{3,6})[\._]', filepath.name)
+                            if matches:
+                                return int(matches[-1])  # Use the last match (typically the frame number)
+                            
+                            # Fallback: look for any 3+ digit number
+                            matches = re.findall(r'(\d{3,6})', filepath.name)
+                            if matches:
+                                return int(matches[-1])
+                            
+                            return 0
+                        
+                        try:
+                            sequence_files.sort(key=extract_frame_number)
+                            print(f"   📊 Sorted sequence files by frame number")
+                        except:
+                            sequence_files.sort()  # Fallback to alphabetical sort
+                            print(f"   📊 Sorted sequence files alphabetically (frame number sort failed)")
+                        
+                    except Exception as e:
+                        print(f"   ⚠️ Error during file search: {e}")
+                        sequence_files = []
+                
                 if sequence_files:
                     print(f"   📁 Found sequence with {len(sequence_files)} files")
                     files_to_copy = sequence_files
                 else:
-                    print(f"   ❌ Thumbnail file not found: {thumbnail_path}")
+                    print(f"   ❌ No files found matching pattern: {thumbnail_path_str}")
                     return False
             else:
-                # Single file
-                files_to_copy = [thumbnail_path]
+                # Single file or existing path
+                thumbnail_path = Path(thumbnail_path_str)
+                if thumbnail_path.exists():
+                    files_to_copy = [thumbnail_path]
+                    print(f"   📄 Single file detected: {thumbnail_path}")
+                else:
+                    print(f"   ❌ Thumbnail file not found: {thumbnail_path}")
+                    return False
             
             # Ensure thumbnail folder exists
+            self.thumbnail_folder.mkdir(parents=True, exist_ok=True)
             sanitized_asset_name = self._sanitize_name_for_filesystem(self.asset_name)
-            expected_thumbnail = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail{thumbnail_path.suffix}"
             
             # Copy files
             copied_count = 0
             for i, file_to_copy in enumerate(files_to_copy):
                 if len(files_to_copy) == 1:
-                    # Single file - use standard thumbnail name
-                    target_file = expected_thumbnail
-                else:
-                    # Sequence - preserve original names or create numbered sequence
-                    if file_to_copy.stem.isdigit() or '.' in file_to_copy.stem:
-                        # Preserve original filename for sequences
-                        target_file = self.thumbnail_folder / file_to_copy.name
+                    # Single file - determine target name
+                    if file_to_copy.suffix.lower() == '.exr':
+                        target_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.png"
                     else:
-                        # Create numbered sequence
-                        target_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail_{i:04d}{file_to_copy.suffix}"
+                        target_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail{file_to_copy.suffix}"
+                else:
+                    # Sequence - preserve original frame numbers exactly as they appear
+                    # Extract frame number from original filename (look for 3-6 digit sequences)
+                    frame_match = re.search(r'\.(\d{3,6})\.', file_to_copy.name)
+                    if frame_match:
+                        frame_num = frame_match.group(1)  # Keep original padding (1001, 1142, etc.)
+                        if file_to_copy.suffix.lower() == '.exr':
+                            target_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.{frame_num}.png"
+                        else:
+                            target_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.{frame_num}{file_to_copy.suffix}"
+                    else:
+                        # Fallback: look for any number in the filename
+                        number_match = re.search(r'(\d{3,6})', file_to_copy.stem)
+                        if number_match:
+                            frame_num = number_match.group(1)
+                            if file_to_copy.suffix.lower() == '.exr':
+                                target_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.{frame_num}.png"
+                            else:
+                                target_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.{frame_num}{file_to_copy.suffix}"
+                        else:
+                            # Last resort: sequential numbering
+                            if file_to_copy.suffix.lower() == '.exr':
+                                target_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.{i+1:04d}.png"
+                            else:
+                                target_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.{i+1:04d}{file_to_copy.suffix}"
                 
-                print(f"   📋 Copying: {file_to_copy} -> {target_file}")
-                shutil.copy2(file_to_copy, target_file)
-                copied_count += 1
+                # Handle EXR conversion
+                if file_to_copy.suffix.lower() == '.exr':
+                    print(f"   🎨 Converting EXR: {file_to_copy.name} -> {target_file.name}")
+                    success = self._convert_exr_to_png(file_to_copy, target_file)
+                    if success:
+                        copied_count += 1
+                    else:
+                        print(f"   ⚠️ EXR conversion failed, copying as-is: {file_to_copy.name}")
+                        # Fallback: copy original EXR
+                        fallback_target = target_file.with_suffix('.exr')
+                        shutil.copy2(file_to_copy, fallback_target)
+                        copied_count += 1
+                else:
+                    print(f"   📋 Copying: {file_to_copy.name} -> {target_file.name}")
+                    shutil.copy2(file_to_copy, target_file)
+                    copied_count += 1
             
-            print(f"   ✅ Successfully copied {copied_count} thumbnail files")
+            print(f"   ✅ Successfully copied {copied_count} thumbnail files to {self.thumbnail_folder}")
             return True
             
         except Exception as e:
             print(f"   ❌ Error copying custom thumbnail: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _convert_exr_to_png(self, exr_path, png_path, max_size=None):
+        """Convert EXR file to PNG for web display"""
+        try:
+            # Try multiple libraries for EXR support
+            converted = False
+            
+            # Method 1: Try OpenImageIO (most professional)
+            try:
+                import OpenImageIO as oiio
+                
+                print(f"   🔧 Using OpenImageIO for EXR conversion")
+                
+                # Read EXR
+                input_image = oiio.ImageInput.open(str(exr_path))
+                if not input_image:
+                    raise Exception(f"Could not open {exr_path}")
+                
+                spec = input_image.spec()
+                width, height = spec.width, spec.height
+                channels = spec.nchannels
+                
+                # Read pixels
+                pixels = input_image.read_image(oiio.FLOAT)
+                input_image.close()
+                
+                if pixels is None:
+                    raise Exception("Could not read pixel data")
+                
+                # Convert to numpy array and handle tone mapping
+                import numpy as np
+                image_array = np.array(pixels).reshape(height, width, channels)
+                
+                # Simple tone mapping for HDR -> LDR conversion
+                # Gamma correction and exposure adjustment
+                exposure = 0.0  # Can adjust this based on image content
+                image_array = image_array * (2.0 ** exposure)  # Exposure
+                image_array = np.power(image_array, 1.0/2.2)   # Gamma correction
+                image_array = np.clip(image_array, 0.0, 1.0)   # Clamp to [0,1]
+                
+                # Convert to 8-bit
+                image_array = (image_array * 255).astype(np.uint8)
+                
+                # Handle different channel counts and preserve alpha
+                if channels >= 4:
+                    # RGBA - use all channels including alpha
+                    image_array = image_array[:, :, :4]
+                    mode = 'RGBA'
+                elif channels == 3:
+                    # RGB - add full alpha channel
+                    alpha_channel = np.ones((height, width, 1), dtype=np.uint8) * 255
+                    image_array = np.concatenate([image_array[:, :, :3], alpha_channel], axis=2)
+                    mode = 'RGBA'
+                elif channels == 2:
+                    # Grayscale + Alpha
+                    gray_rgb = np.repeat(image_array[:, :, :1], 3, axis=2)
+                    alpha_channel = image_array[:, :, 1:2]
+                    image_array = np.concatenate([gray_rgb, alpha_channel], axis=2)
+                    mode = 'RGBA'
+                else:
+                    # Grayscale - replicate to RGB and add alpha
+                    gray_rgb = np.repeat(image_array[:, :, :1], 3, axis=2)
+                    alpha_channel = np.ones((height, width, 1), dtype=np.uint8) * 255
+                    image_array = np.concatenate([gray_rgb, alpha_channel], axis=2)
+                    mode = 'RGBA'
+                
+                # Create PNG with alpha support
+                from PIL import Image
+                pil_image = Image.fromarray(image_array, mode)
+                
+                # Resize only if image is over 2000 pixels on any dimension
+                if pil_image.width > 2000 or pil_image.height > 2000:
+                    # Calculate new size - cut in half while maintaining aspect ratio
+                    new_width = pil_image.width // 2
+                    new_height = pil_image.height // 2
+                    
+                    print(f"   📏 Resizing from {pil_image.width}x{pil_image.height} to {new_width}x{new_height}")
+                    
+                    try:
+                        # Try new PIL version (Pillow >= 10.0.0)
+                        pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    except AttributeError:
+                        # Fallback for older PIL versions
+                        pil_image = pil_image.resize((new_width, new_height), Image.LANCZOS)
+                
+                pil_image.save(png_path, 'PNG')
+                converted = True
+                
+            except ImportError:
+                print(f"   ℹ️ OpenImageIO not available")
+            except Exception as e:
+                print(f"   ⚠️ OpenImageIO conversion failed: {e}")
+            
+            # Method 2: Try OpenCV (good fallback)
+            if not converted:
+                try:
+                    import cv2
+                    import numpy as np
+                    
+                    print(f"   🔧 Using OpenCV for EXR conversion")
+                    
+                    # Read EXR with all channels including alpha
+                    img = cv2.imread(str(exr_path), cv2.IMREAD_UNCHANGED)
+                    if img is None:
+                        raise Exception(f"Could not read {exr_path}")
+                    
+                    # Handle different channel configurations
+                    if len(img.shape) == 3 and img.shape[2] == 4:
+                        # BGRA -> RGBA
+                        img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
+                    elif len(img.shape) == 3 and img.shape[2] == 3:
+                        # BGR -> RGB and add alpha channel
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        alpha = np.ones((img.shape[0], img.shape[1], 1), dtype=img.dtype)
+                        img = np.concatenate([img, alpha], axis=2)
+                    elif len(img.shape) == 2:
+                        # Grayscale -> RGBA
+                        gray = img[:, :, np.newaxis]
+                        rgb = np.repeat(gray, 3, axis=2)
+                        alpha = np.ones((img.shape[0], img.shape[1], 1), dtype=img.dtype)
+                        img = np.concatenate([rgb, alpha], axis=2)
+                    
+                    # Simple tone mapping
+                    img = np.power(img, 1.0/2.2)  # Gamma correction
+                    img = np.clip(img, 0.0, 1.0)  # Clamp
+                    img = (img * 255).astype(np.uint8)
+                    
+                    # Resize only if image is over 2000 pixels on any dimension
+                    h, w = img.shape[:2]
+                    if w > 2000 or h > 2000:
+                        # Cut in half while maintaining aspect ratio
+                        new_w = w // 2
+                        new_h = h // 2
+                        print(f"   📏 Resizing from {w}x{h} to {new_w}x{new_h}")
+                        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+                    
+                    # Save as PNG with alpha support
+                    from PIL import Image
+                    pil_image = Image.fromarray(img, 'RGBA')
+                    pil_image.save(png_path, 'PNG')
+                    converted = True
+                    
+                except ImportError:
+                    print(f"   ℹ️ OpenCV not available")
+                except Exception as e:
+                    print(f"   ⚠️ OpenCV conversion failed: {e}")
+            
+            # Method 3: Try PIL with custom EXR handling (basic fallback)
+            if not converted:
+                try:
+                    from PIL import Image
+                    print(f"   🔧 Attempting PIL EXR conversion (limited support)")
+                    
+                    # PIL has limited EXR support, but worth trying
+                    pil_image = Image.open(exr_path)
+                    
+                    # Convert to RGBA to preserve transparency
+                    if pil_image.mode != 'RGBA':
+                        if pil_image.mode == 'RGB':
+                            # Add full alpha channel
+                            pil_image = pil_image.convert('RGBA')
+                        elif pil_image.mode in ['L', 'LA', 'P']:
+                            # Convert other modes to RGBA
+                            pil_image = pil_image.convert('RGBA')
+                        else:
+                            # Fallback conversion
+                            pil_image = pil_image.convert('RGBA')
+                    
+                    # Resize only if image is over 2000 pixels on any dimension
+                    if pil_image.width > 2000 or pil_image.height > 2000:
+                        # Calculate new size - cut in half while maintaining aspect ratio
+                        new_width = pil_image.width // 2
+                        new_height = pil_image.height // 2
+                        
+                        print(f"   📏 Resizing from {pil_image.width}x{pil_image.height} to {new_width}x{new_height}")
+                        
+                        try:
+                            # Try new PIL version (Pillow >= 10.0.0)
+                            pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                        except AttributeError:
+                            # Fallback for older PIL versions
+                            pil_image = pil_image.resize((new_width, new_height), Image.LANCZOS)
+                    
+                    pil_image.save(png_path, 'PNG')
+                    converted = True
+                    
+                except Exception as e:
+                    print(f"   ⚠️ PIL EXR conversion failed: {e}")
+            
+            if converted:
+                print(f"   ✅ Successfully converted EXR to PNG: {png_path.name}")
+                return True
+            else:
+                print(f"   ❌ All EXR conversion methods failed")
+                return False
+                
+        except Exception as e:
+            print(f"   ❌ EXR conversion error: {e}")
             import traceback
             traceback.print_exc()
             return False

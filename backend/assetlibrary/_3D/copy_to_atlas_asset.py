@@ -304,7 +304,7 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
                                                      string_type=hou.stringParmType.FileReference)
         thumbnail_file_parm.setHelp("Select an image file or sequence to use as thumbnail.\n" +
                                    "Supports PNG, JPG, EXR formats and sequences.")
-        thumbnail_file_parm.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action != 1 }")
+        thumbnail_file_parm.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action != choose }")
         thumbnail_file_parm.setFileType(hou.fileType.Image)
         thumbnail_folder.addParmTemplate(thumbnail_file_parm)
         
@@ -369,7 +369,7 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
                                                        string_type=hou.stringParmType.FileReference)
         thumbnail_file_version.setHelp("Select an image file or sequence to use as thumbnail.\n" +
                                      "Supports PNG, JPG, EXR formats and sequences.")
-        thumbnail_file_version.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action_version != 1 }")
+        thumbnail_file_version.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action_version != choose }")
         thumbnail_file_version.setFileType(hou.fileType.Image)
         thumbnail_folder_version.addParmTemplate(thumbnail_file_version)
         
@@ -430,7 +430,7 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
                                                        string_type=hou.stringParmType.FileReference)
         thumbnail_file_variant.setHelp("Select an image file or sequence to use as thumbnail.\n" +
                                      "Supports PNG, JPG, EXR formats and sequences.")
-        thumbnail_file_variant.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action_variant != 1 }")
+        thumbnail_file_variant.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action_variant != choose }")
         thumbnail_file_variant.setFileType(hou.fileType.Image)
         thumbnail_folder_variant.addParmTemplate(thumbnail_file_variant)
         
@@ -1499,7 +1499,8 @@ try:
         thumbnail_action_idx = int(subnet.parm("thumbnail_action").eval()) if subnet.parm("thumbnail_action") else 0
         thumbnail_actions = ["automatic", "choose", "disable"]
         thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
-        thumbnail_file_path = subnet.parm("thumbnail_file").eval().strip() if subnet.parm("thumbnail_file") else ""
+        # Use unexpandedString to preserve $F variables instead of evaluating them
+        thumbnail_file_path = subnet.parm("thumbnail_file").unexpandedString().strip() if subnet.parm("thumbnail_file") else ""
         
         print(f"🎨 Thumbnail Action: {thumbnail_action}")
         if thumbnail_action == "choose" and thumbnail_file_path:
@@ -1519,7 +1520,8 @@ try:
         thumbnail_action_idx = int(subnet.parm("thumbnail_action_version").eval()) if subnet.parm("thumbnail_action_version") else 0
         thumbnail_actions = ["automatic", "choose", "disable"]
         thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
-        thumbnail_file_path = subnet.parm("thumbnail_file_version").eval().strip() if subnet.parm("thumbnail_file_version") else ""
+        # Use unexpandedString to preserve $F variables instead of evaluating them  
+        thumbnail_file_path = subnet.parm("thumbnail_file_version").unexpandedString().strip() if subnet.parm("thumbnail_file_version") else ""
         
         print(f"🎨 Thumbnail Action (Version Up): {thumbnail_action}")
         if thumbnail_action == "choose" and thumbnail_file_path:
@@ -1539,7 +1541,8 @@ try:
         thumbnail_action_idx = int(subnet.parm("thumbnail_action_variant").eval()) if subnet.parm("thumbnail_action_variant") else 0
         thumbnail_actions = ["automatic", "choose", "disable"]
         thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
-        thumbnail_file_path = subnet.parm("thumbnail_file_variant").eval().strip() if subnet.parm("thumbnail_file_variant") else ""
+        # Use unexpandedString to preserve $F variables instead of evaluating them
+        thumbnail_file_path = subnet.parm("thumbnail_file_variant").unexpandedString().strip() if subnet.parm("thumbnail_file_variant") else ""
         
         print(f"🎨 Thumbnail Action (Variant): {thumbnail_action}")
         if thumbnail_action == "choose" and thumbnail_file_path:
