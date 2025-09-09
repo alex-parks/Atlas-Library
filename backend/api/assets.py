@@ -58,6 +58,7 @@ class AssetResponse(BaseModel):
     metadata: dict = {}
     created_at: str
     thumbnail_path: Optional[str] = None
+    thumbnail_frame: Optional[int] = None  # Frame number to show when not hovering
     artist: Optional[str] = None
     file_format: str = "USD"
     description: str = ""
@@ -77,20 +78,55 @@ class AssetCreateRequest(BaseModel):
     created_by: Optional[str] = None
 
 def find_actual_thumbnail(asset_data: dict) -> Optional[str]:
-    asset_id = asset_data.get('_key', asset_data.get('id', ''))
+    # Prioritize 'id' field over '_key' since 'id' has the correct format
+    asset_id = asset_data.get('id', asset_data.get('_key', ''))
     asset_name = asset_data.get('name', '')
     if not asset_id:
         return None
+    
+    # Check existing thumbnail paths first
     if 'paths' in asset_data and 'thumbnail' in asset_data['paths']:
         db_thumbnail_path = asset_data['paths']['thumbnail']
         if db_thumbnail_path and Path(db_thumbnail_path).exists():
             return f"http://localhost:8000/thumbnails/{asset_id}"
+    
     thumbnail_path = asset_data.get('thumbnail_path')
     if thumbnail_path and Path(thumbnail_path).exists():
         return f"http://localhost:8000/thumbnails/{asset_id}"
+    
+    # Check folder_path from metadata (most accurate path)
+    folder_path = asset_data.get('folder_path')
+    if folder_path:
+        # Convert network path to container path if needed
+        if folder_path.startswith('/net/library/atlaslib/'):
+            container_folder = folder_path.replace('/net/library/atlaslib/', '/app/assets/')
+            thumbnail_folder = Path(container_folder) / "Thumbnail"
+        else:
+            thumbnail_folder = Path(folder_path) / "Thumbnail"
+        
+        if thumbnail_folder.exists() and thumbnail_folder.is_dir():
+            for ext in ['.png', '.jpg', '.jpeg']:
+                for img_file in thumbnail_folder.glob(f"*{ext}"):
+                    return f"http://localhost:8000/thumbnails/{asset_id}"
+    
+    # Check paths.folder_path as well
+    paths_folder_path = asset_data.get('paths', {}).get('folder_path')
+    if paths_folder_path and paths_folder_path != folder_path:
+        if paths_folder_path.startswith('/net/library/atlaslib/'):
+            container_folder = paths_folder_path.replace('/net/library/atlaslib/', '/app/assets/')
+            thumbnail_folder = Path(container_folder) / "Thumbnail"
+        else:
+            thumbnail_folder = Path(paths_folder_path) / "Thumbnail"
+        
+        if thumbnail_folder.exists() and thumbnail_folder.is_dir():
+            for ext in ['.png', '.jpg', '.jpeg']:
+                for img_file in thumbnail_folder.glob(f"*{ext}"):
+                    return f"http://localhost:8000/thumbnails/{asset_id}"
+    
+    # Fallback to pattern-based search
     folder_patterns = [
         ASSET_LIBRARY_BASE / f"{asset_id}_{asset_name}" / "Thumbnail",
-        ASSET_LIBRARY_BASE / asset_id / "Thumbnail",
+        ASSET_LIBRARY_BASE / asset_id / "Thumbnail", 
         ASSET_LIBRARY_BASE / asset_name / "Thumbnail",
     ]
     for folder in folder_patterns:
@@ -98,6 +134,7 @@ def find_actual_thumbnail(asset_data: dict) -> Optional[str]:
             for ext in ['.png', '.jpg', '.jpeg']:
                 for img_file in folder.glob(f"*{ext}"):
                     return f"http://localhost:8000/thumbnails/{asset_id}"
+    
     return None
 
 def convert_asset_to_response(asset_data: dict) -> AssetResponse:
@@ -148,14 +185,15 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
             logger.error(f"❌ asset_data keys: {list(asset_data.keys()) if isinstance(asset_data, dict) else 'not a dict'}")
             raise
     # Extract variant information from asset ID and metadata
-    asset_id = asset_data.get('_key', asset_data.get('id', ''))
+    # Prioritize 'id' field over '_key' since 'id' has the correct format
+    asset_id = asset_data.get('id', asset_data.get('_key', ''))
     variant_id = None
     variant_name = None
     
-    # Extract variant_id from asset ID (characters 9-11 in a 14-character ID)
+    # Extract variant_id from asset ID (characters 11-13 in a 16-character ID)
     logger.info(f"🔍 Extracting variant info from asset_id: '{asset_id}' (length: {len(asset_id)})")
-    if len(asset_id) >= 11:
-        variant_id = asset_id[9:11]
+    if len(asset_id) >= 13:
+        variant_id = asset_id[11:13]  # Characters 11-13 for 11-char base UID system
         logger.info(f"🔍 Extracted variant_id: '{variant_id}'")
     
     # Extract variant_name from metadata (check export_metadata first, then other locations)
@@ -166,6 +204,9 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
                        asset_data.get('metadata', {}).get('variant_name') or
                        asset_data.get('metadata', {}).get('export_metadata', {}).get('variant_name'))
         logger.info(f"🔍 Extracted variant_name: '{variant_name}'")
+    
+    
+    thumbnail_frame_value = asset_data.get('thumbnail_frame')
     
     return AssetResponse(
         id=asset_id,
@@ -180,6 +221,7 @@ def convert_asset_to_response(asset_data: dict) -> AssetResponse:
         metadata=metadata,  # Now includes hierarchy data
         created_at=asset_data.get('created_at') or datetime.now().isoformat(),
         thumbnail_path=thumbnail_url,
+        thumbnail_frame=thumbnail_frame_value,
         artist=artist,
         file_format="USD",
         description=description,
@@ -197,6 +239,44 @@ class PaginationResponse(BaseModel):
 async def test_endpoint():
     """Test endpoint to verify API is working"""
     return {"message": "API is working!", "status": "ok"}
+
+@router.get("/assets/{asset_id}/thumbnail-frame")
+async def get_thumbnail_frame(asset_id: str):
+    """Get thumbnail frame for an asset"""
+    asset_queries = get_asset_queries()
+    if not asset_queries:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        # Direct AQL query to get just the thumbnail_frame
+        query = "FOR asset IN Atlas_Library FILTER asset._key == @asset_id RETURN asset.thumbnail_frame"
+        cursor = asset_queries.db.aql.execute(query, bind_vars={'asset_id': asset_id})
+        result = list(cursor)
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        
+        return {"asset_id": asset_id, "thumbnail_frame": result[0]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@router.get("/assets/debug/raw/{asset_id}")
+async def debug_raw_asset(asset_id: str):
+    """Debug endpoint to see raw asset data from database"""
+    asset_queries = get_asset_queries()
+    if not asset_queries:
+        return {"error": "Database not available"}
+    
+    try:
+        result = asset_queries.get_asset_with_dependencies(asset_id)
+        return {
+            "raw_result": result,
+            "asset_thumbnail_frame": result.get('asset', {}).get('thumbnail_frame') if result.get('asset') else None
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 @router.get("/assets", response_model=PaginationResponse)
 async def list_assets(
@@ -295,10 +375,20 @@ async def create_asset(asset_request: AssetCreateRequest):
             # For new Houdini exports: metadata_id is just the UID (e.g., "B6A48C5B")
             # For legacy exports: metadata_id might be the full format (e.g., "B6A48C5B_atlas_asset")
             
-            # New versioning system: metadata_id is the full 14-character UID 
-            # Use the 14-character UID directly as both _key and id
-            if len(metadata_id) == 14:
-                # New 14-character UID system (9 base + 2 variant + 3 version)
+            # New versioning system: metadata_id is the full 16-character UID 
+            # Use the 16-character UID directly as both _key and id
+            if len(metadata_id) == 16:
+                # New 16-character UID system (11 base + 2 variant + 3 version)
+                asset_key = metadata_id  # Use 16-char UID directly as _key
+                asset_id = metadata_id   # Use 16-char UID as document id
+                logger.info(f"🔍 DEBUG: Using 16-char UID path - asset_key = '{asset_key}', asset_id = '{asset_id}'")
+            elif len(metadata_id) == 17:
+                # Previous 17-character UID system (12 base + 2 variant + 3 version) - still support for existing assets
+                asset_key = metadata_id  # Use 17-char UID directly as _key
+                asset_id = metadata_id   # Use 17-char UID as document id
+                logger.info(f"🔍 DEBUG: Using 17-char UID path - asset_key = '{asset_key}', asset_id = '{asset_id}'")
+            elif len(metadata_id) == 14:
+                # Previous 14-character UID system (9 base + 2 variant + 3 version) - still support for existing assets
                 asset_key = metadata_id  # Use 14-char UID directly as _key
                 asset_id = metadata_id   # Use 14-char UID as document id
                 logger.info(f"🔍 DEBUG: Using 14-char UID path - asset_key = '{asset_key}', asset_id = '{asset_id}'")
@@ -314,17 +404,16 @@ async def create_asset(asset_request: AssetCreateRequest):
                 asset_id = uid_part      # Use just UID for document id
                 logger.info(f"🔍 DEBUG: Using legacy UID_Name path - asset_key = '{asset_key}', asset_id = '{asset_id}'")
             else:
-                # Old format: just UID (add name suffix for legacy compatibility)
-                sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
-                asset_key = f"{metadata_id}_{sanitized_name}"  # Create full format for _key
-                asset_id = metadata_id                         # Use UID for document id
+                # Old format: just UID (use UID only for both key and ID)
+                asset_key = metadata_id  # Use UID only as _key (no name suffix)
+                asset_id = metadata_id   # Use UID for document id
                 logger.info(f"🔍 DEBUG: Using old UID path - asset_key = '{asset_key}', asset_id = '{asset_id}'")
         else:
-            # Generate new asset ID and key
-            sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', asset_name)
-            uid = uuid.uuid4().hex[:8].upper()
-            asset_key = f"{uid}_{sanitized_name}"
-            asset_id = uid
+            # Generate new asset ID and key (use UID only, no name suffix)
+            uid = uuid.uuid4().hex[:11].upper()
+            asset_key = uid  # Use UID only as _key
+            asset_id = uid   # Use UID as document id
+            logger.info(f"🔍 DEBUG: Generated new UID - asset_key = '{asset_key}', asset_id = '{asset_id}'")
         
         # Create asset document for ArangoDB
         asset_data = {
@@ -418,6 +507,11 @@ async def update_asset(asset_id: str, asset_request: AssetCreateRequest):
 async def patch_asset(asset_id: str, asset_update: dict):
     """Partial update of an asset - updates only provided fields"""
     try:
+        logger.info(f"🔍 PATCH Debug: Received PATCH request for asset {asset_id}")
+        logger.info(f"🔍 PATCH Debug: Update data: {asset_update}")
+        if 'thumbnail_frame' in asset_update:
+            logger.info(f"🔍 PATCH Debug: thumbnail_frame in update: {asset_update['thumbnail_frame']}, type: {type(asset_update['thumbnail_frame'])}")
+        
         # Get database connection
         asset_queries = get_asset_queries()
         if not asset_queries:
@@ -428,11 +522,29 @@ async def patch_asset(asset_id: str, asset_update: dict):
         if not collection.has(asset_id):
             raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
         
+        # Get current asset data for comparison
+        current_asset = collection.get(asset_id)
+        logger.info(f"🔍 PATCH Debug: Current thumbnail_frame in DB: {current_asset.get('thumbnail_frame')}")
+        
         # Add update timestamp
         asset_update['updated_at'] = datetime.now().isoformat()
         
-        # Update document in ArangoDB
-        collection.update_match({'_key': asset_id}, asset_update)
+        # Use AQL for reliable updates (collection.update has issues)
+        aql_query = """
+            FOR doc IN Atlas_Library
+            FILTER doc._key == @asset_id
+            UPDATE doc WITH @updates IN Atlas_Library
+            RETURN NEW
+        """
+        bind_vars = {'asset_id': asset_id, 'updates': asset_update}
+        
+        cursor = asset_queries.db.aql.execute(aql_query, bind_vars=bind_vars)
+        result_list = list(cursor)
+        
+        if not result_list:
+            raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found or update failed")
+        
+        logger.info(f"✅ Asset {asset_id} updated with fields: {list(asset_update.keys())}")
         
         return {
             "success": True,

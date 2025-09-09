@@ -158,20 +158,24 @@ async def get_thumbnail(asset_id: str):
             thumbnail_paths.append(asset['paths']['thumbnail'])
         if asset.get('thumbnail_path'):
             thumbnail_paths.append(asset['thumbnail_path'])
-        asset_name = asset.get('name', '')
-        if asset_name:
-            # Docker-friendly base path
-            base_path = Path(os.getenv('ASSET_LIBRARY_PATH', '/app/assets')) / "3D"
-            folder_patterns = [
-                base_path / f"{asset_id}_{asset_name}" / "Thumbnail",
-                base_path / asset_id / "Thumbnail",
-                base_path / asset_name / "Thumbnail",
-            ]
-            for folder in folder_patterns:
-                if folder.exists() and folder.is_dir():
-                    for ext in ['.png', '.jpg', '.jpeg']:
-                        for img_file in folder.glob(f"*{ext}"):
-                            thumbnail_paths.append(str(img_file))
+        # Try to get the folder path from the asset data
+        folder_path = asset.get('folder_path') or asset.get('paths', {}).get('folder_path')
+        if folder_path:
+            # Convert network path to container path if needed
+            if folder_path.startswith('/net/library/atlaslib/'):
+                container_folder = folder_path.replace('/net/library/atlaslib/', '/app/assets/')
+                logger.info(f"[THUMBNAIL] Converted path: {folder_path} -> {container_folder}")
+                folder_path = container_folder
+            
+            # Look for thumbnail folder in the asset's folder
+            thumbnail_folder = Path(folder_path) / "Thumbnail"
+            logger.info(f"[THUMBNAIL] Looking for thumbnails in: {thumbnail_folder}")
+            if thumbnail_folder.exists() and thumbnail_folder.is_dir():
+                logger.info(f"[THUMBNAIL] Found thumbnail folder: {thumbnail_folder}")
+                for ext in ['.png', '.jpg', '.jpeg']:
+                    for img_file in thumbnail_folder.glob(f"*{ext}"):
+                        logger.info(f"[THUMBNAIL] Found thumbnail file: {img_file}")
+                        thumbnail_paths.append(str(img_file))
         for thumbnail_path in thumbnail_paths:
             if thumbnail_path and Path(thumbnail_path).exists():
                 logger.info(f"[OK] Serving thumbnail: {thumbnail_path}")
@@ -206,12 +210,28 @@ async def get_thumbnail_sequence(asset_id: str):
         
         # Try multiple possible folder structures
         thumbnail_folders = []
-        if asset.get('paths', {}).get('folder_path'):
-            # Use the asset folder path from database
-            asset_folder = Path(asset['paths']['folder_path'])
-            thumbnail_folders.append(asset_folder / "Thumbnail")
-        elif asset.get('paths', {}).get('asset_folder'):
-            # Legacy field name
+        
+        # Check folder_path from metadata (most accurate path)
+        folder_path = asset.get('folder_path')
+        if folder_path:
+            # Convert network path to container path if needed
+            if folder_path.startswith('/net/library/atlaslib/'):
+                container_folder = folder_path.replace('/net/library/atlaslib/', '/app/assets/')
+                thumbnail_folders.append(Path(container_folder) / "Thumbnail")
+            else:
+                thumbnail_folders.append(Path(folder_path) / "Thumbnail")
+        
+        # Check paths.folder_path as well
+        paths_folder_path = asset.get('paths', {}).get('folder_path')
+        if paths_folder_path and paths_folder_path != folder_path:
+            if paths_folder_path.startswith('/net/library/atlaslib/'):
+                container_folder = paths_folder_path.replace('/net/library/atlaslib/', '/app/assets/')
+                thumbnail_folders.append(Path(container_folder) / "Thumbnail")
+            else:
+                thumbnail_folders.append(Path(paths_folder_path) / "Thumbnail")
+        
+        # Legacy field name
+        if asset.get('paths', {}).get('asset_folder'):
             asset_folder = Path(asset['paths']['asset_folder'])
             thumbnail_folders.append(asset_folder / "Thumbnail")
         
@@ -242,19 +262,51 @@ async def get_thumbnail_sequence(asset_id: str):
             logger.error(f"[SEQUENCE] No thumbnail sequence found for asset: {asset_id}")
             raise HTTPException(status_code=404, detail=f"No thumbnail sequence found for asset: {asset_id}")
         
+        # Extract actual frame numbers from filenames
+        def extract_frame_number(filename):
+            """Extract frame number from filename like 'asset_1001.png' or 'asset.1001.png'"""
+            import re
+            # Common patterns: asset_1001.png, asset.1001.png, 1001.png
+            patterns = [
+                r'_(\d{4})\.',  # asset_1001.png
+                r'\.(\d{4})\.',  # asset.1001.png  
+                r'^(\d{4})\.',   # 1001.png
+                r'(\d{4})$'      # 1001 (without extension)
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, filename)
+                if match:
+                    return int(match.group(1))
+            
+            # Fallback to filename sorting order if no frame number found
+            return None
+
+        # Build frames with actual frame numbers
+        frames_with_numbers = []
+        for i, file in enumerate(sequence_files):
+            actual_frame = extract_frame_number(file.name)
+            frames_with_numbers.append({
+                "index": i,  # 0-based index for API access
+                "frame_number": actual_frame,  # Actual frame number from filename
+                "filename": file.name,
+                "url": f"/api/v1/assets/{asset_id}/thumbnail-sequence/frame/{i}"
+            })
+
+        # Calculate frame range
+        frame_numbers = [f["frame_number"] for f in frames_with_numbers if f["frame_number"] is not None]
+        frame_range = {
+            "start": min(frame_numbers) if frame_numbers else 1,
+            "end": max(frame_numbers) if frame_numbers else len(sequence_files)
+        }
+
         # Return sequence metadata
         sequence_info = {
             "asset_id": asset_id,
             "frame_count": len(sequence_files),
+            "frame_range": frame_range,
             "base_url": f"/api/v1/assets/{asset_id}/thumbnail-sequence/frame",
-            "frames": [
-                {
-                    "frame": i,
-                    "filename": file.name,
-                    "url": f"/api/v1/assets/{asset_id}/thumbnail-sequence/frame/{i}"
-                }
-                for i, file in enumerate(sequence_files)
-            ]
+            "frames": frames_with_numbers
         }
         
         logger.info(f"[SEQUENCE] Returning {len(sequence_files)} frames for asset: {asset_id}")
@@ -281,12 +333,28 @@ async def get_thumbnail_sequence_frame(asset_id: str, frame_number: int):
         
         # Try multiple possible folder structures
         thumbnail_folders = []
-        if asset.get('paths', {}).get('folder_path'):
-            # Use the asset folder path from database
-            asset_folder = Path(asset['paths']['folder_path'])
-            thumbnail_folders.append(asset_folder / "Thumbnail")
-        elif asset.get('paths', {}).get('asset_folder'):
-            # Legacy field name
+        
+        # Check folder_path from metadata (most accurate path)
+        folder_path = asset.get('folder_path')
+        if folder_path:
+            # Convert network path to container path if needed
+            if folder_path.startswith('/net/library/atlaslib/'):
+                container_folder = folder_path.replace('/net/library/atlaslib/', '/app/assets/')
+                thumbnail_folders.append(Path(container_folder) / "Thumbnail")
+            else:
+                thumbnail_folders.append(Path(folder_path) / "Thumbnail")
+        
+        # Check paths.folder_path as well
+        paths_folder_path = asset.get('paths', {}).get('folder_path')
+        if paths_folder_path and paths_folder_path != folder_path:
+            if paths_folder_path.startswith('/net/library/atlaslib/'):
+                container_folder = paths_folder_path.replace('/net/library/atlaslib/', '/app/assets/')
+                thumbnail_folders.append(Path(container_folder) / "Thumbnail")
+            else:
+                thumbnail_folders.append(Path(paths_folder_path) / "Thumbnail")
+        
+        # Legacy field name
+        if asset.get('paths', {}).get('asset_folder'):
             asset_folder = Path(asset['paths']['asset_folder'])
             thumbnail_folders.append(asset_folder / "Thumbnail")
         

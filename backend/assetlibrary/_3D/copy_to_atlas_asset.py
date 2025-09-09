@@ -312,10 +312,10 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         
         # === VERSION UP ASSET PARAMETERS (visible when action == 1) ===
         
-        # Parent Asset ID (Version Up only) - 11 characters
+        # Parent Asset ID (Version Up only) - 13 characters
         parent_asset_id = hou.StringParmTemplate("version_parent_asset_id", "Parent Asset ID", 1)
         parent_asset_id.setDefaultValue([""])
-        parent_asset_id.setHelp("Enter the 11-character Asset ID (9 base + 2 variant) of the asset to version up (e.g., A5FF6F3B4AA)")
+        parent_asset_id.setHelp("Enter the 13-character Asset ID (11 base + 2 variant) of the asset to version up (e.g., A5FF6F3B4R6AA)")
         parent_asset_id.setConditional(hou.parmCondType.HideWhen, "{ action != 1 }")
         atlas_tab.addParmTemplate(parent_asset_id)
         print(f"   ➕ Added parent asset ID (Version Up only)")
@@ -337,10 +337,10 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         
         # === VARIANT ASSET PARAMETERS (visible when action == 2) ===
         
-        # Parent Asset ID for Variant (Variant only) - 9 characters only
+        # Parent Asset ID for Variant (Variant only) - 11 characters only
         variant_parent_id = hou.StringParmTemplate("variant_parent_id", "Parent Asset ID", 1)
         variant_parent_id.setDefaultValue([""])
-        variant_parent_id.setHelp("Enter the 9-character base UID of the asset to create variant from (e.g., A5FF6F3B4)")
+        variant_parent_id.setHelp("Enter the 11-character base UID of the asset to create variant from (e.g., A5FF6F3B4R6)")
         variant_parent_id.setConditional(hou.parmCondType.HideWhen, "{ action != 2 }")
         atlas_tab.addParmTemplate(variant_parent_id)
         print(f"   ➕ Added variant parent asset ID (Variant only)")
@@ -538,7 +538,7 @@ def lookup_asset_versions(base_uid):
         assets_data = response.json()
         all_assets = assets_data.get('items', [])
         
-        # Filter assets that match the base UID (first 9 characters)
+        # Filter assets that match the base UID (first 11 characters)
         matching_assets = []
         print(f"   🔍 Checking {len(all_assets)} total assets in database...")
         
@@ -546,12 +546,12 @@ def lookup_asset_versions(base_uid):
             asset_id = asset.get('id', '')
             print(f"   🔍 Checking asset: {asset_id}")
             
-            if len(asset_id) >= 9 and asset_id[:9].upper() == base_uid.upper():
+            if len(asset_id) >= 11 and asset_id[:11].upper() == base_uid.upper():
                 matching_assets.append(asset)
                 print(f"   ✅ Found matching asset: {asset_id}")
             else:
-                if len(asset_id) >= 9:
-                    print(f"   ❌ No match: {asset_id[:9]} != {base_uid.upper()}")
+                if len(asset_id) >= 11:
+                    print(f"   ❌ No match: {asset_id[:11]} != {base_uid.upper()}")
                 else:
                     print(f"   ❌ Too short: {asset_id}")
         
@@ -574,7 +574,7 @@ def lookup_asset_versions(base_uid):
             asset_id = asset.get('id', '')
             print(f"   🔍 Processing asset ID: {asset_id}")
             
-            if len(asset_id) == 12:
+            if len(asset_id) == 14:  # Legacy 14-character UIDs (9+2+3)
                 try:
                     version_str = asset_id[-3:]
                     version_num = int(version_str)
@@ -621,7 +621,7 @@ def lookup_asset_versions(base_uid):
 
 def lookup_asset_versions_v2(asset_base_id):
     """
-    Look up all versions of an asset by 11-character asset base ID (9 base + 2 variant) and return version info
+    Look up all versions of an asset by 13-character asset base ID (11 base + 2 variant) and return version info
     """
     try:
         print(f"🔍 Looking up versions for asset base ID: {asset_base_id}")
@@ -646,7 +646,7 @@ def lookup_asset_versions_v2(asset_base_id):
         assets_data = response.json()
         all_assets = assets_data.get('items', [])
         
-        # Filter assets that match the asset base ID (first 11 characters: 9 base + 2 variant)
+        # Filter assets that match the asset base ID (first 13 characters: 11 base + 2 variant)
         matching_assets = []
         print(f"   🔍 Checking {len(all_assets)} total assets in database...")
         
@@ -654,12 +654,12 @@ def lookup_asset_versions_v2(asset_base_id):
             asset_id = asset.get('id', '')
             print(f"   🔍 Checking asset: {asset_id}")
             
-            if len(asset_id) >= 11 and asset_id[:11].upper() == asset_base_id.upper():
+            if len(asset_id) >= 13 and asset_id[:13].upper() == asset_base_id.upper():
                 matching_assets.append(asset)
                 print(f"   ✅ Found matching asset: {asset_id}")
             else:
-                if len(asset_id) >= 11:
-                    print(f"   ❌ No match: {asset_id[:11]} != {asset_base_id.upper()}")
+                if len(asset_id) >= 13:
+                    print(f"   ❌ No match: {asset_id[:13]} != {asset_base_id.upper()}")
                 else:
                     print(f"   ❌ Too short: {asset_id} (length: {len(asset_id)})")
         
@@ -677,7 +677,7 @@ def lookup_asset_versions_v2(asset_base_id):
             asset_id = asset.get('id', '')
             print(f"   🔍 Processing asset ID: {asset_id}")
             
-            if len(asset_id) == 14:  # 14-character UIDs now
+            if len(asset_id) == 16:  # 16-character UIDs now
                 try:
                     version_str = asset_id[-3:]  # Last 3 characters are version
                     version_num = int(version_str)
@@ -689,7 +689,7 @@ def lookup_asset_versions_v2(asset_base_id):
                     print(f"   ✅ Parsed version {version_num:03d} from {asset_id}")
                 except ValueError:
                     print(f"   ⚠️ Invalid version format in asset ID: {asset_id} (last 3: '{asset_id[-3:]}')")
-            elif len(asset_id) == 12:  # Legacy 12-character UIDs
+            elif len(asset_id) == 14:  # Legacy 14-character UIDs
                 try:
                     version_str = asset_id[-3:]  # Last 3 characters are version
                     version_num = int(version_str)
@@ -761,18 +761,18 @@ try:
     
     if not base_uid_input:
         subnet.parm("export_status").set("❌ Missing Asset ID")
-        hou.ui.displayMessage("❌ Please enter an Asset ID (11-character: 9 base + 2 variant)", severity=hou.severityType.Error)
+        hou.ui.displayMessage("❌ Please enter an Asset ID (13-character: 11 base + 2 variant)", severity=hou.severityType.Error)
         raise Exception("Asset ID required")
     
-    if len(base_uid_input) != 11:
+    if len(base_uid_input) != 13:
         subnet.parm("export_status").set("❌ Asset ID wrong length")
-        hou.ui.displayMessage(f"❌ Asset ID must be exactly 11 characters (9 base + 2 variant). Got {len(base_uid_input)} characters.", severity=hou.severityType.Error)
+        hou.ui.displayMessage(f"❌ Asset ID must be exactly 13 characters (11 base + 2 variant). Got {len(base_uid_input)} characters.", severity=hou.severityType.Error)
         raise Exception("Invalid Asset ID length")
     
-    # Use full 11-character asset ID (9 base + 2 variant)
-    asset_base_id = base_uid_input[:11].upper()
-    base_uid = asset_base_id[:9]  # First 9 characters
-    variant_id = asset_base_id[9:11]  # Characters 9-11
+    # Use full 13-character asset ID (11 base + 2 variant)
+    asset_base_id = base_uid_input[:13].upper()
+    base_uid = asset_base_id[:11]  # First 11 characters
+    variant_id = asset_base_id[11:13]  # Characters 11-13
     print(f"🎯 Asset Base ID: {asset_base_id} (Base: {base_uid}, Variant: {variant_id})")
     
     # Update status
@@ -789,7 +789,7 @@ try:
     next_version = version_info['next_version']
     latest_asset = version_info['latest_asset']
     existing_versions = version_info['existing_versions']
-    new_asset_id = f"{base_uid}{variant_id}{next_version:03d}"  # 14-character: 9 base + 2 variant + 3 version
+    new_asset_id = f"{base_uid}{variant_id}{next_version:03d}"  # 16-character: 11 base + 2 variant + 3 version
     
     print(f"🔍 VERSION LOOKUP RESULTS:")
     print(f"   Asset Base ID: {asset_base_id} (Base: {base_uid}, Variant: {variant_id})")
@@ -853,7 +853,7 @@ try:
         "export_time": str(datetime.now()),
         "tags": extended_tags,
         "action": "version_up",
-        "parent_asset_id": asset_base_id,  # Pass 11-character asset base ID
+        "parent_asset_id": asset_base_id,  # Pass 13-character asset base ID
         "version": next_version,
         "base_uid": base_uid,
         "variant_id": variant_id,
@@ -869,7 +869,7 @@ try:
         render_engine=inherited_render_engine,
         metadata=hierarchy_metadata,
         action="version_up",
-        parent_asset_id=asset_base_id  # Pass 11-character asset base ID
+        parent_asset_id=asset_base_id  # Pass 13-character asset base ID
     )
     
     print(f"✅ Created exporter with ID: {exporter.asset_id}")
@@ -1063,12 +1063,68 @@ try:
         hou.ui.displayMessage("❌ Parent Asset ID is required for variant creation!", severity=hou.severityType.Error)
         raise Exception("Parent Asset ID required")
         
-    if len(variant_parent_id) != 9:
-        hou.ui.displayMessage("❌ Parent Asset ID must be exactly 9 characters (base UID only)!", severity=hou.severityType.Error)
+    if len(variant_parent_id) != 11:
+        hou.ui.displayMessage("❌ Parent Asset ID must be exactly 11 characters (base UID only)!", severity=hou.severityType.Error)
         raise Exception("Invalid Parent Asset ID length")
         
     if not variant_name:
         variant_name = "default"
+    
+    # Validation: Don't allow "default" as variant name
+    if variant_name.lower() == "default":
+        error_msg = '❌ Asset Variant Name has to be different than "default"'
+        hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
+        if node.parm("export_status"):
+            node.parm("export_status").set("❌ Invalid variant name")
+        raise Exception(error_msg)
+    
+    # Validation: Check if parent asset exists in database
+    print("🔍 Validating parent asset exists in database...")
+    try:
+        import urllib.request
+        import json
+        
+        api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+        print(f"   🌐 Making API request to: {api_url}")
+        
+        response = urllib.request.urlopen(api_url, timeout=30)
+        assets_data = json.loads(response.read().decode())
+        all_assets = assets_data.get('items', [])
+        
+        # Look for the original asset (AA variant) with the base UID
+        target_asset_id = f"{variant_parent_id}AA001"  # Original asset format
+        original_asset_found = False
+        
+        for asset in all_assets:
+            if asset.get('id', '') == target_asset_id:
+                original_asset_found = True
+                print(f"   ✅ Found original asset for variant: {target_asset_id}")
+                break
+        
+        if not original_asset_found:
+            error_msg = f"❌ No Asset Found: {variant_parent_id} not found in database"
+            print(f"   ❌ {error_msg}")
+            hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
+            if node.parm("export_status"):
+                node.parm("export_status").set("❌ Asset not found")
+            raise Exception("No Asset Found")
+            
+    except urllib.error.URLError as e:
+        error_msg = f"❌ Cannot connect to database to validate asset: {e}"
+        print(f"   ❌ {error_msg}")
+        hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
+        if node.parm("export_status"):
+            node.parm("export_status").set("❌ Database connection failed")
+        raise Exception("Database connection failed")
+    except Exception as e:
+        if "No Asset Found" in str(e):
+            raise  # Re-raise the asset not found error
+        error_msg = f"❌ Error validating parent asset: {e}"
+        print(f"   ❌ {error_msg}")
+        hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
+        if node.parm("export_status"):
+            node.parm("export_status").set("❌ Validation failed")
+        raise Exception("Asset validation failed")
     
     # For variants, pass the variant name as asset_name, but the TemplateAssetExporter
     # will look up the original asset name and use that instead
@@ -1090,14 +1146,69 @@ try:
     
     from assetlibrary.houdini.houdiniae import TemplateAssetExporter
     
-    # Create exporter for variant
+    # Get inheritance data from parent asset (same logic as version_up)
+    print("📋 Looking up parent asset for inheritance...")
+    base_uid = variant_parent_id  # This is the 11-character base UID
+    
+    # Query the Atlas API to find the original asset (AA variant)
+    target_asset_id = f"{base_uid}AA001"  # Original asset format
+    print(f"   🔍 Looking for original asset: {target_asset_id}")
+    
+    # Initialize defaults
+    inherited_asset_type = "Assets"
+    inherited_subcategory = "Blacksmith Asset"
+    inherited_render_engine = "Redshift"
+    inherited_asset_name = f"Asset_{base_uid}"
+    
+    try:
+        import urllib.request
+        import json
+        
+        api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+        print(f"   🌐 Making API request to: {api_url}")
+        
+        response = urllib.request.urlopen(api_url, timeout=30)
+        assets_data = json.loads(response.read().decode())
+        all_assets = assets_data.get('items', [])
+        
+        # Find the original asset (AA variant)
+        original_asset = None
+        for asset in all_assets:
+            asset_id = asset.get('id', '')
+            if asset_id == target_asset_id:
+                original_asset = asset
+                print(f"   ✅ Found original asset: {asset_id}")
+                break
+        
+        # Inherit metadata from original asset if found
+        if original_asset:
+            print("📋 Inheriting metadata from original asset...")
+            hierarchy = original_asset.get('metadata', {}).get('hierarchy', {})
+            inherited_asset_type = hierarchy.get('asset_type', 'Assets')
+            inherited_subcategory = hierarchy.get('subcategory', 'Blacksmith Asset')
+            inherited_render_engine = hierarchy.get('render_engine', 'Redshift')
+            
+            # Inherit the original asset name
+            inherited_asset_name = original_asset.get('name', f'Asset_{base_uid}')
+            
+            print(f"   ✅ Inherited Asset Type: {inherited_asset_type}")
+            print(f"   ✅ Inherited Subcategory: {inherited_subcategory}")
+            print(f"   ✅ Inherited Render Engine: {inherited_render_engine}")
+            print(f"   ✅ Inherited Asset Name: {inherited_asset_name}")
+        else:
+            print(f"   ⚠️ Original asset not found, using defaults")
+    
+    except Exception as e:
+        print(f"   ⚠️ Error getting parent asset data, using defaults: {e}")
+    
+    # Create exporter for variant with inherited properties
     exporter = TemplateAssetExporter(
         asset_name=variant_asset_name,
-        subcategory="Blacksmith Asset",  # Default subcategory for variants
+        subcategory=inherited_subcategory,  # Inherit from parent asset
         description="Variant asset",
         tags=[],  # No tags for variants
-        asset_type="Assets",  # Default asset type for variants
-        render_engine="Redshift",  # Default render engine for variants
+        asset_type=inherited_asset_type,  # Inherit from parent asset
+        render_engine=inherited_render_engine,  # Inherit from parent asset
         metadata="",
         action="variant",
         parent_asset_id=variant_parent_id,
@@ -1329,9 +1440,9 @@ try:
     elif action in ["version_up", "variant"] and not parent_asset_id:
         subnet.parm("export_status").set("❌ Missing parent asset ID")
         hou.ui.displayMessage(f"❌ Asset ID is required for {action.replace('_', ' ').title()}!", severity=hou.severityType.Error)
-    elif action in ["version_up", "variant"] and len(parent_asset_id) < 9:
+    elif action in ["version_up", "variant"] and len(parent_asset_id) < 11:
         subnet.parm("export_status").set("❌ Invalid parent asset ID")
-        hou.ui.displayMessage(f"❌ Asset ID must be at least 9 characters for {action.replace('_', ' ').title()}!", severity=hou.severityType.Error)
+        hou.ui.displayMessage(f"❌ Asset ID must be at least 11 characters for {action.replace('_', ' ').title()}!", severity=hou.severityType.Error)
     else:
         # Convert asset type and get subcategory
         asset_types = ["Assets", "FX", "Materials", "HDAs"]

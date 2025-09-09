@@ -4,13 +4,34 @@ import { ChevronUp, ChevronDown } from 'lucide-react';
 
 const CollapsibleAssetInfo = ({ asset, formatAssetNameJSX }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isClickedOpen, setIsClickedOpen] = useState(false);
+
+  const handleBannerHover = () => {
+    if (!isClickedOpen) {
+      setIsExpanded(true);
+    }
+  };
+
+  const handleBannerLeave = () => {
+    if (!isClickedOpen) {
+      setIsExpanded(false);
+    }
+  };
+
+  const handleBannerClick = () => {
+    if (isClickedOpen) {
+      // Currently clicked open, so close it
+      setIsClickedOpen(false);
+      setIsExpanded(false);
+    } else {
+      // Currently closed, so open it and keep it open
+      setIsClickedOpen(true);
+      setIsExpanded(true);
+    }
+  };
 
   return (
-    <div 
-      className="absolute bottom-0 left-0 right-0 z-10"
-      onMouseEnter={() => setIsExpanded(true)}
-      onMouseLeave={() => setIsExpanded(false)}
-    >
+    <div className="absolute bottom-0 left-0 right-0 z-10">
       {/* Expanded Content Panel - slides up from bottom */}
       <div className={`bg-neutral-800/95 border-t border-l border-r border-neutral-700 shadow-lg transition-all duration-300 ease-in-out overflow-hidden ${
         isExpanded ? 'max-h-48 opacity-100' : 'max-h-0 opacity-0'
@@ -57,8 +78,9 @@ const CollapsibleAssetInfo = ({ asset, formatAssetNameJSX }) => {
               <div className="text-purple-300 font-medium">
                 {(() => {
                   const assetId = asset.id || asset._key || '';
-                  if (assetId.length >= 14) {
-                    return `v${assetId.substring(11)}`;
+                  if (assetId.length >= 16) {
+                    // Extract version only (last 3 characters): 11 base + 2 variant + 3 version
+                    return `v${assetId.substring(13)}`;
                   }
                   return 'v001';
                 })()}
@@ -75,7 +97,12 @@ const CollapsibleAssetInfo = ({ asset, formatAssetNameJSX }) => {
       </div>
 
       {/* Always visible tab at bottom */}
-      <div className="bg-neutral-800/95 border border-neutral-700 rounded-t-lg shadow-lg cursor-pointer hover:bg-neutral-700/95 transition-all duration-200">
+      <div 
+        className="bg-neutral-800/95 border border-neutral-700 rounded-t-lg shadow-lg cursor-pointer hover:bg-neutral-700/95 transition-all duration-200"
+        onMouseEnter={handleBannerHover}
+        onMouseLeave={handleBannerLeave}
+        onClick={handleBannerClick}
+      >
         <div className="flex items-center justify-center py-1 px-3">
           <div className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors">
             <span className="text-xs font-medium">Asset Info</span>

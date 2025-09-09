@@ -6,7 +6,8 @@ const SequenceThumbnail = ({
   assetName, 
   fallbackIcon = '🎨',
   className = "w-full h-full object-cover",
-  onClick = () => {} 
+  onClick = () => {},
+  thumbnailFrame = null  // Frame number to show when not hovering
 }) => {
   const [sequenceData, setSequenceData] = useState(null);
   const [currentFrame, setCurrentFrame] = useState(0);
@@ -43,7 +44,16 @@ const SequenceThumbnail = ({
         
         if (data.frame_count > 1) {
           setSequenceData(data);
-          setCurrentFrame(0);
+          
+          // Find the index of the thumbnail frame if specified
+          let initialFrame = 0;
+          if (thumbnailFrame && data.frames) {
+            const frameIndex = data.frames.findIndex(f => f.frame_number === thumbnailFrame);
+            if (frameIndex !== -1) {
+              initialFrame = frameIndex;
+            }
+          }
+          setCurrentFrame(initialFrame);
         } else if (data.frame_count === 1) {
           // Single frame - treat as regular thumbnail
           setSequenceData(data);
@@ -62,7 +72,7 @@ const SequenceThumbnail = ({
     };
 
     fetchSequenceData();
-  }, [assetId]);
+  }, [assetId, thumbnailFrame]);
 
   // Handle scroll wheel for zoom
   const handleWheel = (e) => {
@@ -136,7 +146,7 @@ const SequenceThumbnail = ({
     setIsDragging(false);
   };
 
-  // Reset to first frame and zoom when mouse leaves
+  // Reset to thumbnail frame and zoom when mouse leaves
   const handleMouseLeave = () => {
     setIsHovering(false);
     setIsDragging(false);
@@ -146,9 +156,16 @@ const SequenceThumbnail = ({
     setZoomCenter({ x: 0.5, y: 0.5 });
     setPanOffset({ x: 0, y: 0 });
     
-    // Reset to first frame
+    // Reset to thumbnail frame or first frame
     if (sequenceData && sequenceData.frame_count > 1) {
-      setCurrentFrame(0);
+      let resetFrame = 0;
+      if (thumbnailFrame && sequenceData.frames) {
+        const frameIndex = sequenceData.frames.findIndex(f => f.frame_number === thumbnailFrame);
+        if (frameIndex !== -1) {
+          resetFrame = frameIndex;
+        }
+      }
+      setCurrentFrame(resetFrame);
     }
   };
 
@@ -231,7 +248,13 @@ const SequenceThumbnail = ({
         }
       }}
       title={sequenceData?.frame_count > 1 ? 
-        `Sequence: ${sequenceData.frame_count} frames (Frame ${currentFrame + 1})${zoom > 1 ? ` - Zoom: ${zoom.toFixed(1)}x` : ''}` : 
+        `Sequence: ${sequenceData.frame_count} frames${
+          sequenceData.frames && sequenceData.frames[currentFrame] && sequenceData.frames[currentFrame].frame_number 
+            ? ` (Frame ${sequenceData.frames[currentFrame].frame_number})` 
+            : sequenceData.frame_range 
+              ? ` (Frame ${sequenceData.frame_range.start + currentFrame})` 
+              : ` (Frame ${currentFrame + 1})`
+        }${zoom > 1 ? ` - Zoom: ${zoom.toFixed(1)}x` : ''}` : 
         assetName
       }
       style={{ userSelect: 'none' }} // Prevent text selection when dragging
@@ -266,7 +289,11 @@ const SequenceThumbnail = ({
           {/* Frame indicator - only show for sequences */}
           {sequenceData.frame_count > 1 && (
             <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded">
-              Frame: {currentFrame + 1}/{sequenceData.frame_count}
+              {sequenceData.frames && sequenceData.frames[currentFrame] && sequenceData.frames[currentFrame].frame_number 
+                ? `Frame: ${sequenceData.frames[currentFrame].frame_number}` 
+                : sequenceData.frame_range 
+                  ? `Frame: ${sequenceData.frame_range.start + currentFrame}` 
+                  : `Frame: ${currentFrame + 1}/${sequenceData.frame_count}`}
             </div>
           )}
           

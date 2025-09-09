@@ -1,10 +1,7 @@
 // frontend/src/App.jsx - SIMPLE VERSION
 import React, { useState, useEffect } from 'react';
-import { Library, Briefcase, Bot, Package, Settings } from 'lucide-react';
+import { Library } from 'lucide-react';
 import AssetLibrary from './components/AssetLibrary';
-import ProducerTools from './components/ProducerTools';
-import AITools from './components/AITools';
-import SettingsComponent from './components/Settings';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -46,34 +43,52 @@ const App = () => {
   const [apiStatus, setApiStatus] = useState('connected'); // Assume it's working
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  
+  // Theme state for sharing with AssetLibrary
+  const [darkMode, setDarkMode] = useState(true);
+  const [accentColor, setAccentColor] = useState('blue');
 
   // Initialize theme and settings on app startup
   useEffect(() => {
-    // Always start with dark mode
-    document.documentElement.classList.add('dark');
-    document.documentElement.classList.remove('light');
-    
-    // Load saved accent color
+    // Load saved theme settings
+    const savedDarkMode = localStorage.getItem('darkMode');
     const savedAccentColor = localStorage.getItem('accentColor');
     
-    // Apply accent color
+    if (savedDarkMode !== null) {
+      setDarkMode(JSON.parse(savedDarkMode));
+    }
     if (savedAccentColor) {
-      const colors = {
-        blue: { primary: '#3b82f6', hover: '#2563eb' },
-        purple: { primary: '#8b5cf6', hover: '#7c3aed' },
-        green: { primary: '#10b981', hover: '#059669' },
-        orange: { primary: '#f59e0b', hover: '#d97706' },
-        red: { primary: '#ef4444', hover: '#dc2626' },
-        white: { primary: '#ffffff', hover: '#f3f4f6' },
-        lightgray: { primary: '#9ca3af', hover: '#6b7280' },
-        darkgray: { primary: '#4b5563', hover: '#374151' }
-      };
-      
-      const root = document.documentElement;
-      root.style.setProperty('--accent-primary', colors[savedAccentColor].primary);
-      root.style.setProperty('--accent-hover', colors[savedAccentColor].hover);
+      setAccentColor(savedAccentColor);
     }
   }, []);
+  
+  // Apply theme changes
+  useEffect(() => {
+    // Apply dark mode
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    } else {
+      document.documentElement.classList.add('light');
+      document.documentElement.classList.remove('dark');
+    }
+    
+    // Apply accent color
+    const colors = {
+      blue: { primary: '#3b82f6', hover: '#2563eb' },
+      purple: { primary: '#8b5cf6', hover: '#7c3aed' },
+      green: { primary: '#10b981', hover: '#059669' },
+      orange: { primary: '#f59e0b', hover: '#d97706' },
+      red: { primary: '#ef4444', hover: '#dc2626' },
+      white: { primary: '#ffffff', hover: '#f3f4f6' },
+      lightgray: { primary: '#9ca3af', hover: '#6b7280' },
+      darkgray: { primary: '#4b5563', hover: '#374151' }
+    };
+    
+    const root = document.documentElement;
+    root.style.setProperty('--accent-primary', colors[accentColor].primary);
+    root.style.setProperty('--accent-hover', colors[accentColor].hover);
+  }, [darkMode, accentColor]);
 
   // Simple API check - just once
   useEffect(() => {
@@ -104,19 +119,18 @@ const App = () => {
     //   icon: Briefcase,
     //   component: ProducerTools
     // },
-    {
-      id: 'ai-tools',
-      name: 'AI Tools',
-      icon: Bot,
-      component: AITools
-    },
-    {
-      id: 'settings',
-      name: 'Settings',
-      icon: Settings,
-      component: SettingsComponent
-    }
   ];
+
+  // Theme handler functions
+  const handleDarkModeToggle = (newDarkMode) => {
+    setDarkMode(newDarkMode);
+    localStorage.setItem('darkMode', JSON.stringify(newDarkMode));
+  };
+
+  const handleAccentColorChange = (color) => {
+    setAccentColor(color);
+    localStorage.setItem('accentColor', color);
+  };
 
   const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component || AssetLibrary;
 
@@ -233,7 +247,12 @@ const App = () => {
         {/* Content Area */}
         <div className="flex-1 overflow-auto">
           <ErrorBoundary setHasError={setHasError} setErrorMessage={setErrorMessage}>
-            <ActiveComponent />
+            <ActiveComponent 
+              darkMode={darkMode}
+              accentColor={accentColor}
+              handleDarkModeToggle={handleDarkModeToggle}
+              handleAccentColorChange={handleAccentColorChange}
+            />
           </ErrorBoundary>
         </div>
       </div>

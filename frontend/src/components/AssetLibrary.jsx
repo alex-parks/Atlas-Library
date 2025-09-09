@@ -1,16 +1,22 @@
 // New Asset Library with Navigation Structure
 import React, { useState, useEffect } from 'react';
-import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench } from 'lucide-react';
+import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette } from 'lucide-react';
 import SequenceThumbnail from './SequenceThumbnail';
 import CollapsibleAssetInfo from './CollapsibleAssetInfo';
 
-const AssetLibrary = () => {
+const AssetLibrary = ({ 
+  darkMode = true, 
+  accentColor = 'blue', 
+  handleDarkModeToggle, 
+  handleAccentColorChange 
+}) => {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('grid');
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('theme'); // 'theme' or 'database'
   const [dbStatus, setDbStatus] = useState({ status: 'unknown', assets_count: 0 });
 
   // Navigation state
@@ -315,6 +321,8 @@ const AssetLibrary = () => {
         // API returns {items: [...], total: n, limit: n, offset: n}
         const assets = data.items || [];
         console.log(`Number of assets loaded: ${assets.length} ${tagFilters ? `(filtered by tags: ${tagFilters.join(', ')})` : ''}`);
+        
+        
         setAssets(Array.isArray(assets) ? assets : []);
         setLoading(false);
       })
@@ -442,7 +450,7 @@ const AssetLibrary = () => {
   // Format asset name to show "{Original Name} - {Variant Name}" for variants
   const formatAssetName = (asset) => {
     // Check if this is a variant (variant_id is not "AA" - the original)
-    const variantId = asset.variant_id || (asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA');
+    const variantId = asset.variant_id || (asset.id && asset.id.length >= 13 ? asset.id.substring(11, 13) : 'AA');
     const variantName = asset.variant_name || asset.metadata?.variant_name;
     
     // If it's the original (AA variant) or no variant name, just show the original name
@@ -456,7 +464,7 @@ const AssetLibrary = () => {
 
   // Format asset name with JSX styling for hover cards (variant name darker)
   const formatAssetNameJSX = (asset) => {
-    const variantId = asset.variant_id || (asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA');
+    const variantId = asset.variant_id || (asset.id && asset.id.length >= 13 ? asset.id.substring(11, 13) : 'AA');
     const variantName = asset.variant_name || asset.metadata?.variant_name;
     
     // If it's the original (AA variant) or no variant name, just show the original name
@@ -498,24 +506,24 @@ const AssetLibrary = () => {
     let matchesVersionFilter = true;
     if (!selectedFilters.showVersions) {
       // When showVersions is OFF (unchecked): Only show the highest version for each base ID
-      // For version filtering, we need to group assets by their base ID (first 11 characters: 9-char base + 2-char variant)
+      // For version filtering, we need to group assets by their base ID (first 13 characters: 11-char base + 2-char variant)
       // and only show the highest version (last 3 digits) for each base ID
       
-      // Extract the asset ID structure: XXXXXXXXX[AA]001
+      // Extract the asset ID structure: XXXXXXXXXXX[AA]001
       const assetId = asset.id || asset._key || '';
-      if (assetId.length >= 14) {
-        const baseId = assetId.substring(0, 11); // First 11 characters (9 base + 2 variant)
-        const versionNum = parseInt(assetId.substring(11), 10) || 1; // Last 3 digits as version
+      if (assetId.length >= 16) {
+        const baseId = assetId.substring(0, 13); // First 13 characters (11 base + 2 variant)
+        const versionNum = parseInt(assetId.substring(13), 10) || 1; // Last 3 digits as version
         
         // Find the highest version for this base ID among all assets
         const sameBaseAssets = assets.filter(a => {
           const otherId = a.id || a._key || '';
-          return otherId.length >= 14 && otherId.substring(0, 11) === baseId;
+          return otherId.length >= 16 && otherId.substring(0, 13) === baseId;
         });
         
         const highestVersion = Math.max(...sameBaseAssets.map(a => {
           const otherId = a.id || a._key || '';
-          return parseInt(otherId.substring(11), 10) || 1;
+          return parseInt(otherId.substring(13), 10) || 1;
         }));
         
         // Only show if this asset has the highest version for its base ID
@@ -643,16 +651,25 @@ const AssetLibrary = () => {
     }
   };
 
-  const resetSettings = () => {
-    const defaultSettings = {
-      rootFolder: '/net/library/atlaslib/3D',
-      jsonFilePath: '/net/library/atlaslib/database/3DAssets.json',
-      apiEndpoint: 'http://localhost:8000/api/v1/assets',
-      databaseEnabled: true,
-      autoSync: true
-    };
-    setTempSettings(defaultSettings);
-    alert('Settings reset to defaults. Click "Save Settings" to apply.');
+  const testConnection = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/health');
+      if (response.ok) {
+        const data = await response.json();
+        setDbStatus({
+          status: data.status,
+          assets_count: data.components?.database?.assets_count || 0,
+          database_type: data.components?.database?.type || 'Unknown'
+        });
+        alert('✅ Connection successful!\n\nDatabase: ' + (data.components?.database?.type || 'Unknown') + '\nAssets: ' + (data.components?.database?.assets_count || 0));
+      } else {
+        alert(`❌ Connection failed: ${response.status} ${response.statusText}`);
+        setDbStatus({ status: 'error', assets_count: 0, database_type: 'Unknown' });
+      }
+    } catch (error) {
+      alert(`❌ Connection failed: ${error.message}`);
+      setDbStatus({ status: 'error', assets_count: 0, database_type: 'Unknown' });
+    }
   };
 
   const browseFolder = (fieldName) => {
@@ -664,24 +681,6 @@ const AssetLibrary = () => {
         ...prev,
         [fieldName]: newPath
       }));
-    }
-  };
-
-  const testConnection = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(tempSettings.apiEndpoint);
-
-      if (response.ok) {
-        const data = await response.json();
-        alert(`Connection successful! Found ${data.length || 0} assets.`);
-      } else {
-        alert(`Connection failed: ${response.status} ${response.statusText}`);
-      }
-    } catch (error) {
-      alert(`Connection failed: ${error.message}`);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -896,10 +895,8 @@ const AssetLibrary = () => {
                   <List size={18} />
                 </button>
               </div>
-            </div>
 
-            {/* Filter Controls Row */}
-            <div className="flex items-center gap-4">
+              {/* Filter Button moved to same row */}
               <div className="relative">
                 <button
                 onClick={() => setShowFilterMenu(!showFilterMenu)}
@@ -993,7 +990,7 @@ const AssetLibrary = () => {
                 </div>
                 </>
               )}
-            </div>
+              </div>
             </div>
 
             {/* Tag Search Input Row */}
@@ -1105,7 +1102,7 @@ const AssetLibrary = () => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-auto">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-white">Asset Library Settings</h2>
+              <h2 className="text-xl font-semibold text-white">Settings</h2>
               <button
                 onClick={() => setShowSettingsPanel(false)}
                 className="text-neutral-400 hover:text-white"
@@ -1114,167 +1111,149 @@ const AssetLibrary = () => {
               </button>
             </div>
 
-            <div className="space-y-6">
-              {/* Root Folder Setting */}
-              <div>
-                <label className="block text-sm font-medium text-neutral-300 mb-2">
-                  Asset Library Root Folder
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={tempSettings.rootFolder}
-                    onChange={(e) => setTempSettings(prev => ({ ...prev, rootFolder: e.target.value }))}
-                    className="flex-1 bg-neutral-700 border border-neutral-600 rounded-lg px-3 py-2 text-white"
-                    placeholder="/net/library/atlaslib/3D"
-                  />
-                  <button
-                    onClick={() => browseFolder('rootFolder')}
-                    className="bg-neutral-700 hover:bg-neutral-600 px-3 py-2 rounded-lg flex items-center gap-2"
-                  >
-                    <FolderOpen size={16} />
-                    Browse
-                  </button>
-                </div>
-                <p className="text-xs text-neutral-400 mt-1">
-                  The main folder containing your 3D assets
-                </p>
-              </div>
-
-              {/* JSON File Path Setting */}
-              <div>
-                <label className="block text-sm font-medium text-neutral-300 mb-2">
-                  JSON Database File
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={tempSettings.jsonFilePath}
-                    onChange={(e) => setTempSettings(prev => ({ ...prev, jsonFilePath: e.target.value }))}
-                    className="flex-1 bg-neutral-700 border border-neutral-600 rounded-lg px-3 py-2 text-white"
-                    placeholder="/net/library/atlaslib/database/3DAssets.json"
-                  />
-                  <button
-                    onClick={() => browseFolder('jsonFilePath')}
-                    className="bg-neutral-700 hover:bg-neutral-600 px-3 py-2 rounded-lg flex items-center gap-2"
-                  >
-                    <FolderOpen size={16} />
-                    Browse
-                  </button>
-                </div>
-                <p className="text-xs text-neutral-400 mt-1">
-                  The JSON file containing asset metadata
-                </p>
-              </div>
-
-              {/* API Endpoint Setting */}
-              <div>
-                <label className="block text-sm font-medium text-neutral-300 mb-2">
-                  API Endpoint
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={tempSettings.apiEndpoint}
-                    onChange={(e) => setTempSettings(prev => ({ ...prev, apiEndpoint: e.target.value }))}
-                    className="flex-1 bg-neutral-700 border border-neutral-600 rounded-lg px-3 py-2 text-white"
-                    placeholder="http://localhost:8000/api/v1/assets"
-                  />
-                  <button
-                    onClick={testConnection}
-                    disabled={loading}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-600 px-3 py-2 rounded-lg flex items-center gap-2"
-                  >
-                    {loading ? (
-                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
-                    ) : (
-                      <Database size={16} />
-                    )}
-                    Test
-                  </button>
-                </div>
-                <p className="text-xs text-neutral-400 mt-1">
-                  The backend API endpoint for asset data
-                </p>
-              </div>
-
-              {/* Database Options */}
-              <div>
-                <label className="block text-sm font-medium text-neutral-300 mb-3">
-                  Database Options
-                </label>
-                <div className="space-y-3">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={tempSettings.databaseEnabled}
-                      onChange={(e) => setTempSettings(prev => ({ ...prev, databaseEnabled: e.target.checked }))}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-neutral-300 text-sm">Enable Database Connection</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={tempSettings.autoSync}
-                      onChange={(e) => setTempSettings(prev => ({ ...prev, autoSync: e.target.checked }))}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-neutral-300 text-sm">Auto-sync on startup</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Current Status */}
-              <div className="bg-neutral-700 rounded-lg p-4">
-                <h3 className="text-white font-medium mb-3">Current Status</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-neutral-400">Database:</span>
-                    <div className={`font-medium ${
-                      dbStatus.status === 'healthy' ? 'text-green-400' : 'text-red-400'
-                    }`}>
-                      {dbStatus.status === 'healthy' ? 'Connected' : 'Disconnected'}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-neutral-400">Assets:</span>
-                    <div className="text-blue-400 font-medium">{dbStatus.assets_count}</div>
-                  </div>
-                  <div>
-                    <span className="text-neutral-400">Type:</span>
-                    <div className="text-purple-400 font-medium">{dbStatus.database_type || 'Unknown'}</div>
-                  </div>
-                  <div>
-                    <span className="text-neutral-400">API:</span>
-                    <div className="text-green-400 font-medium">
-                      {settings.apiEndpoint.includes('localhost') ? 'Local' : 'Remote'}
-                    </div>
-                  </div>
-                </div>
-              </div>
+            {/* Tab Navigation */}
+            <div className="flex gap-1 mb-6 bg-neutral-700 rounded-lg p-1">
+              <button
+                onClick={() => setSettingsTab('theme')}
+                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                  settingsTab === 'theme'
+                    ? 'bg-neutral-600 text-white'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <Palette size={16} className="inline mr-2" />
+                Theme
+              </button>
+              <button
+                onClick={() => setSettingsTab('database')}
+                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                  settingsTab === 'database'
+                    ? 'bg-neutral-600 text-white'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <Database size={16} className="inline mr-2" />
+                Database Connection
+              </button>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3 mt-6 pt-6 border-t border-neutral-700">
-              <button
-                onClick={saveSettings}
-                className="bg-green-600 hover:bg-green-700 text-white py-2 px-6 rounded-lg flex items-center gap-2 transition-colors"
-              >
-                <Save size={16} />
-                Save Settings
-              </button>
-              <button
-                onClick={resetSettings}
-                className="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded-lg transition-colors"
-              >
-                Reset to Defaults
-              </button>
+            {/* Tab Content */}
+            {settingsTab === 'theme' ? (
+              <div className="space-y-6">
+                {/* Dark Mode Toggle */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-neutral-700">
+                      {darkMode ? (
+                        <Moon className="w-5 h-5 text-blue-500" />
+                      ) : (
+                        <Sun className="w-5 h-5 text-yellow-500" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-neutral-300 font-medium">
+                        {darkMode ? 'Dark Mode' : 'Light Mode'}
+                      </div>
+                      <p className="text-xs text-neutral-500">
+                        {darkMode ? 'Dark mode for low-light environments' : 'Light mode for bright environments'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => handleDarkModeToggle && handleDarkModeToggle(!darkMode)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      darkMode ? 'bg-blue-600' : 'bg-neutral-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        darkMode ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Accent Color Selection */}
+                <div>
+                  <div className="text-neutral-300 font-medium mb-3">Accent Color</div>
+                  <div className="flex gap-2">
+                    {[
+                      { name: 'Blue', value: 'blue', color: '#3b82f6' },
+                      { name: 'Purple', value: 'purple', color: '#8b5cf6' },
+                      { name: 'Green', value: 'green', color: '#10b981' },
+                      { name: 'Orange', value: 'orange', color: '#f59e0b' },
+                      { name: 'Red', value: 'red', color: '#ef4444' },
+                      { name: 'White', value: 'white', color: '#ffffff' },
+                      { name: 'Light Gray', value: 'lightgray', color: '#9ca3af' },
+                      { name: 'Dark Gray', value: 'darkgray', color: '#4b5563' }
+                    ].map((colorOption) => (
+                      <button
+                        key={colorOption.value}
+                        onClick={() => handleAccentColorChange && handleAccentColorChange(colorOption.value)}
+                        className={`w-8 h-8 rounded-full border-2 transition-all ${
+                          accentColor === colorOption.value
+                            ? 'border-white scale-110'
+                            : 'border-neutral-600 hover:border-neutral-500'
+                        }`}
+                        style={{ backgroundColor: colorOption.color }}
+                        title={colorOption.name}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Current Status */}
+                <div>
+                  <h3 className="text-white font-medium mb-4">Current Status</h3>
+                  <div className="bg-neutral-700 rounded-lg p-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-neutral-400">Database:</span>
+                        <div className={`font-medium ${
+                          dbStatus.status === 'healthy' ? 'text-green-400' : 'text-red-400'
+                        }`}>
+                          {dbStatus.status === 'healthy' ? 'Connected' : 'Disconnected'}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-neutral-400">Assets:</span>
+                        <div className="text-blue-400 font-medium">{dbStatus.assets_count}</div>
+                      </div>
+                      <div>
+                        <span className="text-neutral-400">Type:</span>
+                        <div className="text-purple-400 font-medium">{dbStatus.database_type || 'ArangoDB Community Edition'}</div>
+                      </div>
+                      <div>
+                        <span className="text-neutral-400">API:</span>
+                        <div className="text-green-400 font-medium">Local</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Test Connection Button */}
+                <div className="flex justify-center">
+                  <button
+                    onClick={testConnection}
+                    className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-6 rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <Database size={16} />
+                    Test Connection
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Close Button */}
+            <div className="flex justify-end mt-6 pt-6 border-t border-neutral-700">
               <button
                 onClick={() => setShowSettingsPanel(false)}
                 className="bg-neutral-700 hover:bg-neutral-600 text-white py-2 px-4 rounded-lg transition-colors"
               >
-                Cancel
+                Close
               </button>
             </div>
           </div>
@@ -1311,8 +1290,10 @@ const AssetLibrary = () => {
                   const updateData = {
                     name: editFormData.name,
                     description: editFormData.description,
-                    tags: editFormData.tags || []
+                    tags: editFormData.tags || [],
+                    thumbnail_frame: editFormData.thumbnail_frame
                   };
+                  
                   
                   // Send PATCH request to update asset
                   const response = await fetch(`${settings.apiEndpoint}/${editingAsset.id}`, {
@@ -1346,18 +1327,40 @@ const AssetLibrary = () => {
                   alert(`❌ Error updating asset: ${error.message}`);
                 }
               }} className="space-y-4">
-                {/* Asset Name */}
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">
-                    Asset Name
-                  </label>
-                  <input
-                    type="text"
-                    value={editFormData.name || ''}
-                    onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
-                    className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
-                    placeholder="Enter asset name"
-                  />
+                {/* Asset Name and Thumbnail Frame */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-300 mb-2">
+                      Asset Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editFormData.name || ''}
+                      onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+                      className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                      placeholder="Enter asset name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-300 mb-2">
+                      Thumbnail Frame
+                    </label>
+                    <input
+                      type="number"
+                      value={editFormData.thumbnail_frame || ''}
+                      onChange={(e) => setEditFormData({...editFormData, thumbnail_frame: parseInt(e.target.value) || undefined})}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                        }
+                      }}
+                      className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-green-500"
+                      placeholder="Default frame"
+                      min="1001"
+                      step="1"
+                      title="Frame number to show when not hovering (e.g., 1001, 1015)"
+                    />
+                  </div>
                 </div>
 
                 {/* Description */}
@@ -1445,7 +1448,7 @@ const AssetLibrary = () => {
       {/* Preview Modal */}
       {showPreview && previewAsset && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 transition-all duration-300 ease-in-out">
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg max-w-7xl w-full max-h-[95vh] overflow-auto transform transition-all duration-300 ease-in-out scale-100">
+          <div className="bg-neutral-800 border border-neutral-700 rounded-lg w-[75vw] h-[80vh] overflow-auto transform transition-all duration-300 ease-in-out scale-100">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-neutral-700">
               <div>
@@ -1485,6 +1488,7 @@ const AssetLibrary = () => {
                   <SequenceThumbnail
                     assetId={previewAsset.id || previewAsset._key}
                     assetName={formatAssetName(previewAsset)}
+                    thumbnailFrame={previewAsset.thumbnail_frame}
                     fallbackIcon={
                       previewAsset.category === 'Characters' ? '🎭' :
                       previewAsset.category === 'Props' ? '📦' :
@@ -1539,8 +1543,9 @@ const AssetLibrary = () => {
                         <span className="text-purple-400 font-medium">
                           {(() => {
                             const assetId = previewAsset.id || previewAsset._key || '';
-                            if (assetId.length >= 14) {
-                              return `v${assetId.substring(11)}`;
+                            if (assetId.length >= 16) {
+                              // Extract version only (last 3 characters): 11 base + 2 variant + 3 version
+                              return `v${assetId.substring(13)}`;
                             }
                             return 'v001';
                           })()}
@@ -1824,6 +1829,7 @@ const AssetLibrary = () => {
                             <SequenceThumbnail
                               assetId={asset.id || asset._key}
                               assetName={formatAssetName(asset)}
+                              thumbnailFrame={asset.thumbnail_frame}
                               fallbackIcon={
                                 asset.category === 'Characters' ? '🎭' :
                                 asset.category === 'Props' ? '📦' :
@@ -1840,8 +1846,8 @@ const AssetLibrary = () => {
                             <div className="absolute bottom-2 left-2">
                               {(() => {
                                 const assetId = asset.id || asset._key || '';
-                                if (assetId.length >= 14) {
-                                  const versionNum = assetId.substring(11); // Last 3 digits
+                                if (assetId.length >= 16) {
+                                  const versionNum = assetId.substring(13); // Last 3 digits
                                   return (
                                     <span className="px-2 py-1 text-xs rounded font-medium bg-blue-500/20 text-blue-300 backdrop-blur-sm">
                                       v{versionNum}
@@ -1949,7 +1955,8 @@ const AssetLibrary = () => {
                                     setEditFormData({
                                       name: asset.name,
                                       description: asset.description || '',
-                                      tags: asset.tags || []
+                                      tags: asset.tags || [],
+                                      thumbnail_frame: asset.thumbnail_frame || undefined
                                     });
                                     setShowEditModal(true);
                                     setActiveDropdown(null);

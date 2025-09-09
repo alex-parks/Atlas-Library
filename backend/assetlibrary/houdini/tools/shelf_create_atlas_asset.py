@@ -209,7 +209,7 @@ if subcategory_parm:
     
     # Parent Asset ID for version up
     version_parent_id = hou.StringParmTemplate("version_parent_asset_id", "Parent Asset ID", 1)
-    version_parent_id.setHelp("Enter the 11-character Asset ID (9 base + 2 variant) of the asset to version up (e.g., A5FF6F3B4AA)")
+    version_parent_id.setHelp("Enter the 13-character Asset ID (11 base + 2 variant) of the asset to version up (e.g., A5FF6F3B4R6AA)")
     version_folder.addParmTemplate(version_parent_id)
     
     # Asset Name for version
@@ -228,9 +228,9 @@ if subcategory_parm:
     variant_folder = hou.FolderParmTemplate("variant_folder", "Variant Parameters", folder_type=hou.folderType.Simple)
     variant_folder.setConditional(hou.parmCondType.HideWhen, "{ action != 2 }")
     
-    # Parent Asset ID for variant (9 characters: base UID only)
+    # Parent Asset ID for variant (11 characters: base UID only)
     variant_parent_id = hou.StringParmTemplate("variant_parent_asset_id", "Parent Asset ID", 1)
-    variant_parent_id.setHelp("Enter the 9-character base UID of the asset to create variant from (e.g., A5FF6F3B4)")
+    variant_parent_id.setHelp("Enter the 11-character base UID of the asset to create variant from (e.g., A5FF6F3B4R6)")
     variant_folder.addParmTemplate(variant_parent_id)
     
     # Variant Name (new parameter)
@@ -347,10 +347,114 @@ try:
         asset_name = subnet.parm("variant_asset_name").eval().strip() if subnet.parm("variant_asset_name") else "Variant Asset"
         tags_str = subnet.parm("variant_tags").eval().strip() if subnet.parm("variant_tags") else ""
         variant_name = subnet.parm("variant_name").eval().strip() if subnet.parm("variant_name") else "default"
-        # For variant, use default values for missing parameters
+        
+        # Validation: Don't allow "default" as variant name
+        if variant_name.lower() == "default":
+            error_msg = '❌ Asset Variant Name has to be different than "default"'
+            print(f"❌ {error_msg}")
+            hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
+            subnet.parm("export_status").set("❌ Invalid variant name")
+            raise Exception(error_msg)
+        
+        # Validation: Check if parent asset exists in database
+        print("🔍 Validating parent asset exists in database...")
+        original_asset_found = False
+        try:
+            # Query the Atlas API to find the original asset (AA variant)
+            target_asset_id = f"{parent_asset_id}AA001"  # Original asset format
+            print(f"   🔍 Looking for original asset: {target_asset_id}")
+            
+            api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+            response = urllib.request.urlopen(api_url, timeout=30)
+            assets_data = json.loads(response.read().decode())
+            all_assets = assets_data.get('items', [])
+            
+            # Find the original asset (AA variant)
+            for asset in all_assets:
+                if asset.get('id', '') == target_asset_id:
+                    original_asset_found = True
+                    print(f"   ✅ Found original asset for variant: {target_asset_id}")
+                    break
+            
+            if not original_asset_found:
+                error_msg = f"❌ No Asset Found: {parent_asset_id} not found in database"
+                print(f"   ❌ {error_msg}")
+                hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
+                subnet.parm("export_status").set("❌ Asset not found")
+                raise Exception("No Asset Found")
+                
+        except urllib.error.URLError as e:
+            error_msg = f"❌ Cannot connect to database to validate asset: {e}"
+            print(f"   ❌ {error_msg}")
+            hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
+            subnet.parm("export_status").set("❌ Database connection failed")
+            raise Exception("Database connection failed")
+        except Exception as e:
+            if "No Asset Found" in str(e):
+                raise  # Re-raise the asset not found error
+            error_msg = f"❌ Error validating parent asset: {e}"
+            print(f"   ❌ {error_msg}")
+            hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
+            subnet.parm("export_status").set("❌ Validation failed")
+            raise Exception("Asset validation failed")
+        
+        # For variant, inherit properties from parent asset
         asset_type_idx = 0  # Default to Assets
         subcategory_idx = 0  # Default to first subcategory
         render_engine_idx = 0  # Default to Redshift
+        
+        # Try to inherit from parent asset
+        if parent_asset_id and len(parent_asset_id) == 11:
+            try:
+                import urllib.request
+                import json
+                
+                # Query the Atlas API to find the original asset (AA variant)
+                target_asset_id = f"{parent_asset_id}AA001"  # Original asset format
+                print(f"   🔍 Looking for original asset for inheritance: {target_asset_id}")
+                
+                api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+                response = urllib.request.urlopen(api_url, timeout=30)
+                assets_data = json.loads(response.read().decode())
+                all_assets = assets_data.get('items', [])
+                
+                # Find the original asset (AA variant)
+                for asset in all_assets:
+                    if asset.get('id', '') == target_asset_id:
+                        print(f"   ✅ Found original asset for inheritance: {target_asset_id}")
+                        hierarchy = asset.get('metadata', {}).get('hierarchy', {})
+                        inherited_asset_type = hierarchy.get('asset_type', 'Assets')
+                        inherited_subcategory = hierarchy.get('subcategory', 'Blacksmith Asset')
+                        inherited_render_engine = hierarchy.get('render_engine', 'Redshift')
+                        
+                        # Map back to indices
+                        asset_types = ["Assets", "FX", "Materials", "HDAs"]
+                        if inherited_asset_type in asset_types:
+                            asset_type_idx = asset_types.index(inherited_asset_type)
+                        
+                        subcategory_options = {
+                            0: ["Blacksmith Asset", "Megascans", "Kitbash"],
+                            1: ["Blacksmith FX", "Atmosphere", "FLIP", "Pyro"],
+                            2: ["Blacksmith Materials", "Redshift", "Karma"],
+                            3: ["Blacksmith HDAs"]
+                        }
+                        available_subcategories = subcategory_options.get(asset_type_idx, ["Blacksmith Asset"])
+                        if inherited_subcategory in available_subcategories:
+                            subcategory_idx = available_subcategories.index(inherited_subcategory)
+                        
+                        render_engines = ["Redshift", "Karma"]
+                        if inherited_render_engine in render_engines:
+                            render_engine_idx = render_engines.index(inherited_render_engine)
+                        
+                        print(f"   ✅ Inherited Asset Type: {inherited_asset_type} (index: {asset_type_idx})")
+                        print(f"   ✅ Inherited Subcategory: {inherited_subcategory} (index: {subcategory_idx})")
+                        print(f"   ✅ Inherited Render Engine: {inherited_render_engine} (index: {render_engine_idx})")
+                        break
+                else:
+                    print(f"   ⚠️ Original asset not found, using defaults")
+                    
+            except Exception as e:
+                print(f"   ⚠️ Error getting parent asset data for inheritance, using defaults: {e}")
     else:
         # Fallback to create_new
         asset_name = subnet.parm("asset_name").eval().strip() if subnet.parm("asset_name") else "Asset"
@@ -368,15 +472,15 @@ try:
         raise Exception("Asset name required")
         
     # Validate parent asset ID for version/variant actions
-    if action == "version_up" and (not parent_asset_id or len(parent_asset_id) != 11):
-        error_msg = "Version Up requires 11-character Parent Asset ID (9 base + 2 variant)"
+    if action == "version_up" and (not parent_asset_id or len(parent_asset_id) != 13):
+        error_msg = "Version Up requires 13-character Parent Asset ID (11 base + 2 variant)"
         print(f"❌ {error_msg}")
         hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
         subnet.parm("export_status").set("Invalid Parent ID")
         raise Exception(error_msg)
         
-    if action == "variant" and (not parent_asset_id or len(parent_asset_id) != 9):
-        error_msg = "Variant creation requires 9-character Parent Asset ID (base UID only)"
+    if action == "variant" and (not parent_asset_id or len(parent_asset_id) != 11):
+        error_msg = "Variant creation requires 11-character Parent Asset ID (base UID only)"
         print(f"❌ {error_msg}")
         hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
         subnet.parm("export_status").set("Invalid Parent ID")

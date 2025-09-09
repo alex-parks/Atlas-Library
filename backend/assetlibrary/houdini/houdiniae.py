@@ -52,6 +52,18 @@ except ImportError as e:
 class TemplateAssetExporter:
     """Export assets using Houdini's template system"""
     
+    def _sanitize_name_for_filesystem(self, name):
+        """Sanitize asset name for filesystem and node naming (replace spaces and special chars with underscores)"""
+        import re
+        # Replace spaces, hyphens, and other problematic characters with underscores
+        # Keep only alphanumeric characters and underscores
+        sanitized = re.sub(r'[^\w]', '_', name)
+        # Remove multiple consecutive underscores
+        sanitized = re.sub(r'_+', '_', sanitized)
+        # Remove leading/trailing underscores
+        sanitized = sanitized.strip('_')
+        return sanitized
+    
     def __init__(self, asset_name, subcategory="Props", description="", tags=None, asset_type=None, render_engine=None, metadata=None, action="create_new", parent_asset_id=None, variant_name=None):
         # Store the raw input for variants (will be overridden for variants)
         self.raw_input_name = asset_name
@@ -75,29 +87,29 @@ class TemplateAssetExporter:
         else:
             self.variant_name = "default"
         
-        # Generate unique asset ID (9 character base UID + 3 digit version = 12 characters total)
+        # Generate unique asset ID (11 character base UID + 3 digit version = 16 characters total)
         
         if action == "create_new":
-            # Generate new 9-character base UID + 2-character variant + 3-digit version = 14 characters total
-            self.base_uid = str(uuid.uuid4()).replace('-', '')[:9].upper()
+            # Generate new 11-character base UID + 2-character variant + 3-digit version = 16 characters total
+            self.base_uid = str(uuid.uuid4()).replace('-', '')[:11].upper()
             self.variant_id = "AA"  # Always start with AA variant for new assets
             self.version = 1
             # For new assets, use the provided name
             self.asset_name = asset_name
         elif action == "version_up":
-            # For version_up: expects 11 characters (9 base + 2 variant)
-            if not parent_asset_id or len(parent_asset_id) != 11:
-                raise ValueError(f"Parent asset ID required for version_up and must be exactly 11 characters (9 base + 2 variant)")
-            self.base_uid = parent_asset_id[:9].upper()  # First 9 characters as base UID
-            self.variant_id = parent_asset_id[9:11].upper()  # Characters 9-11 as variant ID
-            self.version = self._get_next_version(parent_asset_id, action)  # Pass full 11-char asset ID
+            # For version_up: expects 13 characters (11 base + 2 variant)
+            if not parent_asset_id or len(parent_asset_id) != 13:
+                raise ValueError(f"Parent asset ID required for version_up and must be exactly 13 characters (11 base + 2 variant)")
+            self.base_uid = parent_asset_id[:11].upper()  # First 11 characters as base UID
+            self.variant_id = parent_asset_id[11:13].upper()  # Characters 11-13 as variant ID
+            self.version = self._get_next_version(parent_asset_id, action)  # Pass full 13-char asset ID
             # For version_up, inherit the original asset name (not the version name)
             self.asset_name = self._get_original_asset_name_from_base_uid(self.base_uid)
         elif action == "variant":
-            # For variant: expects 9 characters (base UID only)
-            if not parent_asset_id or len(parent_asset_id) != 9:
-                raise ValueError(f"Parent asset ID required for variant and must be exactly 9 characters (base UID)")
-            self.base_uid = parent_asset_id.upper()  # Use the 9-character base UID
+            # For variant: expects 11 characters (base UID only)
+            if not parent_asset_id or len(parent_asset_id) != 11:
+                raise ValueError(f"Parent asset ID required for variant and must be exactly 11 characters (base UID)")
+            self.base_uid = parent_asset_id.upper()  # Use the 11-character base UID
             # Generate next variant ID based on existing variants for this base UID
             self.variant_id = self._get_next_variant_id(self.base_uid)
             self.version = 1  # Reset version to 001 for new variant
@@ -106,10 +118,10 @@ class TemplateAssetExporter:
         else:
             raise ValueError(f"Invalid action: {action}. Must be 'create_new', 'version_up', or 'variant'")
         
-        # Create full 14-character asset ID (9 base + 2 variant + 3 version)
+        # Create full 16-character asset ID (11 base + 2 variant + 3 version)
         self.asset_id = f"{self.base_uid}{self.variant_id}{self.version:03d}"
         
-        # The 11-character asset ID (without version) for referencing
+        # The 13-character asset ID (without version) for referencing
         self.asset_base_id = f"{self.base_uid}{self.variant_id}"
         
         # Set variant_name for version_up if not already set
@@ -140,14 +152,14 @@ class TemplateAssetExporter:
         
         subcategory_folder = subcategory_folder_map.get(subcategory, subcategory.replace(" ", ""))
         
-        # Asset folder is named with the full 14-character UID
+        # Asset folder is named with the full 16-character UID
         self.asset_folder = self.library_root / asset_type / subcategory_folder / self.asset_id
         self.data_folder = self.asset_folder / "Data"
         self.textures_folder = self.asset_folder / "Textures"
         self.geometry_folder = self.asset_folder / "Geometry"
         self.thumbnail_folder = self.asset_folder / "Thumbnail"
         
-        # Database key is the full 14-character UID
+        # Database key is the full 16-character UID
         self.database_key = self.asset_id
     
     def _collect_all_nodes(self, parent_node):
@@ -195,7 +207,7 @@ class TemplateAssetExporter:
         """Get the next version number for version up or variant actions"""
         try:
             if action == "version_up":
-                # Query the Atlas API to find existing versions for this asset (11-char base + variant)
+                # Query the Atlas API to find existing versions for this asset (14-char base + variant)
                 print(f"   🔍 Looking up existing versions for asset base ID: {asset_base_id}")
                 
                 try:
@@ -210,11 +222,11 @@ class TemplateAssetExporter:
                     
                     print(f"   📊 Found {len(all_assets)} total assets in database")
                     
-                    # Filter assets that match the asset base ID (first 11 characters: 9 base + 2 variant)
+                    # Filter assets that match the asset base ID (first 13 characters: 11 base + 2 variant)
                     matching_assets = []
                     for asset in all_assets:
                         asset_id = asset.get('id', '')
-                        if len(asset_id) >= 11 and asset_id[:11].upper() == asset_base_id.upper():
+                        if len(asset_id) >= 13 and asset_id[:13].upper() == asset_base_id.upper():
                             matching_assets.append(asset)
                             print(f"   ✅ Found matching asset: {asset_id}")
                     
@@ -230,7 +242,7 @@ class TemplateAssetExporter:
                     existing_versions = []
                     for asset in matching_assets:
                         asset_id = asset.get('id', '')
-                        if len(asset_id) == 14:  # 14-character UIDs now
+                        if len(asset_id) == 16:  # 16-character UIDs now
                             try:
                                 version_str = asset_id[-3:]  # Last 3 characters are version
                                 version_num = int(version_str)
@@ -287,16 +299,16 @@ class TemplateAssetExporter:
                 
                 print(f"   📊 Found {len(all_assets)} total assets in database")
                 
-                # Filter assets that match the base UID (first 9 characters)
+                # Filter assets that match the base UID (first 11 characters)
                 matching_variants = set()
                 print(f"   🔍 Searching for base UID: '{base_uid.upper()}'")
                 
                 for asset in all_assets:
                     asset_id = asset.get('id', '')
-                    if len(asset_id) >= 11:
-                        asset_base = asset_id[:9].upper()
+                    if len(asset_id) >= 13:
+                        asset_base = asset_id[:11].upper()
                         if asset_base == base_uid.upper():
-                            variant_id = asset_id[9:11].upper()
+                            variant_id = asset_id[11:13].upper()
                             matching_variants.add(variant_id)
                             print(f"   ✅ Found variant: {variant_id} in asset {asset_id}")
                         else:
@@ -384,7 +396,7 @@ class TemplateAssetExporter:
             print(f"   🔍 Looking up variant_name for parent asset: {parent_asset_id}")
             
             
-            # Query the Atlas API to get all assets and find ones matching the 11-char pattern
+            # Query the Atlas API to get all assets and find ones matching the 14-char pattern
             api_url = "http://localhost:8000/api/v1/assets?limit=1000"
             print(f"   🌐 Making API request to: {api_url}")
             
@@ -392,11 +404,11 @@ class TemplateAssetExporter:
             assets_data = json.loads(response.read().decode())
             all_assets = assets_data.get('items', [])
             
-            # Find assets that match the 11-character pattern (ignore version)
+            # Find assets that match the 13-character pattern (ignore version)
             matching_assets = []
             for asset in all_assets:
                 asset_id = asset.get('id', '')
-                if len(asset_id) >= 11 and asset_id[:11].upper() == parent_asset_id.upper():
+                if len(asset_id) >= 13 and asset_id[:13].upper() == parent_asset_id.upper():
                     matching_assets.append(asset)
             
             if matching_assets:
@@ -425,13 +437,13 @@ class TemplateAssetExporter:
             assets_data = json.loads(response.read().decode())
             all_assets = assets_data.get('items', [])
             
-            # Find assets that match the base UID (first 9 characters) and are original (variant AA)
+            # Find assets that match the base UID (first 11 characters) and are original (variant AA)
             original_asset = None
             for asset in all_assets:
                 asset_id = asset.get('id', '')
-                if len(asset_id) >= 11:
-                    asset_base_uid = asset_id[:9].upper()
-                    asset_variant_id = asset_id[9:11].upper()
+                if len(asset_id) >= 13:
+                    asset_base_uid = asset_id[:11].upper()
+                    asset_variant_id = asset_id[11:13].upper()
                     if asset_base_uid == base_uid.upper() and asset_variant_id == "AA":
                         original_asset = asset
                         print(f"   ✅ Found original asset (AA variant): {asset_id}")
@@ -461,13 +473,13 @@ class TemplateAssetExporter:
             # For versions, we need to find the previous version
             if self.action == "variant":
                 # For variants, find the original asset (AA variant) from the base UID
-                base_uid = self.parent_asset_id  # This is the 9-character base UID
+                base_uid = self.parent_asset_id  # This is the 11-character base UID
                 target_asset_id = f"{base_uid}AA001"  # Original asset format
                 print(f"   🔍 Variant inheritance: Looking for original asset {target_asset_id}")
             elif self.action == "create_version" or self.action == "version_up":
-                # For versions, parent_asset_id is base_uid + variant_id (11 chars)
+                # For versions, parent_asset_id is base_uid + variant_id (14 chars)
                 # We need to find the previous version by appending version number
-                if len(self.parent_asset_id) == 11:
+                if len(self.parent_asset_id) == 13:
                     # Calculate previous version number
                     current_version = self.version
                     prev_version = current_version - 1 if current_version > 1 else 1
@@ -700,7 +712,9 @@ class TemplateAssetExporter:
                 
                 print(f"   📍 Creating HDA as sibling to {parent_node.name()} in {hda_parent.path()}")
                 
-                hda_node_name = f"render_{self.asset_name}_{self.asset_id}"
+                # Sanitize asset name for node naming (replace spaces and special chars with underscores)
+                sanitized_asset_name = self._sanitize_name_for_filesystem(self.asset_name)
+                hda_node_name = f"render_{sanitized_asset_name}_{self.asset_id}"
                 hda_node = hda_parent.createNode(hda_type_name, node_name=hda_node_name)
                 
                 # Position the HDA node right below the exported asset node
@@ -801,7 +815,9 @@ class TemplateAssetExporter:
                     print(f"      ✅ Set thumbnail_folder: {self.thumbnail_folder}")
                 
                 # Set expected thumbnail file path
-                expected_thumbnail = self.thumbnail_folder / f"{self.asset_name}_thumbnail.png"
+                # Sanitize asset name for file naming (replace spaces and special chars with underscores)
+                sanitized_asset_name = self._sanitize_name_for_filesystem(self.asset_name)
+                expected_thumbnail = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.png"
                 if hda_node.parm("thumbnail_path"):
                     hda_node.parm("thumbnail_path").set(str(expected_thumbnail))
                     print(f"      ✅ Set thumbnail_path: {expected_thumbnail.name}")
@@ -881,6 +897,22 @@ class TemplateAssetExporter:
             
             print(f"🚀 TEMPLATE EXPORT: {self.asset_name}")
             print(f"   📂 Target: {self.asset_folder}")
+            
+            # Check if folder already exists - safety check for variants
+            if self.asset_folder.exists():
+                print(f"   ⚠️  WARNING: Asset folder already exists: {self.asset_folder}")
+                print(f"   🔍 Asset ID: {self.asset_id}")
+                print(f"   🔍 Base UID: {self.base_uid}")
+                print(f"   🔍 Variant ID: {self.variant_id}")
+                print(f"   🔍 Version: {self.version}")
+                
+                # For safety, don't overwrite existing folders
+                if self.action == "variant":
+                    print(f"   ❌ SAFETY CHECK: Preventing variant overwrite!")
+                    print(f"   ℹ️  Existing variant {self.variant_id} found. The next variant should be calculated differently.")
+                    hou.ui.displayMessage(f"Asset folder already exists!\n\n{self.asset_folder}\n\nVariant {self.variant_id} already exists. Please check variant calculation.", 
+                                         severity=hou.severityType.Error)
+                    return False
             
             # Create directories
             self.asset_folder.mkdir(parents=True, exist_ok=True)
@@ -2441,10 +2473,10 @@ class TemplateAssetExporter:
             
             # Create metadata structure with hierarchy data for frontend filtering
             metadata = {
-                "id": self.asset_id,  # Full 14-character UID
-                "base_uid": self.base_uid,  # 9-character base UID
+                "id": self.asset_id,  # Full 16-character UID
+                "base_uid": self.base_uid,  # 11-character base UID
                 "variant_id": self.variant_id,  # 2-character variant ID
-                "asset_base_id": self.asset_base_id,  # 11-character asset base ID (base + variant)
+                "asset_base_id": self.asset_base_id,  # 13-character asset base ID (base + variant)
                 "version": self.version,  # Version number (integer)
                 "version_string": f"{self.version:03d}",  # Padded version string
                 "action": self.action,  # Action used to create this asset
@@ -3031,7 +3063,9 @@ class TemplateAssetImporter:
                 # Create a subnet to contain the imported content
                 print(f"   📦 Creating collapsed subnet: {asset_name}")
                 try:
-                    subnet = target_parent.createNode("subnet", asset_name)
+                    # Sanitize asset name for node naming
+                    sanitized_node_name = self._sanitize_name_for_filesystem(asset_name)
+                    subnet = target_parent.createNode("subnet", sanitized_node_name)
                     subnet.setComment(f"Atlas Asset: {self.asset_folder.name}")
                     subnet.setColor(hou.Color(0.2, 0.8, 0.2))  # Green for imported assets
                     print(f"   ✅ Subnet created: {subnet.path()}")
@@ -3479,8 +3513,8 @@ class TemplateAssetImporter:
             api_url = "http://localhost:8000/api/v1/assets"
             
             # Prepare asset data for API (match AssetCreateRequest schema)
-            # Use ONLY the 12-character UID as database key (no suffix)
-            database_key = self.asset_id  # Always use the pure 12-character UID
+            # Use ONLY the 16-character UID as database key (no suffix)
+            database_key = self.asset_id  # Always use the pure 16-character UID
             
             asset_data = {
                 "name": metadata.get("name", self.asset_name),
