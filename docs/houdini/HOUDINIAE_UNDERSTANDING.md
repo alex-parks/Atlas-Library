@@ -31,16 +31,52 @@ XXXXXXXXX AA 001
 
 ```mermaid
 graph TD
-    A[Select Nodes in Houdini] --> B[Create Atlas Subnet]
-    B --> C[Configure Asset Parameters]
-    C --> D[Click Export Atlas Asset]
-    D --> E[Process Materials & Textures]
-    E --> F[Process Geometry Files]
-    F --> G[Remap Paths to Library]
-    G --> H[Save Template File]
-    H --> I[Create Metadata]
-    I --> J[Submit to Atlas API]
+    A[Select Nodes in Houdini] --> B[Run Shelf Button]
+    B --> C[copy_to_atlas_asset.py creates subnet]
+    C --> D[Configure Parameters & Thumbnail]
+    D --> E[Click Export Atlas Asset]
+    E --> F[Handle Thumbnail Action]
+    F --> G[Process Materials & Textures]
+    G --> H[Process Geometry Files]
+    H --> I[Remap Paths to Library]
+    I --> J[Save Template File]
+    J --> K[Create Metadata]
+    K --> L[Submit to Atlas API]
 ```
+
+### 3. Current File Architecture
+
+The system now uses a dual-file approach:
+
+#### Primary Workflow Files
+- **`copy_to_atlas_asset.py`**: Main entry point, parameter creation, UI
+- **`houdiniae.py`**: Core TemplateAssetExporter class, export logic
+
+#### Legacy/Alternative Files (Not Used)
+- **`shelf_create_atlas_asset.py`**: Alternative shelf tool (legacy)
+- **`tools/shelf_create_atlas_asset.py`**: Original shelf module (legacy)
+
+### 4. Thumbnail System Architecture
+
+The thumbnail system provides three distinct workflows:
+
+#### Automatic Thumbnail (Default)
+- **Process**: Loads render farm HDA → Configures → Executes dl_Submit
+- **File**: Uses `atlas_config.houdini_hda_path`
+- **Method**: `load_and_configure_render_hda()` + `auto_execute_dl_submit()`
+- **Output**: Farm-rendered thumbnail sequence
+
+#### Choose Thumbnail (Custom)
+- **Process**: User selects file/sequence → Copies to thumbnail folder
+- **Method**: `copy_custom_thumbnail()`
+- **Supports**: PNG, JPG, EXR, sequences, UDIM patterns
+- **Output**: Copied files in asset's thumbnail folder
+
+#### Disable Thumbnail (Text-based)
+- **Process**: Generates text-based thumbnail with asset name
+- **Method**: `create_text_thumbnail()`
+- **Fallback**: Creates info text file if PIL unavailable
+- **Output**: 512x512 PNG with styled text
 
 ## Key Methods Explained
 

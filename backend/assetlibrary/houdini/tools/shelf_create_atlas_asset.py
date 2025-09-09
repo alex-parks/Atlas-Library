@@ -251,6 +251,44 @@ if subcategory_parm:
     
     main_folder.addParmTemplate(variant_folder)
     
+    # ===== THUMBNAIL FOLDER (before Advanced) =====
+    thumbnail_folder = hou.FolderParmTemplate("thumbnail_folder", "Thumbnail", folder_type=hou.folderType.Collapsible)
+    thumbnail_folder.setDefaultValue(1)  # Start expanded
+    
+    # Thumbnail Action dropdown
+    thumbnail_action_parm = hou.MenuParmTemplate("thumbnail_action", "Thumbnail Action",
+                                                ["automatic", "choose", "disable"],
+                                                ["Automatic Thumbnail", "Choose Thumbnail", "Disable Thumbnail"])
+    thumbnail_action_parm.setDefaultValue(0)  # Default to Automatic Thumbnail
+    thumbnail_action_parm.setHelp("Choose how to handle thumbnail generation:\n" +
+                                  "• Automatic: Uses HDA to render and submit to farm\n" +
+                                  "• Choose: Select existing render sequence to use\n" +
+                                  "• Disable: Create text-based thumbnail with asset name")
+    thumbnail_folder.addParmTemplate(thumbnail_action_parm)
+    
+    # File picker for Choose Thumbnail (only shown when thumbnail_action is "choose")
+    thumbnail_file_parm = hou.StringParmTemplate("thumbnail_file", "Thumbnail File", 1, 
+                                                 string_type=hou.stringParmType.FileReference)
+    thumbnail_file_parm.setHelp("Select an image file or sequence to use as thumbnail.\n" +
+                               "Supports PNG, JPG, EXR formats and sequences.")
+    thumbnail_file_parm.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action != 1 }")
+    thumbnail_file_parm.setFileType(hou.fileType.Image)
+    thumbnail_folder.addParmTemplate(thumbnail_file_parm)
+    
+    main_folder.addParmTemplate(thumbnail_folder)
+    
+    # ===== ADVANCED FOLDER (after Thumbnail) =====
+    advanced_folder = hou.FolderParmTemplate("advanced_folder", "Advanced", folder_type=hou.folderType.Collapsible)
+    advanced_folder.setDefaultValue(0)  # Start collapsed
+    
+    # Branded checkbox inside Advanced folder
+    branded_checkbox = hou.ToggleParmTemplate("branded", "Branded", default_value=False)
+    branded_checkbox.setHelp("Check if this asset is branded by a specific brand/company")
+    branded_checkbox.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")  # Only show for Create New
+    advanced_folder.addParmTemplate(branded_checkbox)
+    
+    main_folder.addParmTemplate(advanced_folder)
+    
     # Export status and button
     status_parm = hou.StringParmTemplate("export_status", "Status", 1)
     status_parm.setDefaultValue(["Ready to export"])
@@ -324,6 +362,16 @@ try:
     
     print(f"🎯 Action: {action}")
     
+    # Get thumbnail parameters (common to all actions)
+    thumbnail_action_idx = int(subnet.parm("thumbnail_action").eval()) if subnet.parm("thumbnail_action") else 0
+    thumbnail_actions = ["automatic", "choose", "disable"]
+    thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
+    thumbnail_file_path = subnet.parm("thumbnail_file").eval().strip() if subnet.parm("thumbnail_file") else ""
+    
+    print(f"🎨 Thumbnail Action: {thumbnail_action}")
+    if thumbnail_action == "choose" and thumbnail_file_path:
+        print(f"📁 Thumbnail File: {thumbnail_file_path}")
+    
     # Get parameters based on action
     if action == "create_new":
         asset_name = subnet.parm("asset_name").eval().strip()
@@ -331,6 +379,7 @@ try:
         subcategory_idx = int(subnet.parm("subcategory").eval())
         tags_str = subnet.parm("tags").eval().strip()
         render_engine_idx = int(subnet.parm("render_engine").eval())
+        branded = bool(subnet.parm("branded").eval()) if subnet.parm("branded") else False
         parent_asset_id = None
         variant_name = "default"
     elif action == "version_up":
@@ -342,6 +391,7 @@ try:
         subcategory_idx = 0  # Default to first subcategory
         render_engine_idx = 0  # Default to Redshift
         variant_name = None  # Will be looked up from parent
+        branded = False  # Version up doesn't use branded
     elif action == "variant":
         parent_asset_id = subnet.parm("variant_parent_asset_id").eval().strip() if subnet.parm("variant_parent_asset_id") else ""
         asset_name = subnet.parm("variant_asset_name").eval().strip() if subnet.parm("variant_asset_name") else "Variant Asset"
@@ -402,6 +452,7 @@ try:
         asset_type_idx = 0  # Default to Assets
         subcategory_idx = 0  # Default to first subcategory
         render_engine_idx = 0  # Default to Redshift
+        branded = False  # Variant doesn't use branded
         
         # Try to inherit from parent asset
         if parent_asset_id and len(parent_asset_id) == 11:
@@ -464,6 +515,7 @@ try:
         render_engine_idx = 0
         parent_asset_id = None
         variant_name = "default"
+        branded = False
     
     if not asset_name:
         print("❌ No asset name provided")
@@ -562,7 +614,8 @@ try:
         "export_context": export_context,
         "houdini_version": f"{hou.applicationVersion()[0]}.{hou.applicationVersion()[1]}.{hou.applicationVersion()[2]}",
         "export_time": str(datetime.now()),
-        "tags": extended_tags
+        "tags": extended_tags,
+        "branded": branded if action == "create_new" else False
     }
     
     exporter = TemplateAssetExporter(
@@ -575,7 +628,9 @@ try:
         metadata=hierarchy_metadata,  # Pass structured metadata instead of empty string
         action=action,  # Pass the action (create_new, version_up, variant)
         parent_asset_id=parent_asset_id,  # Pass parent asset ID for versioning/variants
-        variant_name=variant_name  # Pass variant name
+        variant_name=variant_name,  # Pass variant name
+        thumbnail_action=thumbnail_action,  # Pass thumbnail handling mode
+        thumbnail_file_path=thumbnail_file_path  # Pass custom thumbnail file path
     )
     
     if not nodes_to_export:

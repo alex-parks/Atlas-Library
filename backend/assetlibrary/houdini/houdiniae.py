@@ -64,7 +64,7 @@ class TemplateAssetExporter:
         sanitized = sanitized.strip('_')
         return sanitized
     
-    def __init__(self, asset_name, subcategory="Props", description="", tags=None, asset_type=None, render_engine=None, metadata=None, action="create_new", parent_asset_id=None, variant_name=None):
+    def __init__(self, asset_name, subcategory="Props", description="", tags=None, asset_type=None, render_engine=None, metadata=None, action="create_new", parent_asset_id=None, variant_name=None, thumbnail_action="automatic", thumbnail_file_path=""):
         # Store the raw input for variants (will be overridden for variants)
         self.raw_input_name = asset_name
         self.subcategory = subcategory  
@@ -75,6 +75,8 @@ class TemplateAssetExporter:
         self.metadata = metadata or ""
         self.action = action
         self.parent_asset_id = parent_asset_id
+        self.thumbnail_action = thumbnail_action  # automatic, choose, disable
+        self.thumbnail_file_path = thumbnail_file_path  # path to custom thumbnail file
         
         # Handle variant name - determine based on action
         if action == "create_new":
@@ -572,7 +574,9 @@ class TemplateAssetExporter:
                 "tags": self.tags,
                 "action": self.action,
                 "parent_asset_id": self.parent_asset_id,
-                "branded": False
+                "branded": False,
+                "thumbnail_action": self.thumbnail_action,
+                "thumbnail_file_path": self.thumbnail_file_path if self.thumbnail_action == "choose" else None
             }
             
             # Get Houdini version if available
@@ -847,6 +851,210 @@ class TemplateAssetExporter:
             traceback.print_exc()
             return False
 
+    def copy_custom_thumbnail(self):
+        """Copy user-selected thumbnail file(s) to the thumbnail folder"""
+        try:
+            if not self.thumbnail_file_path or not self.thumbnail_file_path.strip():
+                print(f"   ❌ No thumbnail file path provided")
+                return False
+            
+            from pathlib import Path
+            import shutil
+            import re
+            
+            thumbnail_path = Path(self.thumbnail_file_path.strip())
+            
+            # Handle both single files and sequences
+            if not thumbnail_path.exists():
+                # Might be a sequence pattern, try to find files
+                parent_dir = thumbnail_path.parent
+                filename = thumbnail_path.name
+                
+                # Check for common sequence patterns like frame numbers
+                sequence_files = []
+                if parent_dir.exists():
+                    # Look for files that match the pattern
+                    # Handle patterns like "render.####.exr" or "render.%04d.png"
+                    base_pattern = re.sub(r'[#%]+\d*d?', '*', filename)  # Convert #### or %04d to *
+                    base_pattern = re.sub(r'\.\d+\.', '.*.', filename)  # Convert .0001. to .*. 
+                    
+                    sequence_files = list(parent_dir.glob(base_pattern))
+                    if not sequence_files:
+                        # Try direct glob pattern
+                        sequence_files = list(parent_dir.glob(filename))
+                    
+                if sequence_files:
+                    print(f"   📁 Found sequence with {len(sequence_files)} files")
+                    files_to_copy = sequence_files
+                else:
+                    print(f"   ❌ Thumbnail file not found: {thumbnail_path}")
+                    return False
+            else:
+                # Single file
+                files_to_copy = [thumbnail_path]
+            
+            # Ensure thumbnail folder exists
+            sanitized_asset_name = self._sanitize_name_for_filesystem(self.asset_name)
+            expected_thumbnail = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail{thumbnail_path.suffix}"
+            
+            # Copy files
+            copied_count = 0
+            for i, file_to_copy in enumerate(files_to_copy):
+                if len(files_to_copy) == 1:
+                    # Single file - use standard thumbnail name
+                    target_file = expected_thumbnail
+                else:
+                    # Sequence - preserve original names or create numbered sequence
+                    if file_to_copy.stem.isdigit() or '.' in file_to_copy.stem:
+                        # Preserve original filename for sequences
+                        target_file = self.thumbnail_folder / file_to_copy.name
+                    else:
+                        # Create numbered sequence
+                        target_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail_{i:04d}{file_to_copy.suffix}"
+                
+                print(f"   📋 Copying: {file_to_copy} -> {target_file}")
+                shutil.copy2(file_to_copy, target_file)
+                copied_count += 1
+            
+            print(f"   ✅ Successfully copied {copied_count} thumbnail files")
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ Error copying custom thumbnail: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def create_text_thumbnail(self):
+        """Create a text-based thumbnail using the asset name"""
+        try:
+            # Try to import PIL for text rendering
+            try:
+                from PIL import Image, ImageDraw, ImageFont
+                pil_available = True
+            except ImportError:
+                print(f"   ℹ️ PIL not available, will try alternative methods")
+                pil_available = False
+            
+            sanitized_asset_name = self._sanitize_name_for_filesystem(self.asset_name)
+            thumbnail_file = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.png"
+            
+            if pil_available:
+                # Create a nice text-based thumbnail using PIL
+                width, height = 512, 512
+                background_color = (45, 45, 45)  # Dark gray
+                text_color = (255, 255, 255)  # White
+                accent_color = (100, 150, 255)  # Light blue
+                
+                # Create image
+                img = Image.new('RGB', (width, height), background_color)
+                draw = ImageDraw.Draw(img)
+                
+                # Try to use a decent font
+                try:
+                    # Try common system fonts
+                    font_large = ImageFont.truetype("arial.ttf", 48)
+                    font_small = ImageFont.truetype("arial.ttf", 24)
+                except:
+                    try:
+                        font_large = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 48)  # macOS
+                        font_small = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 24)
+                    except:
+                        try:
+                            font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 48)  # Linux
+                            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+                        except:
+                            # Fallback to default font
+                            font_large = ImageFont.load_default()
+                            font_small = ImageFont.load_default()
+                
+                # Draw background pattern
+                for i in range(0, width, 64):
+                    draw.line([(i, 0), (i, height)], fill=(55, 55, 55), width=1)
+                for i in range(0, height, 64):
+                    draw.line([(0, i), (width, i)], fill=(55, 55, 55), width=1)
+                
+                # Draw accent border
+                draw.rectangle([(10, 10), (width-10, height-10)], outline=accent_color, width=3)
+                
+                # Prepare text
+                lines = []
+                current_line = ""
+                words = self.asset_name.split()
+                
+                for word in words:
+                    test_line = current_line + (" " if current_line else "") + word
+                    # Rough estimate of text width
+                    if len(test_line) > 15 and current_line:  # Wrap long lines
+                        lines.append(current_line)
+                        current_line = word
+                    else:
+                        current_line = test_line
+                
+                if current_line:
+                    lines.append(current_line)
+                
+                # Calculate text position
+                total_height = len(lines) * 50
+                start_y = (height - total_height) // 2
+                
+                # Draw main asset name
+                for i, line in enumerate(lines):
+                    # Get text size for centering
+                    try:
+                        bbox = draw.textbbox((0, 0), line, font=font_large)
+                        text_width = bbox[2] - bbox[0]
+                    except:
+                        text_width = len(line) * 25  # Rough estimate
+                    
+                    x = (width - text_width) // 2
+                    y = start_y + i * 60
+                    
+                    draw.text((x, y), line, fill=text_color, font=font_large)
+                
+                # Draw subtitle (description)
+                subtitle = str(self.description) if self.description else f"{self.asset_type} • {self.subcategory}"
+                subtitle_color = (180, 180, 180)  # Light grey instead of accent blue
+                
+                try:
+                    bbox = draw.textbbox((0, 0), subtitle, font=font_small)
+                    subtitle_width = bbox[2] - bbox[0]
+                except:
+                    subtitle_width = len(subtitle) * 12
+                
+                subtitle_x = (width - subtitle_width) // 2
+                subtitle_y = start_y + len(lines) * 60 + 20
+                
+                draw.text((subtitle_x, subtitle_y), subtitle, fill=subtitle_color, font=font_small)
+                
+                # Save the image
+                img.save(thumbnail_file, 'PNG')
+                print(f"   ✅ Created text-based thumbnail: {thumbnail_file}")
+                
+            else:
+                # Fallback: Create a simple file with asset info (could be read by other tools)
+                from datetime import datetime
+                info_file = self.thumbnail_folder / f"{sanitized_asset_name}_info.txt"
+                with open(info_file, 'w') as f:
+                    f.write(f"Asset Name: {self.asset_name}\n")
+                    if self.description:
+                        f.write(f"Description: {self.description}\n")
+                    f.write(f"Asset Type: {self.asset_type}\n") 
+                    f.write(f"Subcategory: {self.subcategory}\n")
+                    f.write(f"Render Engine: {self.render_engine}\n")
+                    f.write(f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"Note: Text-based thumbnail - PIL not available for image generation\n")
+                
+                print(f"   ℹ️ Created text info file: {info_file} (PIL not available for image)")
+            
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ Error creating text thumbnail: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def auto_execute_dl_submit(self):
         """Simple auto-execute dl_Submit button after HDA is loaded"""
         try:
@@ -968,21 +1176,46 @@ class TemplateAssetExporter:
             metadata = self.create_asset_metadata(template_file, nodes_to_export, texture_info, geometry_info, path_mappings)
             print(f"   ✅ Metadata created successfully")
             
-            # 🆕 LOAD AND CONFIGURE RENDER FARM HDA
-            print(f"   🎬 Loading and configuring render farm HDA...")
-            render_hda_success = self.load_and_configure_render_hda(parent_node, nodes_to_export, metadata)
-            if render_hda_success:
-                print(f"   ✅ Render farm HDA loaded and configured successfully")
-                
-                # Auto-execute dl_Submit button after HDA is loaded
-                print(f"   🚀 Auto-executing dl_Submit button...")
-                auto_exec_success = self.auto_execute_dl_submit()
-                if auto_exec_success:
-                    print(f"   ✅ dl_Submit button executed successfully - render should start!")
+            # 🎨 HANDLE THUMBNAIL BASED ON MODE
+            print(f"   🎨 Thumbnail Mode: {self.thumbnail_action}")
+            
+            if self.thumbnail_action == "automatic":
+                # Original behavior: Load HDA and auto-execute dl_Submit
+                print(f"   🎬 Loading and configuring render farm HDA...")
+                render_hda_success = self.load_and_configure_render_hda(parent_node, nodes_to_export, metadata)
+                if render_hda_success:
+                    print(f"   ✅ Render farm HDA loaded and configured successfully")
+                    
+                    # Auto-execute dl_Submit button after HDA is loaded
+                    print(f"   🚀 Auto-executing dl_Submit button...")
+                    auto_exec_success = self.auto_execute_dl_submit()
+                    if auto_exec_success:
+                        print(f"   ✅ dl_Submit button executed successfully - render should start!")
+                    else:
+                        print(f"   ℹ️ dl_Submit button not executed - check console for details")
                 else:
-                    print(f"   ℹ️ dl_Submit button not executed - check console for details")
+                    print(f"   ⚠️ Render farm HDA configuration had issues (check console)")
+                    
+            elif self.thumbnail_action == "choose":
+                # Copy custom thumbnail file
+                print(f"   📁 Using custom thumbnail: {self.thumbnail_file_path}")
+                self.copy_custom_thumbnail()
+                
+            elif self.thumbnail_action == "disable":
+                # Create text-based thumbnail
+                print(f"   📝 Creating text-based thumbnail")
+                self.create_text_thumbnail()
+                
             else:
-                print(f"   ⚠️ Render farm HDA configuration had issues (check console)")
+                print(f"   ⚠️ Unknown thumbnail action: {self.thumbnail_action}, defaulting to automatic")
+                # Fallback to automatic mode
+                render_hda_success = self.load_and_configure_render_hda(parent_node, nodes_to_export, metadata)
+                if render_hda_success:
+                    auto_exec_success = self.auto_execute_dl_submit()
+                    if auto_exec_success:
+                        print(f"   ✅ dl_Submit button executed successfully - render should start!")
+                    else:
+                        print(f"   ℹ️ dl_Submit button not executed - check console for details")
             
             print(f"✅ Export complete: {self.asset_folder}")
             return True

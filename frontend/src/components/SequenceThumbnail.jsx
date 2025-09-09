@@ -34,38 +34,66 @@ const SequenceThumbnail = ({
 
     const fetchSequenceData = async () => {
       try {
-        const response = await fetch(`http://localhost:8000/api/v1/assets/${assetId}/thumbnail-sequence`);
+        // First try to fetch thumbnail sequence
+        const sequenceResponse = await fetch(`http://localhost:8000/api/v1/assets/${assetId}/thumbnail-sequence`);
         
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        
-        if (data.frame_count > 1) {
-          setSequenceData(data);
+        if (sequenceResponse.ok) {
+          const data = await sequenceResponse.json();
           
-          // Find the index of the thumbnail frame if specified
-          let initialFrame = 0;
-          if (thumbnailFrame && data.frames) {
-            const frameIndex = data.frames.findIndex(f => f.frame_number === thumbnailFrame);
-            if (frameIndex !== -1) {
-              initialFrame = frameIndex;
+          if (data.frame_count > 1) {
+            setSequenceData(data);
+            
+            // Find the index of the thumbnail frame if specified
+            let initialFrame = 0;
+            if (thumbnailFrame && data.frames) {
+              const frameIndex = data.frames.findIndex(f => f.frame_number === thumbnailFrame);
+              if (frameIndex !== -1) {
+                initialFrame = frameIndex;
+              }
             }
+            setCurrentFrame(initialFrame);
+          } else if (data.frame_count === 1) {
+            // Single frame - treat as regular thumbnail
+            setSequenceData(data);
+            setCurrentFrame(0);
+          } else {
+            throw new Error('No frames available');
           }
-          setCurrentFrame(initialFrame);
-        } else if (data.frame_count === 1) {
-          // Single frame - treat as regular thumbnail
-          setSequenceData(data);
-          setCurrentFrame(0);
-        } else {
-          throw new Error('No frames available');
+          
+          setLoading(false);
+          setError(false);
+          return;
         }
         
-        setLoading(false);
-        setError(false);
+        // If sequence fails, try single thumbnail endpoint (for single images)
+        const singleResponse = await fetch(`http://localhost:8000/thumbnails/${assetId}`);
+        
+        if (singleResponse.ok) {
+          // Create a mock sequence data for single thumbnail
+          setSequenceData({
+            asset_id: assetId,
+            frame_count: 1,
+            frame_range: { start: 1, end: 1 },
+            base_url: `/thumbnails/${assetId}`,
+            frames: [
+              {
+                index: 0,
+                frame_number: 1,
+                filename: 'thumbnail.png',
+                url: `/thumbnails/${assetId}`
+              }
+            ]
+          });
+          setCurrentFrame(0);
+          setLoading(false);
+          setError(false);
+          return;
+        }
+        
+        throw new Error('No thumbnail available');
+        
       } catch (err) {
-        console.log(`No thumbnail sequence for asset ${assetId}:`, err.message);
+        console.log(`No thumbnail for asset ${assetId}:`, err.message);
         setError(true);
         setLoading(false);
       }

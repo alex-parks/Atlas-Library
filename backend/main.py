@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.exceptions import RequestValidationError
 
+# Dynamic thumbnail generation removed - thumbnails are now static files only
+
 # Import only working routers for now
 from backend.api.assets import router as assets_router
 from backend.api.config import router as config_router
@@ -153,6 +155,8 @@ async def get_thumbnail(asset_id: str):
         if not asset:
             logger.error(f"[ERROR] Asset not found: {asset_id}")
             raise HTTPException(status_code=404, detail=f"Asset not found: {asset_id}")
+        
+        # Proceed directly to file-based thumbnail search
         thumbnail_paths = []
         if 'paths' in asset and asset['paths'].get('thumbnail'):
             thumbnail_paths.append(asset['paths']['thumbnail'])
@@ -172,16 +176,29 @@ async def get_thumbnail(asset_id: str):
             logger.info(f"[THUMBNAIL] Looking for thumbnails in: {thumbnail_folder}")
             if thumbnail_folder.exists() and thumbnail_folder.is_dir():
                 logger.info(f"[THUMBNAIL] Found thumbnail folder: {thumbnail_folder}")
-                for ext in ['.png', '.jpg', '.jpeg']:
+                for ext in ['.png', '.jpg', '.jpeg', '.exr', '.tiff', '.tif']:
                     for img_file in thumbnail_folder.glob(f"*{ext}"):
                         logger.info(f"[THUMBNAIL] Found thumbnail file: {img_file}")
                         thumbnail_paths.append(str(img_file))
         for thumbnail_path in thumbnail_paths:
             if thumbnail_path and Path(thumbnail_path).exists():
                 logger.info(f"[OK] Serving thumbnail: {thumbnail_path}")
+                
+                # Determine media type based on file extension
+                file_ext = Path(thumbnail_path).suffix.lower()
+                media_type = "application/octet-stream"  # Default fallback
+                if file_ext in ['.png']:
+                    media_type = "image/png"
+                elif file_ext in ['.jpg', '.jpeg']:
+                    media_type = "image/jpeg"
+                elif file_ext in ['.exr']:
+                    media_type = "image/exr"  # EXR files
+                elif file_ext in ['.tiff', '.tif']:
+                    media_type = "image/tiff"
+                
                 return FileResponse(
                     path=str(thumbnail_path),
-                    media_type="image/png",
+                    media_type=media_type,
                     headers={"Cache-Control": "public, max-age=3600"}
                 )
         logger.error(f"[ERROR] No thumbnail found for asset: {asset_id}")
@@ -388,9 +405,21 @@ async def get_thumbnail_sequence_frame(asset_id: str, frame_number: int):
         frame_path = sequence_files[frame_number]
         logger.info(f"[FRAME] Serving frame {frame_number}: {frame_path.name}")
         
+        # Determine media type based on file extension
+        file_ext = frame_path.suffix.lower()
+        media_type = "application/octet-stream"  # Default fallback
+        if file_ext in ['.png']:
+            media_type = "image/png"
+        elif file_ext in ['.jpg', '.jpeg']:
+            media_type = "image/jpeg"
+        elif file_ext in ['.exr']:
+            media_type = "image/exr"  # EXR files
+        elif file_ext in ['.tiff', '.tif']:
+            media_type = "image/tiff"
+        
         return FileResponse(
             path=str(frame_path),
-            media_type="image/png",
+            media_type=media_type,
             headers={"Cache-Control": "public, max-age=3600"}
         )
         

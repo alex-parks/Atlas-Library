@@ -283,6 +283,34 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         atlas_tab.addParmTemplate(tags)
         print(f"   ➕ Added tags (Create New only)")
         
+        # ===== THUMBNAIL SECTION (Create New only) =====
+        thumbnail_folder = hou.FolderParmTemplate("thumbnail_folder", "Thumbnail", folder_type=hou.folderType.Collapsible)
+        thumbnail_folder.setDefaultValue(1)  # Start expanded
+        thumbnail_folder.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
+        
+        # Thumbnail Action dropdown
+        thumbnail_action_parm = hou.MenuParmTemplate("thumbnail_action", "Thumbnail Action",
+                                                    ["automatic", "choose", "disable"],
+                                                    ["Automatic Thumbnail", "Choose Thumbnail", "Disable Thumbnail"])
+        thumbnail_action_parm.setDefaultValue(0)  # Default to Automatic Thumbnail
+        thumbnail_action_parm.setHelp("Choose how to handle thumbnail generation:\n" +
+                                      "• Automatic: Uses HDA to render and submit to farm\n" +
+                                      "• Choose: Select existing render sequence to use\n" +
+                                      "• Disable: Create text-based thumbnail with asset name")
+        thumbnail_folder.addParmTemplate(thumbnail_action_parm)
+        
+        # File picker for Choose Thumbnail (only shown when thumbnail_action is "choose")
+        thumbnail_file_parm = hou.StringParmTemplate("thumbnail_file", "Thumbnail File", 1, 
+                                                     string_type=hou.stringParmType.FileReference)
+        thumbnail_file_parm.setHelp("Select an image file or sequence to use as thumbnail.\n" +
+                                   "Supports PNG, JPG, EXR formats and sequences.")
+        thumbnail_file_parm.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action != 1 }")
+        thumbnail_file_parm.setFileType(hou.fileType.Image)
+        thumbnail_folder.addParmTemplate(thumbnail_file_parm)
+        
+        atlas_tab.addParmTemplate(thumbnail_folder)
+        print(f"   ➕ Added Thumbnail section (Create New only)")
+        
         # Advanced section (Create New only) - Collapsible folder
         advanced_folder = hou.FolderParmTemplate("advanced", "Advanced", folder_type=hou.folderType.Collapsible)
         advanced_folder.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
@@ -320,6 +348,34 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         atlas_tab.addParmTemplate(parent_asset_id)
         print(f"   ➕ Added parent asset ID (Version Up only)")
         
+        # ===== THUMBNAIL SECTION (Version Up) =====
+        thumbnail_folder_version = hou.FolderParmTemplate("thumbnail_folder_version", "Thumbnail", folder_type=hou.folderType.Collapsible)
+        thumbnail_folder_version.setDefaultValue(1)  # Start expanded
+        thumbnail_folder_version.setConditional(hou.parmCondType.HideWhen, "{ action != 1 }")
+        
+        # Thumbnail Action dropdown for Version Up
+        thumbnail_action_version = hou.MenuParmTemplate("thumbnail_action_version", "Thumbnail Action",
+                                                        ["automatic", "choose", "disable"],
+                                                        ["Automatic Thumbnail", "Choose Thumbnail", "Disable Thumbnail"])
+        thumbnail_action_version.setDefaultValue(0)  # Default to Automatic Thumbnail
+        thumbnail_action_version.setHelp("Choose how to handle thumbnail generation:\n" +
+                                        "• Automatic: Uses HDA to render and submit to farm\n" +
+                                        "• Choose: Select existing render sequence to use\n" +
+                                        "• Disable: Create text-based thumbnail with asset name")
+        thumbnail_folder_version.addParmTemplate(thumbnail_action_version)
+        
+        # File picker for Choose Thumbnail (Version Up)
+        thumbnail_file_version = hou.StringParmTemplate("thumbnail_file_version", "Thumbnail File", 1, 
+                                                       string_type=hou.stringParmType.FileReference)
+        thumbnail_file_version.setHelp("Select an image file or sequence to use as thumbnail.\n" +
+                                     "Supports PNG, JPG, EXR formats and sequences.")
+        thumbnail_file_version.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action_version != 1 }")
+        thumbnail_file_version.setFileType(hou.fileType.Image)
+        thumbnail_folder_version.addParmTemplate(thumbnail_file_version)
+        
+        atlas_tab.addParmTemplate(thumbnail_folder_version)
+        print(f"   ➕ Added Thumbnail section (Version Up only)")
+        
         # Separator before Version Up export section
         separator_version = hou.SeparatorParmTemplate("version_sep")
         separator_version.setConditional(hou.parmCondType.HideWhen, "{ action != 1 }")
@@ -352,6 +408,34 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         variant_name.setConditional(hou.parmCondType.HideWhen, "{ action != 2 }")
         atlas_tab.addParmTemplate(variant_name)
         print(f"   ➕ Added variant name (Variant only)")
+        
+        # ===== THUMBNAIL SECTION (Variant) =====
+        thumbnail_folder_variant = hou.FolderParmTemplate("thumbnail_folder_variant", "Thumbnail", folder_type=hou.folderType.Collapsible)
+        thumbnail_folder_variant.setDefaultValue(1)  # Start expanded
+        thumbnail_folder_variant.setConditional(hou.parmCondType.HideWhen, "{ action != 2 }")
+        
+        # Thumbnail Action dropdown for Variant
+        thumbnail_action_variant = hou.MenuParmTemplate("thumbnail_action_variant", "Thumbnail Action",
+                                                        ["automatic", "choose", "disable"],
+                                                        ["Automatic Thumbnail", "Choose Thumbnail", "Disable Thumbnail"])
+        thumbnail_action_variant.setDefaultValue(0)  # Default to Automatic Thumbnail
+        thumbnail_action_variant.setHelp("Choose how to handle thumbnail generation:\n" +
+                                        "• Automatic: Uses HDA to render and submit to farm\n" +
+                                        "• Choose: Select existing render sequence to use\n" +
+                                        "• Disable: Create text-based thumbnail with asset name")
+        thumbnail_folder_variant.addParmTemplate(thumbnail_action_variant)
+        
+        # File picker for Choose Thumbnail (Variant)
+        thumbnail_file_variant = hou.StringParmTemplate("thumbnail_file_variant", "Thumbnail File", 1, 
+                                                       string_type=hou.stringParmType.FileReference)
+        thumbnail_file_variant.setHelp("Select an image file or sequence to use as thumbnail.\n" +
+                                     "Supports PNG, JPG, EXR formats and sequences.")
+        thumbnail_file_variant.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action_variant != 1 }")
+        thumbnail_file_variant.setFileType(hou.fileType.Image)
+        thumbnail_folder_variant.addParmTemplate(thumbnail_file_variant)
+        
+        atlas_tab.addParmTemplate(thumbnail_folder_variant)
+        print(f"   ➕ Added Thumbnail section (Variant only)")
         
         # Separator before Variant export section
         separator_variant = hou.SeparatorParmTemplate("variant_sep")
@@ -400,11 +484,11 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         required_params = [
             "action", 
             # Create New Asset parameters
-            "asset_name", "asset_type", "subcategory_assets", "subcategory_fx", "subcategory_materials", "subcategory_hdas", "render_engine", "tags", "branded", "export_atlas_asset",
+            "asset_name", "asset_type", "subcategory_assets", "subcategory_fx", "subcategory_materials", "subcategory_hdas", "render_engine", "tags", "thumbnail_action", "thumbnail_file", "branded", "export_atlas_asset",
             # Version Up Asset parameters  
-            "version_parent_asset_id", "create_new_version",
+            "version_parent_asset_id", "thumbnail_action_version", "thumbnail_file_version", "create_new_version",
             # Variant Asset parameters
-            "variant_parent_id", "variant_name", "create_variant"
+            "variant_parent_id", "variant_name", "thumbnail_action_variant", "thumbnail_file_variant", "create_variant"
         ]
         for param in required_params:
             if param in parm_names:
@@ -869,7 +953,9 @@ try:
         render_engine=inherited_render_engine,
         metadata=hierarchy_metadata,
         action="version_up",
-        parent_asset_id=asset_base_id  # Pass 13-character asset base ID
+        parent_asset_id=asset_base_id,  # Pass 13-character asset base ID
+        thumbnail_action=thumbnail_action,  # Use thumbnail parameters from UI
+        thumbnail_file_path=thumbnail_file_path
     )
     
     print(f"✅ Created exporter with ID: {exporter.asset_id}")
@@ -1212,7 +1298,9 @@ try:
         metadata="",
         action="variant",
         parent_asset_id=variant_parent_id,
-        variant_name=variant_name
+        variant_name=variant_name,
+        thumbnail_action=thumbnail_action,  # Use thumbnail parameters from UI
+        thumbnail_file_path=thumbnail_file_path
     )
     
     print(f"✅ Created variant exporter with ID: {exporter.asset_id}")
@@ -1406,6 +1494,16 @@ try:
         
         # Get branded checkbox value
         branded = bool(subnet.parm("branded").eval()) if subnet.parm("branded") else False
+        
+        # Get thumbnail parameters
+        thumbnail_action_idx = int(subnet.parm("thumbnail_action").eval()) if subnet.parm("thumbnail_action") else 0
+        thumbnail_actions = ["automatic", "choose", "disable"]
+        thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
+        thumbnail_file_path = subnet.parm("thumbnail_file").eval().strip() if subnet.parm("thumbnail_file") else ""
+        
+        print(f"🎨 Thumbnail Action: {thumbnail_action}")
+        if thumbnail_action == "choose" and thumbnail_file_path:
+            print(f"📁 Thumbnail File: {thumbnail_file_path}")
     elif action == "version_up":
         parent_asset_id = subnet.parm("version_parent_asset_id").eval().strip() if subnet.parm("version_parent_asset_id") else ""
         # For Version Up, we'll use the subnet name as asset name
@@ -1415,6 +1513,17 @@ try:
         asset_type_idx = 0  # Default to "Assets"
         render_engine_idx = 0  # Default to "Redshift"
         subcategory_idx = 0  # Default to "Blacksmith Asset"
+        branded = False
+        
+        # Get thumbnail parameters for version up
+        thumbnail_action_idx = int(subnet.parm("thumbnail_action_version").eval()) if subnet.parm("thumbnail_action_version") else 0
+        thumbnail_actions = ["automatic", "choose", "disable"]
+        thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
+        thumbnail_file_path = subnet.parm("thumbnail_file_version").eval().strip() if subnet.parm("thumbnail_file_version") else ""
+        
+        print(f"🎨 Thumbnail Action (Version Up): {thumbnail_action}")
+        if thumbnail_action == "choose" and thumbnail_file_path:
+            print(f"📁 Thumbnail File: {thumbnail_file_path}")
     elif action == "variant":
         parent_asset_id = subnet.parm("variant_parent_id").eval().strip() if subnet.parm("variant_parent_id") else ""
         # For Variant, we'll use the subnet name as asset name
@@ -1424,6 +1533,17 @@ try:
         asset_type_idx = 0  # Default to "Assets"
         render_engine_idx = 0  # Default to "Redshift"
         subcategory_idx = 0  # Default to "Blacksmith Asset"
+        branded = False
+        
+        # Get thumbnail parameters for variant
+        thumbnail_action_idx = int(subnet.parm("thumbnail_action_variant").eval()) if subnet.parm("thumbnail_action_variant") else 0
+        thumbnail_actions = ["automatic", "choose", "disable"]
+        thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
+        thumbnail_file_path = subnet.parm("thumbnail_file_variant").eval().strip() if subnet.parm("thumbnail_file_variant") else ""
+        
+        print(f"🎨 Thumbnail Action (Variant): {thumbnail_action}")
+        if thumbnail_action == "choose" and thumbnail_file_path:
+            print(f"📁 Thumbnail File: {thumbnail_file_path}")
     else:
         # Fallback
         asset_name = ""
@@ -1507,7 +1627,9 @@ try:
             render_engine=render_engine,
             metadata=hierarchy_metadata,
             action=action,
-            parent_asset_id=parent_asset_id
+            parent_asset_id=parent_asset_id,
+            thumbnail_action=thumbnail_action,
+            thumbnail_file_path=thumbnail_file_path
         )
         
         print(f"✅ Created exporter with ID: {exporter.asset_id}")
