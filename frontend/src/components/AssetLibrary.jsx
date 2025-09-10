@@ -1,6 +1,6 @@
 // New Asset Library with Navigation Structure
-import React, { useState, useEffect } from 'react';
-import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette, ChevronLeft, ChevronRight } from 'lucide-react';
 import SequenceThumbnail from './SequenceThumbnail';
 import HoudiniAssetBadge from './badges/HoudiniAssetBadge';
 import TextureBadge from './badges/TextureBadge';
@@ -163,10 +163,25 @@ const AssetLibrary = ({
     ],
     // 2D and other categories can have subcategories too, but focusing on 3D for now
     'Textures': [
-      { id: 'Uploaded', name: 'Uploaded', icon: '⬆️', description: 'Uploaded texture assets' }
+      { id: 'Alpha', name: 'Alpha', icon: '🔳', description: 'Alpha maps and transparency textures' },
+      { id: 'Texture Sets', name: 'Texture Sets', icon: '📦', description: 'Complete material texture sets' },
+      { id: 'Base Color', name: 'Base Color', icon: '🎨', description: 'Diffuse/Albedo color maps' },
+      { id: 'Roughness', name: 'Roughness', icon: '⚪', description: 'Surface roughness maps' },
+      { id: 'Normal', name: 'Normal', icon: '🔵', description: 'Normal/bump maps' },
+      { id: 'Metallic', name: 'Metallic', icon: '⚫', description: 'Metallic/specular maps' },
+      { id: 'Displacement', name: 'Displacement', icon: '📐', description: 'Height/displacement maps' },
+      { id: 'Other', name: 'Other', icon: '🌐', description: 'Other texture types' }
     ],
     'HDRI': [
-      { id: 'Uploaded', name: 'Uploaded', icon: '⬆️', description: 'Uploaded HDRI assets' }
+      { id: 'Outdoor', name: 'Outdoor', icon: '🏞️', description: 'Outdoor environment HDRIs' },
+      { id: 'Skies', name: 'Skies', icon: '☁️', description: 'Sky dome HDRIs' },
+      { id: 'Indoor', name: 'Indoor', icon: '🏠', description: 'Indoor environment HDRIs' },
+      { id: 'Studio', name: 'Studio', icon: '📸', description: 'Studio lighting HDRIs' },
+      { id: 'Sunrise/Sunset', name: 'Sunrise/Sunset', icon: '🌅', description: 'Dawn and dusk HDRIs' },
+      { id: 'Night', name: 'Night', icon: '🌙', description: 'Night time HDRIs' },
+      { id: 'Nature', name: 'Nature', icon: '🌳', description: 'Natural environment HDRIs' },
+      { id: 'Urban', name: 'Urban', icon: '🏙️', description: 'City and urban HDRIs' },
+      { id: 'Other', name: 'Other', icon: '🌐', description: 'Other HDRI categories' }
     ]
   };
 
@@ -189,7 +204,19 @@ const AssetLibrary = ({
     assetType: 'Textures', // 'Textures' or 'HDRI'
     name: '',
     filePath: '',
-    description: ''
+    previewPath: '', // Preview JPEG/PNG for HDRIs
+    description: '',
+    subcategory: 'Alpha', // Default for Textures
+    alphaSubcategory: 'General', // For Alpha textures
+    textureType: 'standard', // 'seamless', 'uv_tile', or 'standard'
+    textureSetPaths: {
+      baseColor: '',
+      metallic: '',
+      roughness: '',
+      normal: '',
+      opacity: '',
+      displacement: ''
+    }
   });
   const [uploading, setUploading] = useState(false);
 
@@ -557,7 +584,9 @@ const AssetLibrary = ({
   // Format asset name to show "{Original Name} - {Variant Name}" for variants
   const formatAssetName = (asset) => {
     // Check if this is a variant (variant_id is not "AA" - the original)
-    const variantId = asset.variant_id || (asset.id && asset.id.length >= 13 ? asset.id.substring(11, 13) : 'AA');
+    // For 3D assets from Houdini: 16-character ID (11 base + 2 variant + 3 version)
+    // For HDRI/Texture uploads: 10-character ID (no variants/versions)
+    const variantId = asset.variant_id || (asset.id && asset.id.length === 16 ? asset.id.substring(11, 13) : 'AA');
     const variantName = asset.variant_name || asset.metadata?.variant_name;
     
     // If it's the original (AA variant) or no variant name, just show the original name
@@ -571,7 +600,9 @@ const AssetLibrary = ({
 
   // Format asset name with JSX styling for hover cards (variant name darker)
   const formatAssetNameJSX = (asset) => {
-    const variantId = asset.variant_id || (asset.id && asset.id.length >= 13 ? asset.id.substring(11, 13) : 'AA');
+    // For 3D assets from Houdini: 16-character ID (11 base + 2 variant + 3 version)
+    // For HDRI/Texture uploads: 10-character ID (no variants/versions)
+    const variantId = asset.variant_id || (asset.id && asset.id.length === 16 ? asset.id.substring(11, 13) : 'AA');
     const variantName = asset.variant_name || asset.metadata?.variant_name;
     
     // If it's the original (AA variant) or no variant name, just show the original name
@@ -603,8 +634,8 @@ const AssetLibrary = ({
       // Check for variant_id in multiple possible locations
       const variantId = asset.metadata?.variant_id || asset.variant_id || 
                        (asset.metadata?.hierarchy?.variant_id) || 
-                       // If no explicit variant_id, derive from asset ID (characters 10-11)
-                       (asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA');
+                       // Derive from asset ID: 3D assets (16 chars) use positions 11-13, HDRI/Textures (10 chars) default to 'AA'
+                       (asset.id && asset.id.length === 16 ? asset.id.substring(11, 13) : 'AA');
       matchesVariantFilter = variantId === 'AA';
     }
     // When showVariants is ON (checked), matchesVariantFilter stays true (show all variants)
@@ -707,8 +738,8 @@ const AssetLibrary = ({
         const assetId = asset.id || asset._key || '';
         const variantId = asset.metadata?.variant_id || asset.variant_id || 
                          (asset.metadata?.hierarchy?.variant_id) || 
-                         (asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA');
-        const derivedVariantId = asset.id && asset.id.length >= 11 ? asset.id.substring(9, 11) : 'AA';
+                         (asset.id && asset.id.length === 16 ? asset.id.substring(11, 13) : 'AA');
+        const derivedVariantId = asset.id && asset.id.length === 16 ? asset.id.substring(11, 13) : 'AA';
         console.log(`  ID: ${assetId}, variant_id: ${variantId}, derived: ${derivedVariantId}, name: ${formatAssetName(asset)}`);
       });
       
@@ -844,9 +875,21 @@ const AssetLibrary = ({
 
   // Upload Asset functionality
   const handleUploadAsset = async () => {
-    if (!uploadData.name.trim() || !uploadData.filePath.trim()) {
-      alert('❌ Please fill in both Name and File Path fields');
+    // Validate name is always required
+    if (!uploadData.name.trim()) {
+      alert('❌ Please fill in the Asset Name field');
       return;
+    }
+
+    // For texture sets, validate base color path (required), other paths are optional
+    if (uploadData.assetType === 'Textures' && uploadData.subcategory === 'Texture Sets') {
+      if (!uploadData.textureSetPaths.baseColor.trim()) {
+        alert('❌ Please provide at least a Base Color file path for Texture Sets');
+        return;
+      }
+    } else {
+      // For all other asset types, file path is optional as requested
+      // No validation needed for file path - it's now optional
     }
 
     setUploading(true);
@@ -861,10 +904,34 @@ const AssetLibrary = ({
         body: JSON.stringify({
           asset_type: uploadData.assetType,
           name: uploadData.name,
-          file_path: uploadData.filePath,
+          // HDRI uploads: Always include file_path
+          ...(uploadData.assetType === 'HDRI' && { 
+            file_path: uploadData.filePath,
+            // Include preview_path for HDRIs if provided
+            ...(uploadData.previewPath && { preview_path: uploadData.previewPath })
+          }),
+          // Texture uploads: Handle different subcategories
+          ...(uploadData.assetType === 'Textures' && {
+            // For Texture Sets: Send texture_set_paths, no file_path
+            ...(uploadData.subcategory === 'Texture Sets' && { texture_set_paths: uploadData.textureSetPaths }),
+            // For Alpha textures: Include alpha_subcategory and file_path
+            ...(uploadData.subcategory === 'Alpha' && { 
+              alpha_subcategory: uploadData.alphaSubcategory,
+              ...(uploadData.filePath && { file_path: uploadData.filePath })
+            }),
+            // For other single texture types: Include file_path
+            ...(uploadData.subcategory !== 'Texture Sets' && uploadData.subcategory !== 'Alpha' && uploadData.filePath && { file_path: uploadData.filePath })
+          }),
           description: uploadData.description || '',
           dimension: '3D',
-          created_by: 'web_uploader'
+          subcategory: uploadData.subcategory,
+          created_by: 'web_uploader',
+          // Add texture type metadata for Textures
+          ...(uploadData.assetType === 'Textures' && uploadData.textureType && {
+            texture_type: uploadData.textureType,
+            seamless: uploadData.textureType === 'seamless',
+            uv_tile: uploadData.textureType === 'uv_tile'
+          })
         })
       });
 
@@ -878,7 +945,19 @@ const AssetLibrary = ({
           assetType: 'Textures',
           name: '',
           filePath: '',
-          description: ''
+          previewPath: '',
+          description: '',
+          subcategory: 'Alpha',
+          alphaSubcategory: 'General',
+          textureType: 'standard',
+          textureSetPaths: {
+            baseColor: '',
+            metallic: '',
+            roughness: '',
+            normal: '',
+            opacity: '',
+            displacement: ''
+          }
         });
         setShowUploadModal(false);
         
@@ -978,6 +1057,306 @@ const AssetLibrary = ({
 
   const assetCategories = [...new Set(assets.map(asset => asset.category))];
   const creators = [...new Set(assets.map(asset => asset.artist).filter(Boolean))];
+
+  // Texture Preview Image Component with Navigation and Zoom
+  const TexturePreviewImage = ({ asset }) => {
+    const [currentImageIndex, setCurrentImageIndex] = useState(0);
+    const [imageList, setImageList] = useState([]);
+    const [imageResolutions, setImageResolutions] = useState({});
+    const [zoom, setZoom] = useState(1);
+    const [zoomCenter, setZoomCenter] = useState({ x: 0.5, y: 0.5 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+    const [isHovering, setIsHovering] = useState(false);
+    const containerRef = useRef(null);
+
+    // Load image list for navigation (for all textures, not just texture sets)
+    useEffect(() => {
+      const loadImageList = async () => {
+        try {
+          const response = await fetch(`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-images`);
+          if (response.ok) {
+            const data = await response.json();
+            console.log('🖼️ Texture images loaded for preview:', data);
+            setImageList(data.images || []);
+            setImageResolutions(data.resolutions || {});
+          } else {
+            // For single textures or if API call fails, create a single image entry
+            console.log('🖼️ Using fallback single texture display');
+            setImageList([{ filename: asset.name, path: '' }]);
+          }
+        } catch (error) {
+          console.log('🖼️ Using fallback single texture display:', error);
+          // Create a single image entry for single textures
+          setImageList([{ filename: asset.name, path: '' }]);
+        }
+      };
+
+      if (asset.id || asset._key) {
+        loadImageList();
+      }
+    }, [asset.id, asset._key]);
+
+    // Navigation functions
+    const navigateImage = (direction) => {
+      if (imageList.length <= 1) return;
+      
+      setCurrentImageIndex(prev => {
+        if (direction === 'left') {
+          return prev === 0 ? imageList.length - 1 : prev - 1;
+        } else {
+          return prev === imageList.length - 1 ? 0 : prev + 1;
+        }
+      });
+      // Reset zoom and pan when switching images
+      setZoom(1);
+      setZoomCenter({ x: 0.5, y: 0.5 });
+      setPanOffset({ x: 0, y: 0 });
+    };
+
+    // Handle scroll wheel for zoom (same as SequenceThumbnail)
+    const handleWheel = (e) => {
+      e.preventDefault();
+      
+      if (!containerRef.current) return;
+      
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseX = (e.clientX - rect.left) / rect.width;
+      const mouseY = (e.clientY - rect.top) / rect.height;
+      
+      // Zoom sensitivity
+      const zoomSensitivity = 0.1;
+      const deltaY = e.deltaY;
+      const zoomDelta = deltaY > 0 ? -zoomSensitivity : zoomSensitivity;
+      
+      setZoom(prevZoom => {
+        const newZoom = Math.max(1, Math.min(5, prevZoom + zoomDelta));
+        
+        // Update zoom center to mouse position when zooming in from 1x
+        if (prevZoom === 1 && newZoom > 1) {
+          setZoomCenter({ x: mouseX, y: mouseY });
+          setPanOffset({ x: 0, y: 0 }); // Reset pan when starting to zoom
+        }
+        
+        return newZoom;
+      });
+    };
+
+    // Handle mouse movement for panning (same as SequenceThumbnail)
+    const handleMouseMove = (e) => {
+      if (isDragging && zoom > 1) {
+        // Handle panning when zoomed in
+        const deltaX = e.clientX - dragStart.x;
+        const deltaY = e.clientY - dragStart.y;
+        
+        setPanOffset(prevOffset => ({
+          x: prevOffset.x + deltaX / zoom,
+          y: prevOffset.y + deltaY / zoom
+        }));
+        
+        setDragStart({ x: e.clientX, y: e.clientY });
+        return;
+      }
+    };
+
+    // Handle mouse down for panning
+    const handleMouseDown = (e) => {
+      if (zoom > 1) {
+        setIsDragging(true);
+        setDragStart({ x: e.clientX, y: e.clientY });
+        e.preventDefault(); // Prevent text selection
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    const handleMouseEnter = () => {
+      setIsHovering(true);
+    };
+
+    const handleMouseLeave = () => {
+      setIsHovering(false);
+      setIsDragging(false);
+    };
+
+    // Map texture types to their abbreviations (same as badge/card)
+    const getTextureTypeAbbr = (filename) => {
+      const lower = filename.toLowerCase();
+      if (lower.includes('base') && lower.includes('color')) return 'BC';
+      if (lower.includes('albedo')) return 'BC';
+      if (lower.includes('alpha')) return 'A';
+      if (lower.includes('metallic') || lower.includes('metalness')) return 'M';
+      if (lower.includes('roughness')) return 'R';
+      if (lower.includes('normal')) return 'N';
+      if (lower.includes('opacity')) return 'O';
+      if (lower.includes('displacement') || lower.includes('height')) return 'D';
+      return '?';
+    };
+
+    // Get texture types from image list
+    const getTextureTypes = () => {
+      return imageList.map((img, index) => ({
+        abbr: getTextureTypeAbbr(img.filename || ''),
+        index: index,
+        filename: img.filename
+      }));
+    };
+
+    // Calculate transform style for zoom and pan (same as SequenceThumbnail)
+    const getImageTransform = () => {
+      if (zoom === 1) return {};
+      
+      const centerX = zoomCenter.x * 100;
+      const centerY = zoomCenter.y * 100;
+      const offsetX = panOffset.x;
+      const offsetY = panOffset.y;
+      
+      return {
+        transform: `scale(${zoom}) translate(${offsetX}px, ${offsetY}px)`,
+        transformOrigin: `${centerX}% ${centerY}%`,
+        transition: isDragging ? 'none' : 'transform 0.1s ease-out'
+      };
+    };
+
+    return (
+      <div 
+        ref={containerRef}
+        className={`w-full h-full relative overflow-hidden group ${zoom > 1 ? 'cursor-grab' : 'cursor-pointer'} ${isDragging ? 'cursor-grabbing' : ''}`}
+        onMouseMove={handleMouseMove}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onWheel={handleWheel}
+        style={{ userSelect: 'none' }} // Prevent text selection when dragging
+      >
+        {imageList.length > 0 ? (
+          imageList[currentImageIndex] ? (
+            <img
+              src={`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-image/${currentImageIndex}`}
+              alt={`${formatAssetName(asset)} - Image ${currentImageIndex + 1}`}
+              className="w-full h-full object-contain"
+              style={getImageTransform()}
+              onError={(e) => {
+                console.error(`Failed to load texture image ${currentImageIndex}`);
+                // Fallback to SequenceThumbnail for single textures
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'flex';
+              }}
+              draggable={false}
+            />
+          ) : (
+            // Use SequenceThumbnail as fallback for single textures
+            <SequenceThumbnail
+              assetId={asset.id || asset._key}
+              assetName={formatAssetName(asset)}
+              thumbnailFrame={asset.thumbnail_frame}
+              fallbackIcon="🖼️"
+              disableScrubbing={true}
+              className="w-full h-full object-contain"
+              style={getImageTransform()}
+            />
+          )
+        ) : (
+          // Fallback for when no images are loaded
+          <SequenceThumbnail
+            assetId={asset.id || asset._key}
+            assetName={formatAssetName(asset)}
+            thumbnailFrame={asset.thumbnail_frame}
+            fallbackIcon="🖼️"
+            disableScrubbing={true}
+            className="w-full h-full object-cover"
+            style={getImageTransform()}
+          />
+        )}
+
+        {/* Fallback icon */}
+        <div 
+          className="text-neutral-500 text-6xl flex items-center justify-center w-full h-full absolute inset-0"
+          style={{ display: 'none' }}
+        >
+          🖼️
+        </div>
+
+        {/* Navigation Arrows - Only visible on hover and when there are multiple images */}
+        {imageList.length > 1 && (
+          <>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigateImage('left');
+              }}
+              className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigateImage('right');
+              }}
+              className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10"
+            >
+              <ChevronRight size={24} />
+            </button>
+          </>
+        )}
+
+        {/* Texture Type Indicators - Bottom Left (only for multiple images) */}
+        {imageList.length > 1 && (
+          <div className="absolute bottom-4 left-4 flex gap-2 items-center z-10">
+            {getTextureTypes().map((textureType, idx) => (
+              <span
+                key={idx}
+                className={`
+                  px-2 py-1 text-sm font-bold rounded transition-all duration-200 cursor-pointer
+                  ${currentImageIndex === textureType.index 
+                    ? 'bg-purple-500 text-white scale-110' 
+                    : 'bg-black/40 text-gray-400 border border-gray-600/50 hover:bg-black/60'}
+                `}
+                title={textureType.filename}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCurrentImageIndex(textureType.index);
+                }}
+              >
+                {textureType.abbr}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Zoom indicator and navigation info - show when hovering */}
+        {isHovering && (
+          <div className="absolute top-2 left-2 space-y-1">
+            {/* Texture navigation indicator - only show for multiple images */}
+            {imageList.length > 1 && (
+              <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded">
+                Image {currentImageIndex + 1} of {imageList.length}
+              </div>
+            )}
+            
+            {/* Zoom indicator - only show when zoomed */}
+            {zoom > 1 && (
+              <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded">
+                Zoom: {zoom.toFixed(1)}x
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Zoom instructions - show briefly when hovering and not zoomed */}
+        {isHovering && zoom === 1 && (
+          <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded opacity-70">
+            Scroll to zoom
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-neutral-900 text-white">
@@ -1632,13 +2011,181 @@ const AssetLibrary = ({
                 </label>
                 <select
                   value={uploadData.assetType}
-                  onChange={(e) => setUploadData(prev => ({ ...prev, assetType: e.target.value }))}
+                  onChange={(e) => {
+                    const newAssetType = e.target.value;
+                    // Reset all fields when switching between HDRI and Textures to prevent contamination
+                    if (newAssetType === 'HDRI') {
+                      setUploadData(prev => ({
+                        name: prev.name, // Keep name
+                        assetType: 'HDRI',
+                        subcategory: 'Outdoor', // Default HDRI subcategory
+                        filePath: '',
+                        previewPath: '',
+                        description: '',
+                        // Clear all texture-specific fields
+                        alphaSubcategory: '',
+                        textureType: 'standard',
+                        textureSetPaths: {
+                          baseColor: '',
+                          metallic: '',
+                          roughness: '',
+                          normal: '',
+                          opacity: '',
+                          displacement: ''
+                        }
+                      }));
+                    } else if (newAssetType === 'Textures') {
+                      setUploadData(prev => ({
+                        name: prev.name, // Keep name
+                        assetType: 'Textures',
+                        subcategory: 'Alpha', // Default texture subcategory
+                        alphaSubcategory: 'General', // Default alpha subcategory
+                        textureType: 'standard', // Default texture type
+                        filePath: '',
+                        description: '',
+                        // Clear all HDRI-specific fields
+                        previewPath: '',
+                        // Initialize texture set paths
+                        textureSetPaths: {
+                          baseColor: '',
+                          metallic: '',
+                          roughness: '',
+                          normal: '',
+                          opacity: '',
+                          displacement: ''
+                        }
+                      }));
+                    }
+                  }}
                   className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 >
                   <option value="Textures">🖼️ Textures</option>
                   <option value="HDRI">🌅 HDRI</option>
                 </select>
               </div>
+
+              {/* Texture Category Selection - Only show for Texture type */}
+              {uploadData.assetType === 'Textures' && (
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    Category <span className="text-red-400">*</span>
+                  </label>
+                  <select
+                    value={uploadData.subcategory}
+                    onChange={(e) => {
+                      const newSubcategory = e.target.value;
+                      // Reset relevant fields when switching texture subcategories
+                      if (newSubcategory === 'Alpha') {
+                        setUploadData(prev => ({
+                          ...prev,
+                          subcategory: 'Alpha',
+                          alphaSubcategory: 'General', // Default alpha subcategory
+                          filePath: prev.filePath || '', // Keep existing file path
+                          // Clear texture set paths
+                          textureSetPaths: {
+                            baseColor: '',
+                            metallic: '',
+                            roughness: '',
+                            normal: '',
+                            opacity: '',
+                            displacement: ''
+                          }
+                        }));
+                      } else if (newSubcategory === 'Texture Sets') {
+                        setUploadData(prev => ({
+                          ...prev,
+                          subcategory: 'Texture Sets',
+                          alphaSubcategory: '', // Clear alpha subcategory
+                          filePath: '', // Clear single file path for texture sets
+                          textureSetPaths: {
+                            baseColor: prev.textureSetPaths?.baseColor || '',
+                            metallic: prev.textureSetPaths?.metallic || '',
+                            roughness: prev.textureSetPaths?.roughness || '',
+                            normal: prev.textureSetPaths?.normal || '',
+                            opacity: prev.textureSetPaths?.opacity || '',
+                            displacement: prev.textureSetPaths?.displacement || ''
+                          }
+                        }));
+                      } else {
+                        // Other texture types (Base Color, Roughness, etc.)
+                        setUploadData(prev => ({
+                          ...prev,
+                          subcategory: newSubcategory,
+                          alphaSubcategory: '', // Clear alpha subcategory
+                          filePath: prev.filePath || '', // Keep existing file path
+                          // Clear texture set paths
+                          textureSetPaths: {
+                            baseColor: '',
+                            metallic: '',
+                            roughness: '',
+                            normal: '',
+                            opacity: '',
+                            displacement: ''
+                          }
+                        }));
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="Alpha">🔳 Alpha</option>
+                    <option value="Texture Sets">📦 Texture Sets</option>
+                    <option value="Base Color">🎨 Base Color</option>
+                    <option value="Roughness">⚪ Roughness</option>
+                    <option value="Normal">🔵 Normal</option>
+                    <option value="Metallic">⚫ Metallic</option>
+                    <option value="Displacement">📐 Displacement</option>
+                    <option value="Other">🌐 Other</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Alpha Subcategory - Only show for Alpha textures */}
+              {uploadData.assetType === 'Textures' && uploadData.subcategory === 'Alpha' && (
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    Alpha Type <span className="text-red-400">*</span>
+                  </label>
+                  <select
+                    value={uploadData.alphaSubcategory}
+                    onChange={(e) => setUploadData(prev => ({ ...prev, alphaSubcategory: e.target.value }))}
+                    className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="General">🔳 General</option>
+                    <option value="Grunge">🟫 Grunge</option>
+                    <option value="Scratches">⚡ Scratches</option>
+                    <option value="Cracks">🔺 Cracks</option>
+                    <option value="Rust">🟤 Rust</option>
+                    <option value="Rain">💧 Rain</option>
+                    <option value="Dust">🌫️ Dust</option>
+                    <option value="Stains">🔴 Stains</option>
+                    <option value="Smudge">👆 Smudge</option>
+                  </select>
+                </div>
+              )}
+
+              {/* HDRI Category Selection - Only show for HDRI type */}
+              {uploadData.assetType === 'HDRI' && (
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    Category <span className="text-red-400">*</span>
+                  </label>
+                  <select
+                    value={uploadData.subcategory}
+                    onChange={(e) => setUploadData(prev => ({ ...prev, subcategory: e.target.value }))}
+                    className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="Outdoor">🏞️ Outdoor</option>
+                    <option value="Skies">☁️ Skies</option>
+                    <option value="Indoor">🏠 Indoor</option>
+                    <option value="Studio">📸 Studio</option>
+                    <option value="Sunrise/Sunset">🌅 Sunrise/Sunset</option>
+                    <option value="Night">🌙 Night</option>
+                    <option value="Nature">🌳 Nature</option>
+                    <option value="Urban">🏙️ Urban</option>
+                    <option value="Other">🌐 Other</option>
+                  </select>
+                </div>
+              )}
 
               {/* Asset Name */}
               <div>
@@ -1654,26 +2201,163 @@ const AssetLibrary = ({
                 />
               </div>
 
-              {/* File Path */}
-              <div>
-                <label className="block text-sm font-medium text-neutral-300 mb-2">
-                  File Path <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={uploadData.filePath}
-                  onChange={(e) => setUploadData(prev => ({ ...prev, filePath: e.target.value }))}
-                  placeholder="/net/general/your/path/image.exr"
-                  className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-sm"
-                />
-                <p className="text-xs text-neutral-400 mt-1">
-                  Full path to the image file (supports: .exr, .hdr, .jpg, .png, .tiff)<br/>
-                  Available paths: /net/general/... or /app/assets/...<br/>
-                  File will be copied to Asset/ folder with exact aspect ratio thumbnail
-                </p>
-              </div>
+              {/* Single File Path - For non-texture-set uploads */}
+              {(uploadData.assetType === 'HDRI' || (uploadData.assetType === 'Textures' && uploadData.subcategory !== 'Texture Sets')) && (
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    {uploadData.assetType === 'HDRI' ? 'EXR File Path' : 'File Path'} <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={uploadData.filePath}
+                    onChange={(e) => setUploadData(prev => ({ ...prev, filePath: e.target.value }))}
+                    placeholder={uploadData.assetType === 'HDRI' ? "/net/general/your/path/environment.exr" : "/net/general/your/path/texture.jpg"}
+                    className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-sm"
+                  />
+                  <p className="text-xs text-neutral-400 mt-1">
+                    Full path to the {uploadData.assetType === 'HDRI' ? 'EXR/HDR' : 'texture'} file (supports: {uploadData.assetType === 'HDRI' ? '.exr, .hdr' : '.jpg, .png, .tiff, .exr'})<br/>
+                    Available paths: /net/general/... or /net/library/library/... or /app/assets/...
+                  </p>
+                </div>
+              )}
 
-              {/* Description (Optional) */}
+              {/* Texture Set File Paths - Only show for Texture Sets */}
+              {uploadData.assetType === 'Textures' && uploadData.subcategory === 'Texture Sets' && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-medium text-neutral-300 mb-2">Texture Set Files</h3>
+                  
+                  <div className="grid grid-cols-1 gap-3">
+                    {/* Base Color */}
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-400 mb-1">
+                        🎨 Base Color <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={uploadData.textureSetPaths.baseColor}
+                        onChange={(e) => setUploadData(prev => ({
+                          ...prev,
+                          textureSetPaths: { ...prev.textureSetPaths, baseColor: e.target.value }
+                        }))}
+                        placeholder="/net/library/library/your/path/material_BaseColor.jpg"
+                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    {/* Metallic */}
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-400 mb-1">
+                        ⚫ Metallic <span className="text-neutral-500">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={uploadData.textureSetPaths.metallic}
+                        onChange={(e) => setUploadData(prev => ({
+                          ...prev,
+                          textureSetPaths: { ...prev.textureSetPaths, metallic: e.target.value }
+                        }))}
+                        placeholder="/net/library/library/your/path/material_Metallic.jpg"
+                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    {/* Roughness */}
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-400 mb-1">
+                        ⚪ Roughness <span className="text-neutral-500">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={uploadData.textureSetPaths.roughness}
+                        onChange={(e) => setUploadData(prev => ({
+                          ...prev,
+                          textureSetPaths: { ...prev.textureSetPaths, roughness: e.target.value }
+                        }))}
+                        placeholder="/net/library/library/your/path/material_Roughness.jpg"
+                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    {/* Normal */}
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-400 mb-1">
+                        🔵 Normal <span className="text-neutral-500">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={uploadData.textureSetPaths.normal}
+                        onChange={(e) => setUploadData(prev => ({
+                          ...prev,
+                          textureSetPaths: { ...prev.textureSetPaths, normal: e.target.value }
+                        }))}
+                        placeholder="/net/library/library/your/path/material_Normal.jpg"
+                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    {/* Opacity */}
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-400 mb-1">
+                        🔳 Opacity <span className="text-neutral-500">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={uploadData.textureSetPaths.opacity}
+                        onChange={(e) => setUploadData(prev => ({
+                          ...prev,
+                          textureSetPaths: { ...prev.textureSetPaths, opacity: e.target.value }
+                        }))}
+                        placeholder="/net/library/library/your/path/material_Opacity.jpg"
+                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    {/* Displacement */}
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-400 mb-1">
+                        📐 Displacement <span className="text-neutral-500">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={uploadData.textureSetPaths.displacement}
+                        onChange={(e) => setUploadData(prev => ({
+                          ...prev,
+                          textureSetPaths: { ...prev.textureSetPaths, displacement: e.target.value }
+                        }))}
+                        placeholder="/net/library/library/your/path/material_Displacement.jpg"
+                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-neutral-400">
+                    At least Base Color is required. All texture files will be organized in the material folder.<br/>
+                    Supported formats: .jpg, .png, .tiff, .exr
+                  </p>
+                </div>
+              )}
+
+              {/* Preview JPEG/PNG - Only show for HDRI */}
+              {uploadData.assetType === 'HDRI' && (
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    Preview JPEG/PNG <span className="text-neutral-500">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={uploadData.previewPath}
+                    onChange={(e) => setUploadData(prev => ({ ...prev, previewPath: e.target.value }))}
+                    placeholder="/net/general/your/path/preview.jpg"
+                    className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-sm"
+                  />
+                  <p className="text-xs text-neutral-400 mt-1">
+                    Optional preview image for web display (supports: .jpg, .jpeg, .png)<br/>
+                    If not provided, no thumbnail will be generated
+                  </p>
+                </div>
+              )}
+
+              {/* Description - For all asset types */}
               <div>
                 <label className="block text-sm font-medium text-neutral-300 mb-2">
                   Description <span className="text-neutral-500">(optional)</span>
@@ -1681,11 +2365,61 @@ const AssetLibrary = ({
                 <textarea
                   value={uploadData.description}
                   onChange={(e) => setUploadData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Optional description..."
+                  placeholder="Enter asset description..."
+                  className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
                   rows={3}
-                  className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 resize-none"
                 />
               </div>
+
+              {/* Texture Type Settings - Only show for Textures */}
+              {uploadData.assetType === 'Textures' && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-medium text-neutral-300">Texture Properties</h3>
+                  
+                  {/* Seamless/UV Tile Toggle */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-sm font-medium text-neutral-300">Texture Type</label>
+                      <p className="text-xs text-neutral-400">Choose how this texture should be displayed</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="textureType"
+                          value="seamless"
+                          checked={uploadData.textureType === 'seamless'}
+                          onChange={(e) => setUploadData(prev => ({ ...prev, textureType: e.target.value }))}
+                          className="w-4 h-4 text-orange-500 bg-neutral-700 border-neutral-600 focus:ring-orange-500"
+                        />
+                        <span className="text-sm text-orange-300">Seamless</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="textureType"
+                          value="uv_tile"
+                          checked={uploadData.textureType === 'uv_tile'}
+                          onChange={(e) => setUploadData(prev => ({ ...prev, textureType: e.target.value }))}
+                          className="w-4 h-4 text-blue-500 bg-neutral-700 border-neutral-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-blue-300">UV Tile</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="textureType"
+                          value="standard"
+                          checked={uploadData.textureType === 'standard' || !uploadData.textureType}
+                          onChange={(e) => setUploadData(prev => ({ ...prev, textureType: e.target.value }))}
+                          className="w-4 h-4 text-neutral-500 bg-neutral-700 border-neutral-600 focus:ring-neutral-500"
+                        />
+                        <span className="text-sm text-neutral-300">Standard</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Buttons */}
               <div className="flex gap-3 pt-4">
@@ -1697,7 +2431,10 @@ const AssetLibrary = ({
                 </button>
                 <button
                   onClick={handleUploadAsset}
-                  disabled={uploading || !uploadData.name.trim() || !uploadData.filePath.trim()}
+                  disabled={uploading || !uploadData.name.trim() || 
+                    (uploadData.assetType === 'Textures' && uploadData.subcategory === 'Texture Sets' 
+                      ? !uploadData.textureSetPaths.baseColor.trim() 
+                      : false)}
                   className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   {uploading ? (
@@ -1756,22 +2493,26 @@ const AssetLibrary = ({
             {/* Modal Body */}
             <div className="p-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Large Preview Image with Interactive Sequence */}
-                <div className="aspect-square bg-neutral-700 rounded-lg overflow-hidden">
-                  <SequenceThumbnail
-                    assetId={previewAsset.id || previewAsset._key}
-                    assetName={formatAssetName(previewAsset)}
-                    thumbnailFrame={previewAsset.thumbnail_frame}
-                    fallbackIcon={
-                      previewAsset.category === 'Characters' ? '🎭' :
-                      previewAsset.category === 'Props' ? '📦' :
-                      previewAsset.category === 'Environments' ? '🏞️' :
-                      previewAsset.category === 'Vehicles' ? '🚗' :
-                      previewAsset.category === 'Effects' ? '✨' :
-                      '🎨'
-                    }
-                    className="w-full h-full object-cover"
-                  />
+                {/* Large Preview Image with Interactive Sequence - Texture specific or regular */}
+                <div className="aspect-square bg-neutral-700 rounded-lg overflow-hidden relative">
+                  {(previewAsset.asset_type === 'Textures' || previewAsset.category === 'Textures') ? (
+                    <TexturePreviewImage asset={previewAsset} />
+                  ) : (
+                    <SequenceThumbnail
+                      assetId={previewAsset.id || previewAsset._key}
+                      assetName={formatAssetName(previewAsset)}
+                      thumbnailFrame={previewAsset.thumbnail_frame}
+                      fallbackIcon={
+                        previewAsset.category === 'Characters' ? '🎭' :
+                        previewAsset.category === 'Props' ? '📦' :
+                        previewAsset.category === 'Environments' ? '🏞️' :
+                        previewAsset.category === 'Vehicles' ? '🚗' :
+                        previewAsset.category === 'Effects' ? '✨' :
+                        '🎨'
+                      }
+                      className="w-full h-full object-cover"
+                    />
+                  )}
                 </div>
 
                 {/* Asset Details */}
@@ -1862,62 +2603,129 @@ const AssetLibrary = ({
 
                   {/* Action Buttons */}
                   <div className="space-y-3 pt-4">
-                    {/* Main Action Buttons */}
-                    <button 
-                      onClick={() => copyAssetToClipboard(previewAsset)}
-                      className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
-                    >
-                      <Copy size={20} />
-                      Copy Atlas Asset
-                    </button>
-                    <button 
-                      onClick={async () => {
-                        try {
-                          console.log('DEBUG: Opening folder for asset:', previewAsset.id);
-                          console.log('DEBUG: Asset data:', previewAsset);
-                          console.log('DEBUG: Full URL:', `http://localhost:8000/api/v1/assets/${previewAsset.id}/open-folder`);
-                          
-                          const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/open-folder`, {
-                            method: 'POST'
-                          });
-                          
-                          if (response.ok) {
-                            const result = await response.json();
-                            console.log('DEBUG: Folder open success:', result);
-                            alert(`✅ ${result.message}`);
-                          } else {
-                            const error = await response.json();
-                            console.log('DEBUG: Folder open failed:', error);
-                            alert(`❌ Failed to open folder: ${error.detail || 'Unknown error'}\n\nAsset ID: ${previewAsset.id}`);
+                    {/* Main Action Buttons - Different for textures vs other assets */}
+                    {(previewAsset.asset_type === 'Textures' || previewAsset.category === 'Textures') ? (
+                      /* Texture assets - Only Copy Folder Path */
+                      <button 
+                        onClick={async () => {
+                          try {
+                            console.log('Getting folder path for asset:', previewAsset.id);
+                            
+                            const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
+                              method: 'POST'
+                            });
+                            
+                            if (response.ok) {
+                              const result = await response.json();
+                              console.log('Folder path response:', result);
+                              
+                              // Copy to clipboard
+                              try {
+                                await navigator.clipboard.writeText(result.folder_path);
+                                
+                                // Show success message
+                                let message = `✅ Folder path copied to clipboard!\n\n`;
+                                message += `📁 Asset: ${result.asset_name}\n`;
+                                message += `📂 Path: ${result.folder_path}\n`;
+                                message += `📋 Status: ${result.folder_exists ? 'Folder exists' : 'Folder may not exist'}`;
+                                
+                                alert(message);
+                                console.log('📋 Folder path copied to clipboard:', result.folder_path);
+                                
+                              } catch (clipboardError) {
+                                console.log('Could not copy to clipboard:', clipboardError);
+                                alert(`❌ Could not copy to clipboard, but here's the path:\n\n${result.folder_path}`);
+                              }
+                            } else {
+                              const error = await response.json();
+                              console.log('Failed to get folder path:', error);
+                              alert(`❌ Failed to get folder path: ${error.detail || 'Unknown error'}\n\nAsset ID: ${previewAsset.id}`);
+                            }
+                          } catch (error) {
+                            console.error('Error getting folder path:', error);
+                            alert('❌ Failed to get folder path. Please check console for details.');
                           }
-                        } catch (error) {
-                          console.error('Error opening folder:', error);
-                          alert('❌ Failed to open folder. Please check console for details.');
-                        }
-                      }}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
-                    >
-                      <FolderOpen size={20} />
-                      Open Asset Folder
-                    </button>
-                    
-                    {/* Smaller ID Copy Buttons */}
-                    <div className="flex gap-2 pt-2">
-                      <button 
-                        onClick={() => copyVersionId(previewAsset)}
-                        className="flex-1 bg-neutral-600 hover:bg-neutral-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
+                        }}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
                       >
-                        <Copy size={14} />
-                        Copy Version ID
+                        <Copy size={20} />
+                        Copy Folder Path
                       </button>
-                      <button 
-                        onClick={() => copyVariantId(previewAsset)}
-                        className="flex-1 bg-neutral-600 hover:bg-neutral-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
-                      >
-                        <Copy size={14} />
-                        Copy Variant ID
-                      </button>
-                    </div>
+                    ) : (
+                      /* Non-texture assets - Show both buttons */
+                      <>
+                        <button 
+                          onClick={() => copyAssetToClipboard(previewAsset)}
+                          className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                        >
+                          <Copy size={20} />
+                          Copy Atlas Asset
+                        </button>
+                        <button 
+                          onClick={async () => {
+                            try {
+                              console.log('Getting folder path for asset:', previewAsset.id);
+                              
+                              const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
+                                method: 'POST'
+                              });
+                              
+                              if (response.ok) {
+                                const result = await response.json();
+                                console.log('Folder path response:', result);
+                                
+                                // Copy to clipboard
+                                try {
+                                  await navigator.clipboard.writeText(result.folder_path);
+                                  
+                                  // Show success message
+                                  let message = `✅ Folder path copied to clipboard!\n\n`;
+                                  message += `📁 Asset: ${result.asset_name}\n`;
+                                  message += `📂 Path: ${result.folder_path}\n`;
+                                  message += `📋 Status: ${result.folder_exists ? 'Folder exists' : 'Folder may not exist'}`;
+                                  
+                                  alert(message);
+                                  console.log('📋 Folder path copied to clipboard:', result.folder_path);
+                                  
+                                } catch (clipboardError) {
+                                  console.log('Could not copy to clipboard:', clipboardError);
+                                  alert(`❌ Could not copy to clipboard, but here's the path:\n\n${result.folder_path}`);
+                                }
+                              } else {
+                                const error = await response.json();
+                                console.log('Failed to get folder path:', error);
+                                alert(`❌ Failed to get folder path: ${error.detail || 'Unknown error'}\n\nAsset ID: ${previewAsset.id}`);
+                              }
+                            } catch (error) {
+                              console.error('Error getting folder path:', error);
+                              alert('❌ Failed to get folder path. Please check console for details.');
+                            }
+                          }}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                        >
+                          <Copy size={20} />
+                          Copy Folder Path
+                        </button>
+                        
+                        {/* Smaller ID Copy Buttons - Only for non-texture assets */}
+                        <div className="flex gap-2 pt-2">
+                          <button 
+                            onClick={() => copyVersionId(previewAsset)}
+                            className="flex-1 bg-neutral-600 hover:bg-neutral-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
+                          >
+                            <Copy size={14} />
+                            Copy Version ID
+                          </button>
+                          <button 
+                            onClick={() => copyVariantId(previewAsset)}
+                            className="flex-1 bg-neutral-600 hover:bg-neutral-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
+                          >
+                            <Copy size={14} />
+                            Copy Variant ID
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

@@ -55,8 +55,9 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
     }
   };
 
-  const getLocation = () => {
-    return asset.metadata?.location || 'Studio';
+  const getCategory = () => {
+    // Get category from hierarchy.subcategory or infer from metadata
+    return asset.hierarchy?.subcategory || asset.metadata?.subcategory || 'Studio';
   };
 
   const getCreatedDate = () => {
@@ -64,18 +65,8 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
   };
 
   const getEnvironmentType = () => {
-    // Try to infer environment type from metadata or name
-    const name = asset.name?.toLowerCase() || '';
-    const location = getLocation().toLowerCase();
-    
-    if (name.includes('outdoor') || location.includes('outdoor') || name.includes('sky')) {
-      return 'Outdoor';
-    } else if (name.includes('indoor') || location.includes('indoor') || name.includes('interior')) {
-      return 'Indoor';
-    } else if (name.includes('studio') || location.includes('studio')) {
-      return 'Studio';
-    }
-    return 'Environment';
+    // Use category from hierarchy or metadata
+    return getCategory();
   };
 
   const getAssetVersion = () => {
@@ -102,19 +93,6 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
             onClick={() => openPreview(asset)}
           />
           
-          {/* Environment Type Tag - Top Left */}
-          <div className="absolute top-2 left-2">
-            <span className="px-2 py-1 text-xs rounded font-medium bg-blue-500/20 text-blue-300 backdrop-blur-sm">
-              {getEnvironmentType()}
-            </span>
-          </div>
-
-          {/* Version Tag - Top Center (unique position for HDRI) */}
-          <div className="absolute top-2 left-1/2 transform -translate-x-1/2">
-            <span className="px-3 py-1 text-xs rounded font-bold bg-orange-500/20 text-orange-300 backdrop-blur-sm">
-              {getAssetVersion()}
-            </span>
-          </div>
 
           {/* Resolution Tag - Top Right */}
           <div className="absolute top-2 right-2">
@@ -125,10 +103,10 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
             )}
           </div>
 
-          {/* Location Tag - Bottom Left */}
+          {/* Category Tag - Bottom Left */}
           <div className="absolute bottom-2 left-2">
             <span className="px-2 py-1 text-xs rounded font-medium bg-green-500/20 text-green-300 backdrop-blur-sm">
-              📍 {getLocation()}
+              📍 {getCategory()}
             </span>
           </div>
 
@@ -181,11 +159,11 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
                 </div>
                 <div>
                   <span className="text-neutral-400">Environment:</span>
-                  <div className="text-blue-300 font-medium">{getEnvironmentType()}</div>
+                  <div className="text-green-400 font-medium">{getEnvironmentType()}</div>
                 </div>
                 <div>
-                  <span className="text-neutral-400">Location:</span>
-                  <div className="text-green-400 font-medium truncate">{getLocation()}</div>
+                  <span className="text-neutral-400">Created:</span>
+                  <div className="text-neutral-300 font-medium truncate">{getCreatedDate()}</div>
                 </div>
               </div>
             </div>

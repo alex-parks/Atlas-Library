@@ -7,7 +7,9 @@ const SequenceThumbnail = ({
   fallbackIcon = '🎨',
   className = "w-full h-full object-cover",
   onClick = () => {},
-  thumbnailFrame = null  // Frame number to show when not hovering
+  thumbnailFrame = null,  // Frame number to show when not hovering
+  disableScrubbing = false,  // Disable mouse scrubbing for navigation
+  externalFrameIndex = null  // External control of frame index (for arrow navigation)
 }) => {
   const [sequenceData, setSequenceData] = useState(null);
   const [currentFrame, setCurrentFrame] = useState(0);
@@ -102,6 +104,14 @@ const SequenceThumbnail = ({
     fetchSequenceData();
   }, [assetId, thumbnailFrame]);
 
+  // Update current frame when external frame index changes (for arrow navigation)
+  useEffect(() => {
+    if (externalFrameIndex !== null && sequenceData && sequenceData.frames) {
+      const validIndex = Math.max(0, Math.min(externalFrameIndex, sequenceData.frames.length - 1));
+      setCurrentFrame(validIndex);
+    }
+  }, [externalFrameIndex, sequenceData]);
+
   // Handle scroll wheel for zoom
   const handleWheel = (e) => {
     e.preventDefault();
@@ -147,7 +157,8 @@ const SequenceThumbnail = ({
     }
     
     // Original scrubbing functionality (only when not zoomed and not dragging)
-    if (!sequenceData || sequenceData.frame_count <= 1 || !isHovering || !containerRef.current || zoom > 1) {
+    // Skip scrubbing if disabled or other conditions prevent it
+    if (disableScrubbing || !sequenceData || sequenceData.frame_count <= 1 || !isHovering || !containerRef.current || zoom > 1) {
       return;
     }
 

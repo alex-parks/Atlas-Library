@@ -232,6 +232,47 @@ class AtlasConfig:
         """Get the thumbnails directory path"""
         return self.get('paths.thumbnails', self.asset_library_root + '/thumbnails')
     
+    @property
+    def protected_mount_paths(self) -> list:
+        """Get list of protected mount paths - NEVER delete or move files from these areas"""
+        return [
+            '/net/general',              # General network drive - READ ONLY
+            '/net/library/library',      # New library mount - READ ONLY
+            '/net/library/atlaslib'      # Main atlas library - Protected from moves/deletes
+        ]
+    
+    def is_protected_path(self, file_path: str) -> bool:
+        """
+        Check if a path is within a protected mount area
+        
+        Args:
+            file_path: Path to check for protection
+            
+        Returns:
+            True if path is protected, False otherwise
+        """
+        import os
+        file_path = os.path.abspath(str(file_path))
+        return any(file_path.startswith(os.path.abspath(protected)) for protected in self.protected_mount_paths)
+    
+    def validate_safe_operation(self, operation: str, file_path: str) -> tuple:
+        """
+        Validate if an operation is safe to perform on a path
+        
+        Args:
+            operation: Operation type ('delete', 'move', 'copy', 'read')
+            file_path: Path the operation will be performed on
+            
+        Returns:
+            Tuple of (is_safe: bool, reason: str)
+        """
+        if operation.lower() in ('delete', 'remove', 'move', 'rename'):
+            if self.is_protected_path(file_path):
+                protected_path = next((p for p in self.protected_mount_paths if str(file_path).startswith(p)), "unknown")
+                return False, f"🚫 OPERATION BLOCKED: Cannot {operation} files from protected mount: {protected_path}"
+        
+        return True, "Operation is safe"
+    
     def get_category_path(self, dimension: str, category: str, subcategory: str = None) -> str:
         """
         Build full path for asset category

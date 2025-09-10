@@ -1,12 +1,15 @@
 // Texture Asset Card Component
 // Full card component for uploaded Texture assets
-import React, { useState } from 'react';
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import SequenceThumbnail from '../SequenceThumbnail';
 
 const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isClickedOpen, setIsClickedOpen] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [imageList, setImageList] = useState([]);
+  const [imageResolutions, setImageResolutions] = useState({});
 
   const handleBannerHover = () => {
     if (!isClickedOpen) {
@@ -36,10 +39,39 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
   };
 
   const getFormat = () => {
+    // Check for format in metadata first
+    if (asset.metadata?.file_format) {
+      return asset.metadata.file_format.toUpperCase();
+    }
+    
+    // Check copied files for extensions
+    if (asset.paths?.copied_files && asset.paths.copied_files.length > 0) {
+      // Get all unique extensions from copied files
+      const extensions = new Set();
+      asset.paths.copied_files.forEach(file => {
+        const extension = file.split('.').pop()?.toLowerCase();
+        if (extension) {
+          extensions.add(extension.toUpperCase());
+        }
+      });
+      
+      // If multiple different formats, return "Mixed"
+      if (extensions.size > 1) {
+        return 'Mixed';
+      }
+      
+      // If only one format, return it
+      if (extensions.size === 1) {
+        return Array.from(extensions)[0];
+      }
+    }
+    
+    // Fallback to template file
     if (asset.paths?.template_file) {
       return asset.paths.template_file.split('.').pop()?.toUpperCase() || 'Unknown';
     }
-    return asset.metadata?.file_format?.toUpperCase() || 'Unknown';
+    
+    return 'Unknown';
   };
 
   const getFileSize = () => {
@@ -56,25 +88,151 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
   };
 
   const getUVLayout = () => {
-    return asset.metadata?.uv_layout || 'Standard';
-  };
-
-  const getSeamless = () => {
-    const seamless = asset.metadata?.seamless || asset.metadata?.tiling;
-    return seamless ? 'Yes' : 'No';
+    // Check the new texture_type field first
+    const textureType = asset.texture_type || asset.metadata?.texture_type;
+    if (textureType) {
+      if (textureType === 'seamless') return 'Seamless';
+      if (textureType === 'uv_tile') return 'UV Tile';
+    }
+    
+    // Fallback to legacy seamless/uv_tile fields
+    const seamless = asset.seamless || asset.metadata?.seamless || asset.metadata?.tiling;
+    const uvTile = asset.uv_tile || asset.metadata?.uv_tile || asset.metadata?.uvtile;
+    
+    if (uvTile) return 'UV Tile';
+    if (seamless) return 'Seamless';
+    
+    return 'Standard';
   };
 
   const getCreatedDate = () => {
     return asset.created_at ? new Date(asset.created_at).toLocaleDateString() : 'Unknown';
   };
 
-  const getAssetVersion = () => {
-    const assetId = asset.id || asset._key || '';
-    if (assetId.length >= 16) {
-      return `v${assetId.substring(13)}`;
+  // Get category type for badge
+  const getCategoryType = () => {
+    if (asset.metadata?.subcategory) {
+      return asset.metadata.subcategory;
     }
-    return 'v001';
+    return asset.subcategory || asset.metadata?.alpha_subcategory || 'Texture';
   };
+
+  // Get category badge color and text
+  const getCategoryBadge = () => {
+    const category = getCategoryType().toLowerCase();
+    if (category.includes('alpha')) {
+      return { text: 'Alpha', color: 'bg-white/90 text-black' };
+    } else if (category.includes('texture set') || category.includes('textureset')) {
+      return { text: 'Texture Set', color: 'bg-neutral-500/90 text-white' };
+    } else if (category.includes('general')) {
+      return { text: 'General', color: 'bg-blue-500/90 text-white' };
+    } else if (category.includes('displacement')) {
+      return { text: 'Displacement', color: 'bg-purple-500/90 text-white' };
+    } else if (category.includes('normal')) {
+      return { text: 'Normal', color: 'bg-green-500/90 text-white' };
+    }
+    return { text: getCategoryType(), color: 'bg-neutral-600/90 text-white' };
+  };
+
+  // Get texture type (Seamless or UV Tile)
+  const getTextureType = () => {
+    // Debug logging
+    console.log('🔍 Checking texture type for asset:', asset.id, {
+      texture_type: asset.texture_type,
+      metadata_texture_type: asset.metadata?.texture_type,
+      seamless: asset.seamless,
+      metadata_seamless: asset.metadata?.seamless,
+      uv_tile: asset.uv_tile,
+      metadata_uv_tile: asset.metadata?.uv_tile,
+      full_asset: asset
+    });
+    
+    // Check the new texture_type field first
+    const textureType = asset.texture_type || asset.metadata?.texture_type;
+    if (textureType) {
+      if (textureType === 'seamless') return 'Seamless';
+      if (textureType === 'uv_tile') return 'UV Tile';
+    }
+    
+    // Fallback to legacy seamless/uv_tile fields
+    const seamless = asset.seamless || asset.metadata?.seamless || asset.metadata?.tiling;
+    const uvTile = asset.uv_tile || asset.metadata?.uv_tile || asset.metadata?.uvtile;
+    
+    if (uvTile) return 'UV Tile';
+    if (seamless) return 'Seamless';
+    return null;
+  };
+
+  // Load image list for navigation
+  useEffect(() => {
+    const loadImageList = async () => {
+      try {
+        const response = await fetch(`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-images`);
+        if (response.ok) {
+          const data = await response.json();
+          console.log('🖼️ Texture images loaded:', data);
+          setImageList(data.images || []);
+          setImageResolutions(data.resolutions || {});
+        }
+      } catch (error) {
+        console.log('No additional texture images found:', error);
+      }
+    };
+
+    if (asset.id || asset._key) {
+      loadImageList();
+    }
+  }, [asset.id, asset._key]);
+
+  // Navigation functions
+  const navigateImage = (direction) => {
+    if (imageList.length <= 1) return;
+    
+    setCurrentImageIndex(prev => {
+      if (direction === 'left') {
+        return prev === 0 ? imageList.length - 1 : prev - 1;
+      } else {
+        return prev === imageList.length - 1 ? 0 : prev + 1;
+      }
+    });
+  };
+
+  // Get current image resolution - always use actual resolution, not thumbnail
+  const getCurrentResolution = () => {
+    return getResolution();
+  };
+
+  // Map texture types to their abbreviations
+  const getTextureTypeAbbr = (filename) => {
+    const lower = filename.toLowerCase();
+    if (lower.includes('base') && lower.includes('color')) return 'BC';
+    if (lower.includes('albedo')) return 'BC';
+    if (lower.includes('alpha')) return 'A';
+    if (lower.includes('metallic') || lower.includes('metalness')) return 'M';
+    if (lower.includes('roughness')) return 'R';
+    if (lower.includes('normal')) return 'N';
+    if (lower.includes('opacity')) return 'O';
+    if (lower.includes('displacement') || lower.includes('height')) return 'D';
+    return '?';
+  };
+
+  // Get texture types from image list
+  const getTextureTypes = () => {
+    return imageList.map((img, index) => ({
+      abbr: getTextureTypeAbbr(img.filename || ''),
+      index: index,
+      filename: img.filename
+    }));
+  };
+
+  // No longer needed - removing version display
+  // const getAssetVersion = () => {
+  //   const assetId = asset.id || asset._key || '';
+  //   if (assetId.length >= 16) {
+  //     return `v${assetId.substring(13)}`;
+  //   }
+  //   return 'v001';
+  // };
 
   return (
     <div className="group relative">
@@ -84,43 +242,109 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
           : 'border-purple-500/30 hover:border-purple-400 hover:shadow-purple-500/10'
       }`}>
         <div className="aspect-square bg-neutral-700 relative overflow-hidden">
-          <SequenceThumbnail
-            assetId={asset.id || asset._key}
-            assetName={formatAssetName(asset)}
-            thumbnailFrame={asset.thumbnail_frame}
-            fallbackIcon="🖼️"
-            onClick={() => openPreview(asset)}
-          />
+          {imageList.length > 1 ? (
+            // Custom image display for texture navigation
+            <div className="w-full h-full relative">
+              {imageList[currentImageIndex] ? (
+                <img
+                  src={`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-image/${currentImageIndex}`}
+                  alt={`${formatAssetName(asset)} - Image ${currentImageIndex + 1}`}
+                  className="w-full h-full object-cover cursor-pointer"
+                  onClick={() => openPreview(asset)}
+                  onError={(e) => {
+                    console.error(`Failed to load texture image ${currentImageIndex}`);
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+              ) : null}
+              {/* Fallback icon */}
+              <div 
+                className="text-neutral-500 text-3xl flex items-center justify-center w-full h-full absolute inset-0"
+                style={{ display: 'none' }}
+              >
+                🖼️
+              </div>
+            </div>
+          ) : (
+            // Use standard SequenceThumbnail for single images or fallback
+            <SequenceThumbnail
+              assetId={asset.id || asset._key}
+              assetName={formatAssetName(asset)}
+              thumbnailFrame={asset.thumbnail_frame}
+              fallbackIcon="🖼️"
+              onClick={() => openPreview(asset)}
+              disableScrubbing={true}
+            />
+          )}
           
-          {/* Format Tag - Top Left (prominent position for textures) */}
+          {/* Category Badge - Top Left */}
           <div className="absolute top-2 left-2">
-            <span className="px-2 py-1 text-xs rounded font-medium bg-purple-500/20 text-purple-300 backdrop-blur-sm">
-              {getFormat()}
+            <span className={`px-2 py-1 text-xs rounded font-medium backdrop-blur-sm ${getCategoryBadge().color}`}>
+              {getCategoryBadge().text}
             </span>
           </div>
 
           {/* Resolution Tag - Top Right */}
           <div className="absolute top-2 right-2">
-            {getResolution() !== 'Unknown' && (
+            {getCurrentResolution() !== 'Unknown' && (
               <span className="px-2 py-1 text-xs rounded font-medium bg-cyan-500/20 text-cyan-300 backdrop-blur-sm">
-                {getResolution()}
+                {getCurrentResolution()}
               </span>
             )}
           </div>
 
-          {/* Version Tag - Bottom Right (different position from Houdini assets) */}
-          <div className="absolute bottom-2 right-2">
-            <span className="px-2 py-1 text-xs rounded font-medium bg-blue-500/20 text-blue-300 backdrop-blur-sm">
-              {getAssetVersion()}
-            </span>
-          </div>
-
-          {/* Seamless/Tiling Badge - Bottom Left */}
-          {getSeamless() === 'Yes' && (
-            <div className="absolute bottom-2 left-2">
-              <span className="px-2 py-1 text-xs rounded font-medium bg-green-500/20 text-green-300 backdrop-blur-sm">
-                🔄 Seamless
+          {/* Texture Type Tag - Bottom Right (Seamless/UV Tile) */}
+          {getTextureType() && (
+            <div className="absolute bottom-2 right-2">
+              <span className="px-2 py-1 text-xs rounded font-medium bg-orange-500/20 text-orange-300 backdrop-blur-sm">
+                {getTextureType()}
               </span>
+            </div>
+          )}
+
+          {/* Navigation Arrows - Only visible on hover for Texture Sets with multiple images */}
+          {imageList.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigateImage('left');
+                }}
+                className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-1 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigateImage('right');
+                }}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-1 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100"
+              >
+                <ChevronRight size={16} />
+              </button>
+              
+            </>
+          )}
+
+          {/* Texture Type Indicators - Bottom Left */}
+          {imageList.length > 1 && (
+            <div className="absolute bottom-2 left-2 flex gap-1 items-center">
+              {getTextureTypes().map((textureType, idx) => (
+                <span
+                  key={idx}
+                  className={`
+                    px-1.5 py-0.5 text-xs font-bold rounded transition-all duration-200
+                    ${currentImageIndex === textureType.index 
+                      ? 'bg-purple-500 text-white' 
+                      : 'bg-black/40 text-gray-400 border border-gray-600/50'}
+                  `}
+                  title={textureType.filename}
+                >
+                  {textureType.abbr}
+                </span>
+              ))}
             </div>
           )}
 
@@ -146,7 +370,7 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
                 <h3 className="text-white font-semibold text-sm truncate">{formatAssetNameJSX(asset)}</h3>
               </div>
               
-              {/* Texture Specific Fields - 2x3 layout */}
+              {/* Texture Specific Fields - 2x2 layout with UV Layout */}
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-neutral-500">
                 <div>
                   <span className="text-neutral-400">Type:</span>
@@ -167,10 +391,6 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
                 <div>
                   <span className="text-neutral-400">UV Layout:</span>
                   <div className="text-blue-300 font-medium">{getUVLayout()}</div>
-                </div>
-                <div>
-                  <span className="text-neutral-400">Seamless:</span>
-                  <div className="text-green-400 font-medium">{getSeamless()}</div>
                 </div>
               </div>
             </div>

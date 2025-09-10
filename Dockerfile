@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     xdg-utils \
+    openimageio-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching

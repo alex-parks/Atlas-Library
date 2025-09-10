@@ -24,7 +24,7 @@ def get_clipboard_text():
         return None
 
 def validate_asset_id(asset_id):
-    """Validate that the asset ID is in correct format (14 characters)"""
+    """Validate that the asset ID is in correct format (16 characters)"""
     if not asset_id:
         return False, "No Asset ID found in clipboard"
     
@@ -32,8 +32,8 @@ def validate_asset_id(asset_id):
     asset_id = asset_id.strip()
     
     # Check length
-    if len(asset_id) != 14:
-        return False, f"Invalid Asset ID length: {len(asset_id)} (expected 14 characters)"
+    if len(asset_id) != 16:
+        return False, f"Invalid Asset ID length: {len(asset_id)} (expected 16 characters)"
     
     # Check if it's alphanumeric
     if not asset_id.isalnum():

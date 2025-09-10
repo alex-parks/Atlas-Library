@@ -7,6 +7,7 @@ from datetime import datetime
 import os
 import sys
 import logging
+import hashlib
 from backend.core.config_manager import config as atlas_config
 
 # Setup logging for this module
@@ -681,9 +682,21 @@ def move_asset_to_trashbin(asset_folder_path: str, dimension: str = "3D") -> dic
     """
     Safely move an asset folder to TrashBin with timestamp.
     Returns dict with success status and details.
+    🚫 PROTECTION: Will NOT move files from protected mount areas.
     """
     import shutil
     from datetime import datetime
+    from backend.core.config_manager import config as atlas_config
+    
+    # 🚫 PROTECTION CHECK: Validate against protected mount areas first
+    is_safe, reason = atlas_config.validate_safe_operation('move', asset_folder_path)
+    if not is_safe:
+        logger.error(f"❌ {reason}")
+        return {
+            "success": False,
+            "error": reason,
+            "folder_path": asset_folder_path
+        }
     
     if not is_safe_asset_folder(asset_folder_path):
         return {
@@ -749,6 +762,7 @@ async def delete_asset(asset_id: str):
     """
     Securely delete an asset: remove from database and move folder to TrashBin.
     NEVER permanently deletes folders - always moves to TrashBin for recovery.
+    🚫 PROTECTION: Will NOT delete assets from protected mount areas.
     """
     asset_queries = get_asset_queries()
     if not asset_queries:
@@ -843,6 +857,16 @@ async def delete_asset(asset_id: str):
         
         # Translate path for container access
         container_folder_path = translate_to_container_path(asset_folder_path)
+        
+        # 🚫 PROTECTION CHECK: Validate that we're not trying to delete from protected mount areas
+        from backend.core.config_manager import config as atlas_config
+        is_safe, reason = atlas_config.validate_safe_operation('delete', container_folder_path)
+        if not is_safe:
+            logger.error(f"❌ {reason}")
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Operation denied: {reason}. Assets in protected mount areas cannot be deleted for safety."
+            )
         
         # Check if folder actually exists before attempting move
         from pathlib import Path
@@ -1115,11 +1139,9 @@ async def get_creators():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
-@router.post("/assets/{asset_id}/open-folder")
-async def open_asset_folder(asset_id: str):
-    """Open asset folder in system file manager"""
-    import subprocess
-    import platform
+@router.post("/assets/{asset_id}/copy-folder-path")
+async def copy_asset_folder_path(asset_id: str):
+    """Get asset folder path for copying to clipboard"""
     
     # Get asset from database
     asset_queries = get_asset_queries()
@@ -1137,52 +1159,209 @@ async def open_asset_folder(asset_id: str):
         if not folder_path:
             raise HTTPException(status_code=404, detail="Asset folder path not configured")
         
-        # Convert network path to container mount path if needed
-        asset_lib_prefix = f"{atlas_config.asset_library_root}/"
-        if folder_path.startswith(asset_lib_prefix):
-            # Convert host path to container mount path
-            container_path = folder_path.replace(asset_lib_prefix, '/app/assets/')
-            logger.info(f"Converted path: {folder_path} -> {container_path}")
-        else:
-            container_path = folder_path
+        # Convert container mount path back to real network path
+        if folder_path.startswith('/app/assets/'):
+            # Convert container mount path back to real network path
+            real_network_path = folder_path.replace('/app/assets/', '/net/library/atlaslib/')
+            logger.info(f"Converting container path to network path: {folder_path} -> {real_network_path}")
+            folder_path = real_network_path
         
-        # Verify folder exists (check container path)
+        # Verify folder exists (check both network path and container mount)
         from pathlib import Path
-        if not Path(container_path).exists():
-            # Try original path as fallback
-            if not Path(folder_path).exists():
-                raise HTTPException(status_code=404, detail=f"Asset folder not found at {folder_path} or {container_path}")
-            else:
-                # Use original path if container path doesn't exist
-                folder_path = folder_path
+        folder_exists = False
+        
+        if Path(folder_path).exists():
+            folder_exists = True
+            logger.info(f"✅ Folder exists at network path: {folder_path}")
         else:
-            # Use container path
-            folder_path = container_path
+            # Try container mount path as fallback for verification
+            container_fallback = folder_path.replace('/net/library/atlaslib/', '/app/assets/')
+            if Path(container_fallback).exists():
+                folder_exists = True
+                logger.info(f"✅ Folder exists at container mount: {container_fallback}, using network path: {folder_path}")
         
-        logger.info(f"Opening folder: {folder_path}")
+        if not folder_exists:
+            logger.warning(f"⚠️ Folder not found at {folder_path} or container mount")
         
-        # In containerized environment, we can't directly open GUI applications
-        # Instead, we'll verify the folder exists and return success
-        # In production, this would need a different approach (e.g., mounting host X11 socket)
-        
-        logger.info(f"✅ Folder verified accessible: {folder_path}")
-        
-        # For now, just return success since we've verified the folder exists
-        # TODO: In production, implement proper folder opening mechanism
-        # (e.g., via host system integration or remote desktop protocols)
+        logger.info(f"📋 Returning folder path for clipboard: {folder_path}")
         
         return {
             "success": True, 
-            "message": f"Folder verified and accessible: {folder_path}",
-            "note": "Folder opening in containerized environment requires host system integration",
-            "folder_path": folder_path
+            "folder_path": folder_path,
+            "folder_exists": folder_exists,
+            "asset_id": asset_id,
+            "asset_name": asset_data.get('name', 'Unknown'),
+            "message": f"Folder path ready for clipboard: {folder_path}"
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error opening folder for asset {asset_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to open folder: {str(e)}")
+        logger.error(f"Error getting folder path for asset {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get folder path: {str(e)}")
+
+@router.get("/assets/{asset_id}/texture-images")
+async def get_texture_images(asset_id: str):
+    """Get list of texture images for navigation"""
+    
+    # Get asset from database
+    asset_queries = get_asset_queries()
+    if not asset_queries:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        asset_data = asset_queries.get_asset_with_dependencies(asset_id).get('asset')
+        if not asset_data:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        
+        # Check if this is a texture asset
+        asset_type = asset_data.get('asset_type') or asset_data.get('category')
+        if asset_type != 'Textures':
+            return {"images": [], "resolutions": {}}
+        
+        # Get folder path
+        folder_path = asset_data.get('folder_path') or asset_data.get('paths', {}).get('folder_path')
+        if not folder_path:
+            return {"images": [], "resolutions": {}}
+        
+        # Convert container mount path if needed
+        if folder_path.startswith('/app/assets/'):
+            folder_path = folder_path.replace('/app/assets/', '/net/library/atlaslib/')
+        
+        # Check if folder exists
+        from pathlib import Path
+        folder = Path(folder_path)
+        if not folder.exists():
+            # Try container mount as fallback
+            container_folder = Path(folder_path.replace('/net/library/atlaslib/', '/app/assets/'))
+            if container_folder.exists():
+                folder = container_folder
+            else:
+                return {"images": [], "resolutions": {}}
+        
+        # Look for thumbnail images in the Thumbnail subfolder
+        thumbnail_folder = folder / "Thumbnail"
+        if not thumbnail_folder.exists():
+            logger.warning(f"⚠️ No Thumbnail folder found in {folder}")
+            return {"images": [], "resolutions": {}}
+        
+        # Scan for thumbnail files (these are the 1024x1024 resized images)
+        image_extensions = {'.png', '.jpg', '.jpeg', '.tiff', '.tga'}
+        images = []
+        resolutions = {}
+        
+        for file_path in thumbnail_folder.iterdir():
+            if file_path.is_file() and file_path.suffix.lower() in image_extensions:
+                images.append({
+                    "filename": file_path.name,
+                    "path": str(file_path),
+                    "relative_path": str(file_path.relative_to(folder))
+                })
+                
+                # Since these are thumbnails, they should be 1024x1024
+                resolutions[len(images) - 1] = "1024x1024"
+        
+        # Sort images by filename
+        images.sort(key=lambda x: x['filename'])
+        
+        logger.info(f"📸 Found {len(images)} texture images for asset {asset_id}")
+        
+        return {
+            "images": images,
+            "resolutions": resolutions,
+            "asset_id": asset_id,
+            "asset_name": asset_data.get('name', 'Unknown'),
+            "total_images": len(images)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting texture images for asset {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get texture images: {str(e)}")
+
+@router.get("/assets/{asset_id}/texture-image/{image_index}")
+async def get_texture_image_by_index(asset_id: str, image_index: int):
+    """Serve a specific texture image by index"""
+    
+    # Get asset from database
+    asset_queries = get_asset_queries()
+    if not asset_queries:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        asset_data = asset_queries.get_asset_with_dependencies(asset_id).get('asset')
+        if not asset_data:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        
+        # Check if this is a texture asset
+        asset_type = asset_data.get('asset_type') or asset_data.get('category')
+        if asset_type != 'Textures':
+            raise HTTPException(status_code=404, detail="Not a texture asset")
+        
+        # Get folder path
+        folder_path = asset_data.get('folder_path') or asset_data.get('paths', {}).get('folder_path')
+        if not folder_path:
+            raise HTTPException(status_code=404, detail="Asset folder not found")
+        
+        # Convert container mount path if needed
+        if folder_path.startswith('/app/assets/'):
+            folder_path = folder_path.replace('/app/assets/', '/net/library/atlaslib/')
+        
+        # Check if folder exists
+        from pathlib import Path
+        folder = Path(folder_path)
+        if not folder.exists():
+            # Try container mount as fallback
+            container_folder = Path(folder_path.replace('/net/library/atlaslib/', '/app/assets/'))
+            if container_folder.exists():
+                folder = container_folder
+            else:
+                raise HTTPException(status_code=404, detail="Asset folder not found on filesystem")
+        
+        # Look for thumbnail images in the Thumbnail subfolder
+        thumbnail_folder = folder / "Thumbnail"
+        if not thumbnail_folder.exists():
+            raise HTTPException(status_code=404, detail="No Thumbnail folder found")
+        
+        # Scan for thumbnail files (these are the 1024x1024 resized images)
+        image_extensions = {'.png', '.jpg', '.jpeg', '.tiff', '.tga'}
+        images = []
+        
+        for file_path in thumbnail_folder.iterdir():
+            if file_path.is_file() and file_path.suffix.lower() in image_extensions:
+                images.append(file_path)
+        
+        # Sort images by filename
+        images.sort(key=lambda x: x.name)
+        
+        # Check if image_index is valid
+        if image_index < 0 or image_index >= len(images):
+            raise HTTPException(status_code=404, detail=f"Image index {image_index} out of range (0-{len(images)-1})")
+        
+        image_path = images[image_index]
+        
+        # Serve the texture image directly (should be 1024x1024 from upload process)
+        content_type = "image/png"  # Default since we generate PNG thumbnails
+        if image_path.suffix.lower() in ['.jpg', '.jpeg']:
+            content_type = "image/jpeg"
+        elif image_path.suffix.lower() in ['.png']:
+            content_type = "image/png"
+        elif image_path.suffix.lower() in ['.tiff', '.tga']:
+            content_type = "image/tiff"
+        
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=str(image_path),
+            media_type=content_type,
+            filename=image_path.name
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving texture image {image_index} for asset {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to serve texture image: {str(e)}")
 
 @router.post("/admin/sync")
 async def sync_filesystem_to_database():
@@ -1383,11 +1562,68 @@ async def sync_bidirectional():
         raise HTTPException(status_code=500, detail=f"Bidirectional sync failed: {str(e)}")
 
 def convert_hdr_to_exact_png(hdr_path, png_path):
-    """Proper EXR to PNG conversion with automatic exposure adjustment"""
+    """Proper HDRI EXR to PNG conversion with tone mapping using oiiotool
+    Returns: tuple (success: bool, resolution: dict)
+    """
     try:
         logger.info(f"🔧 Converting EXR to PNG: {hdr_path} -> {png_path}")
+        resolution_info = {}
         
-        # Method 1: Try ImageIO first (excellent EXR support)
+        # Method 1: Try oiiotool first (BEST for HDR tone mapping)
+        try:
+            import subprocess
+            import os
+            
+            logger.info(f"🔧 Using oiiotool for EXR conversion with proper tone mapping")
+            
+            # Check if oiiotool is available
+            result = subprocess.run(['which', 'oiiotool'], capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception("oiiotool not found in PATH")
+            
+            # Use oiiotool with color space conversion for proper tone mapping
+            cmd = [
+                'oiiotool',
+                str(hdr_path),
+                '--colorconvert', 'linear', 'srgb',  # Convert from linear to sRGB for proper display
+                '-o', str(png_path)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                logger.info(f"✅ Successfully converted EXR with tone mapping using oiiotool")
+                
+                # Get image dimensions using oiiotool
+                info_cmd = ['oiiotool', '--info', str(hdr_path)]
+                info_result = subprocess.run(info_cmd, capture_output=True, text=True)
+                
+                if info_result.returncode == 0:
+                    # Parse output for dimensions
+                    output = info_result.stdout
+                    # Look for pattern like "2048 x 1024"
+                    import re
+                    match = re.search(r'(\d+)\s*x\s*(\d+)', output)
+                    if match:
+                        width = int(match.group(1))
+                        height = int(match.group(2))
+                        resolution_info = {
+                            "width": width,
+                            "height": height,
+                            "resolution": f"{width}x{height}",
+                            "channels": 4  # Default to 4 for PNG output
+                        }
+                        logger.info(f"📏 Extracted resolution: {resolution_info['resolution']}")
+                
+                return True, resolution_info
+            else:
+                logger.warning(f"⚠️ oiiotool conversion failed: {result.stderr}")
+                raise Exception(f"oiiotool failed: {result.stderr}")
+                
+        except Exception as e:
+            logger.info(f"   ℹ️ oiiotool not available or failed: {e}")
+        
+        # Method 2: Try ImageIO fallback (excellent EXR support)
         try:
             import imageio.v3 as iio
             import numpy as np
@@ -1402,6 +1638,14 @@ def convert_hdr_to_exact_png(hdr_path, png_path):
             
             height, width = image_array.shape[:2]
             channels = image_array.shape[2] if len(image_array.shape) > 2 else 1
+            
+            # Store resolution information
+            resolution_info = {
+                "width": int(width),
+                "height": int(height),
+                "resolution": f"{width}x{height}",
+                "channels": int(channels)
+            }
             
             logger.info(f"📏 Original EXR dimensions: {width}x{height} ({channels} channels)")
             logger.info(f"📊 Value range: min={np.min(image_array):.3f}, max={np.max(image_array):.3f}")
@@ -1455,14 +1699,14 @@ def convert_hdr_to_exact_png(hdr_path, png_path):
             pil_image = Image.fromarray(image_array, mode)
             pil_image.save(png_path, 'PNG')
             logger.info(f"✅ Converted EXR to PNG: {width}x{height} -> {png_path}")
-            return True
+            return True, resolution_info
             
         except ImportError:
             logger.info(f"   ℹ️ ImageIO not available")
         except Exception as e:
             logger.info(f"   ⚠️ ImageIO conversion failed: {e}")
         
-        # Method 2: Try OpenCV fallback
+        # Method 3: Try OpenCV fallback
         try:
             import cv2
             import numpy as np
@@ -1476,6 +1720,16 @@ def convert_hdr_to_exact_png(hdr_path, png_path):
                 raise Exception(f"Could not read {hdr_path}")
             
             original_height, original_width = img.shape[:2]
+            channels = img.shape[2] if len(img.shape) > 2 else 1
+            
+            # Store resolution information for OpenCV branch
+            resolution_info = {
+                "width": int(original_width),
+                "height": int(original_height),
+                "resolution": f"{original_width}x{original_height}",
+                "channels": int(channels)
+            }
+            
             logger.info(f"📏 Original EXR dimensions: {original_width}x{original_height}")
             
             # Convert BGR to RGB if needed
@@ -1517,7 +1771,7 @@ def convert_hdr_to_exact_png(hdr_path, png_path):
             pil_image = Image.fromarray(img, 'RGBA')
             pil_image.save(png_path, 'PNG')
             logger.info(f"✅ Converted EXR to PNG: {original_width}x{original_height} -> {png_path}")
-            return True
+            return True, resolution_info
             
         except ImportError:
             logger.info(f"   ℹ️ OpenCV not available")
@@ -1525,22 +1779,256 @@ def convert_hdr_to_exact_png(hdr_path, png_path):
             logger.info(f"   ⚠️ OpenCV conversion failed: {e}")
         
         logger.error(f"❌ All EXR conversion methods failed")
-        return False
+        return False, {}
             
     except Exception as e:
         logger.error(f"❌ EXR conversion error: {e}")
         import traceback
         traceback.print_exc()
+        return False, {}
+
+def convert_texture_exr_to_png(exr_path, png_path):
+    """Convert texture EXR to PNG WITHOUT tone mapping (for textures only)
+    Returns: tuple (success: bool, resolution: dict)
+    """
+    try:
+        logger.info(f"🔧 Converting texture EXR to PNG (no tone mapping): {exr_path} -> {png_path}")
+        
+        # Try oiiotool first (without tone mapping for textures)
+        try:
+            import subprocess
+            
+            # Check if oiiotool is available
+            result = subprocess.run(['which', 'oiiotool'], capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception("oiiotool not found in PATH")
+            
+            # Use oiiotool WITHOUT color conversion but resize to 1024x1024 for thumbnails
+            cmd = [
+                'oiiotool',
+                str(exr_path),
+                '--resize', '1024x1024',
+                '-o', str(png_path)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                logger.info(f"✅ Successfully converted texture EXR without tone mapping using oiiotool")
+                return True, {}
+            else:
+                logger.warning(f"⚠️ oiiotool failed for texture EXR: {result.stderr}")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ oiiotool not available for texture conversion: {e}")
+        
+        # Fallback to PIL/OpenCV for texture EXR conversion
+        try:
+            from PIL import Image
+            import numpy as np
+            
+            # Try OpenCV for EXR reading
+            try:
+                import cv2
+                img_array = cv2.imread(str(exr_path), cv2.IMREAD_UNCHANGED)
+                if img_array is not None:
+                    # Convert to RGB and normalize for PNG
+                    if img_array.dtype == np.float32:
+                        # Clamp values to 0-1 range without tone mapping
+                        img_array = np.clip(img_array, 0, 1)
+                        img_array = (img_array * 255).astype(np.uint8)
+                    
+                    # Convert BGR to RGB
+                    if len(img_array.shape) == 3 and img_array.shape[2] == 3:
+                        img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
+                    
+                    img = Image.fromarray(img_array)
+                    img.save(png_path, 'PNG')
+                    logger.info(f"✅ Successfully converted texture EXR using OpenCV fallback")
+                    return True, {}
+            except ImportError:
+                logger.warning("⚠️ OpenCV not available for texture EXR conversion")
+            
+            # Final fallback - try PIL directly 
+            with Image.open(exr_path) as img:
+                img = img.convert('RGBA')
+                img.save(png_path, 'PNG')
+                logger.info(f"✅ Successfully converted texture EXR using PIL fallback")
+                return True, {}
+                
+        except Exception as fallback_error:
+            logger.error(f"❌ All texture EXR conversion methods failed: {fallback_error}")
+            return False, {}
+            
+    except Exception as e:
+        logger.error(f"❌ Texture EXR conversion error: {e}")
+        return False, {}
+
+# Helper functions for texture processing
+async def generate_texture_thumbnail(source_file, thumbnail_file):
+    """Generate thumbnail for texture files, handling EXR conversion WITHOUT tone mapping"""
+    try:
+        source_path = Path(source_file)
+        
+        if source_path.suffix.lower() in {'.exr'}:
+            # Use NEW texture EXR conversion WITHOUT tone mapping
+            logger.info(f"🔧 Converting texture EXR to PNG (no tone mapping): {source_path}")
+            success, _ = convert_texture_exr_to_png(source_path, thumbnail_file)
+            if success:
+                logger.info(f"✅ Created EXR texture thumbnail: {thumbnail_file}")
+                return True
+            else:
+                logger.warning(f"⚠️ Failed to convert texture EXR: {source_path}")
+                return False
+                
+        elif source_path.suffix.lower() in {'.jpg', '.jpeg', '.png', '.tiff', '.tif'}:
+            # Resize all texture images to 1024x1024 for thumbnails
+            logger.info(f"🔧 Resizing texture image to 1024x1024: {source_path} -> {thumbnail_file}")
+            
+            # Check original file size first
+            try:
+                original_size = source_path.stat().st_size / (1024 * 1024)  # MB
+                logger.info(f"📏 Original file size: {original_size:.1f} MB")
+            except:
+                pass
+                
+            try:
+                # First try with oiiotool for better quality
+                import subprocess
+                cmd = [
+                    'oiiotool',
+                    str(source_path),
+                    '--resize', '1024x1024',
+                    '--colorconvert', 'sRGB', 'sRGB',
+                    '-o', str(thumbnail_file)
+                ]
+                
+                logger.info(f"🔧 Running oiiotool command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                
+                if result.returncode == 0:
+                    # Check resulting file size
+                    try:
+                        final_size = Path(thumbnail_file).stat().st_size / (1024 * 1024)  # MB
+                        logger.info(f"✅ Created resized thumbnail with oiiotool: {thumbnail_file} ({final_size:.1f} MB)")
+                    except:
+                        logger.info(f"✅ Created resized thumbnail with oiiotool: {thumbnail_file}")
+                    return True
+                else:
+                    logger.warning(f"⚠️ oiiotool failed: {result.stderr}")
+                    logger.warning(f"⚠️ oiiotool stdout: {result.stdout}")
+                    
+                    # Fallback to PIL
+                    logger.info("🔄 Falling back to PIL for resizing...")
+                    from PIL import Image
+                    with Image.open(source_path) as img:
+                        logger.info(f"📏 Original PIL image size: {img.size}")
+                        
+                        # Convert to RGB if necessary
+                        if img.mode in ('RGBA', 'LA', 'P'):
+                            img = img.convert('RGB')
+                            logger.info(f"🎨 Converted image mode from {img.mode} to RGB")
+                        
+                        # Resize to exactly 1024x1024 (may distort aspect ratio slightly)
+                        img = img.resize((1024, 1024), Image.Resampling.LANCZOS)
+                        logger.info(f"📏 Resized image to: {img.size}")
+                        
+                        # Save as PNG for thumbnails
+                        img.save(thumbnail_file, 'PNG', optimize=True)
+                        
+                        # Check resulting file size
+                        try:
+                            final_size = Path(thumbnail_file).stat().st_size / (1024 * 1024)  # MB
+                            logger.info(f"✅ Created resized thumbnail with PIL: {thumbnail_file} ({final_size:.1f} MB)")
+                        except:
+                            logger.info(f"✅ Created resized thumbnail with PIL: {thumbnail_file}")
+                        return True
+                        
+            except Exception as e:
+                logger.error(f"❌ Failed to resize texture image: {e}")
+                logger.error(f"❌ Exception type: {type(e).__name__}")
+                import traceback
+                logger.error(f"❌ Full traceback: {traceback.format_exc()}")
+                
+                # Final fallback - just copy the original
+                logger.warning(f"⚠️ Falling back to copying original file")
+                import shutil
+                shutil.copy2(source_path, thumbnail_file)
+                
+                try:
+                    final_size = Path(thumbnail_file).stat().st_size / (1024 * 1024)  # MB
+                    logger.warning(f"⚠️ Using original size as thumbnail: {thumbnail_file} ({final_size:.1f} MB)")
+                except:
+                    logger.warning(f"⚠️ Using original size as thumbnail: {thumbnail_file}")
+                return True
+            
+        else:
+            logger.warning(f"⚠️ Unsupported texture format for thumbnail: {source_path.suffix}")
+            return False
+                
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to generate thumbnail: {e}")
         return False
+
+async def extract_image_info(image_file):
+    """Extract resolution and channel info from image files"""
+    try:
+        image_path = Path(image_file)
+        
+        if image_path.suffix.lower() in {'.exr', '.hdr', '.hdri'}:
+            # For EXR files, try to get info using imageio
+            try:
+                import imageio.v3 as iio
+                import numpy as np
+                image_array = iio.imread(str(image_path))
+                if image_array is not None:
+                    height, width = image_array.shape[:2]
+                    channels = image_array.shape[2] if len(image_array.shape) > 2 else 1
+                    return {
+                        "width": int(width),
+                        "height": int(height),
+                        "resolution": f"{width}x{height}",
+                        "channels": int(channels)
+                    }
+            except ImportError:
+                logger.info("ImageIO not available for EXR info extraction")
+        else:
+            # Regular image files
+            from PIL import Image
+            with Image.open(image_path) as img:
+                return {
+                    "width": img.width,
+                    "height": img.height,
+                    "resolution": f"{img.width}x{img.height}",
+                    "channels": len(img.getbands()) if hasattr(img, 'getbands') else 4
+                }
+                
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to extract image info: {e}")
+    
+    return {
+        "width": 1024,
+        "height": 1024,
+        "resolution": "1024x1024",
+        "channels": 4
+    }
 
 # Upload Asset Request Model
 class UploadAssetRequest(BaseModel):
     asset_type: str  # 'Textures' or 'HDRI'
     name: str
-    file_path: str
+    file_path: Optional[str] = None  # Optional for texture sets, required for single files
+    preview_path: Optional[str] = None  # Optional preview JPEG/PNG for HDRIs
     description: Optional[str] = ""
     dimension: str = "3D"
     created_by: str = "web_uploader"
+    subcategory: Optional[str] = None  # For HDRI/Texture categories
+    alpha_subcategory: Optional[str] = None  # For Alpha texture subcategories
+    texture_set_paths: Optional[dict] = None  # For texture sets with multiple files
+    # Texture type metadata
+    texture_type: Optional[str] = None  # 'seamless', 'uv_tile', or 'standard'
+    seamless: Optional[bool] = None  # True if texture is seamless
+    uv_tile: Optional[bool] = None  # True if texture uses UV tiles
 
 @router.post("/assets/upload", response_model=AssetResponse)
 async def upload_asset(upload_request: UploadAssetRequest):
@@ -1561,46 +2049,107 @@ async def upload_asset(upload_request: UploadAssetRequest):
         if upload_request.asset_type not in ['Textures', 'HDRI']:
             raise HTTPException(status_code=400, detail="Asset type must be 'Textures' or 'HDRI'")
         
-        # Validate file path exists (now accessible via Docker mount)
-        source_file = Path(upload_request.file_path)
-        if not source_file.exists():
-            # Provide helpful error with mount information
-            error_msg = f"Source file not found: {upload_request.file_path}\n\n"
-            error_msg += "Available mounted paths in container:\n"
-            error_msg += "- /app/assets (atlas library)\n"
-            error_msg += "- /net/general (general network drive)\n"
-            error_msg += "\nMake sure the file path starts with one of these mounted directories."
-            raise HTTPException(status_code=400, detail=error_msg)
+        # Separate validation logic for HDRI vs Textures
+        if upload_request.asset_type == 'HDRI':
+            # HDRI uploads: Always require a file_path
+            if not upload_request.file_path or not upload_request.file_path.strip():
+                raise HTTPException(status_code=400, detail="File path is required for HDRI uploads")
+            
+            source_file = Path(upload_request.file_path)
+            if not source_file.exists():
+                # Provide helpful error with mount information
+                error_msg = f"HDRI source file not found: {upload_request.file_path}\n\n"
+                error_msg += "Available mounted paths in container:\n"
+                error_msg += "- /app/assets (atlas library - output only)\n"
+                error_msg += "- /net/general (general network drive - READ ONLY)\n"
+                error_msg += "- /net/library/library (library drive - READ ONLY)\n"
+                error_msg += "\nMake sure the file path starts with one of these mounted directories."
+                raise HTTPException(status_code=400, detail=error_msg)
+            
+            # Check if file is a supported HDRI format
+            hdri_extensions = {'.exr', '.hdr', '.hdri'}
+            if source_file.suffix.lower() not in hdri_extensions:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Unsupported HDRI file format: {source_file.suffix}. Supported: {', '.join(hdri_extensions)}"
+                )
+            
+            logger.info(f"📋 HDRI upload validated: {source_file}")
+            
+        elif upload_request.asset_type == 'Textures':
+            # Handle different texture subcategories
+            if upload_request.subcategory == 'Texture Sets' and upload_request.texture_set_paths:
+                # Texture Sets: Validate texture_set_paths
+                if not any(path and path.strip() for path in upload_request.texture_set_paths.values()):
+                    raise HTTPException(status_code=400, detail="At least one texture file path must be provided for texture sets")
+                
+                # Validate each provided texture file
+                texture_extensions = {'.exr', '.jpg', '.jpeg', '.png', '.tiff', '.tif'}
+                for key, file_path in upload_request.texture_set_paths.items():
+                    if file_path and file_path.strip():
+                        source_file = Path(file_path.strip())
+                        if not source_file.exists():
+                            raise HTTPException(status_code=400, detail=f"{key.title()} texture file not found: {file_path}")
+                        
+                        if source_file.suffix.lower() not in texture_extensions:
+                            raise HTTPException(
+                                status_code=400, 
+                                detail=f"Unsupported file format for {key} texture: {source_file.suffix}. Supported: {', '.join(texture_extensions)}"
+                            )
+                
+                logger.info(f"📋 Texture set upload validated: {len([p for p in upload_request.texture_set_paths.values() if p and p.strip()])} texture files provided")
+                
+            else:
+                # Single Textures (Alpha, Base Color, etc.): Require file_path (optional now)
+                if upload_request.file_path and upload_request.file_path.strip():
+                    source_file = Path(upload_request.file_path)
+                    if not source_file.exists():
+                        error_msg = f"Texture source file not found: {upload_request.file_path}\n\n"
+                        error_msg += "Available mounted paths in container:\n"
+                        error_msg += "- /app/assets (atlas library - output only)\n"
+                        error_msg += "- /net/general (general network drive - READ ONLY)\n"
+                        error_msg += "- /net/library/library (library drive - READ ONLY)\n"
+                        error_msg += "\nMake sure the file path starts with one of these mounted directories."
+                        raise HTTPException(status_code=400, detail=error_msg)
+                    
+                    # Check if file is a supported texture format
+                    texture_extensions = {'.exr', '.jpg', '.jpeg', '.png', '.tiff', '.tif'}
+                    if source_file.suffix.lower() not in texture_extensions:
+                        raise HTTPException(
+                            status_code=400, 
+                            detail=f"Unsupported texture file format: {source_file.suffix}. Supported: {', '.join(texture_extensions)}"
+                        )
+                    
+                    logger.info(f"📋 Single texture upload validated: {source_file}")
         
-        # Check if file is a supported image format
-        supported_extensions = {'.exr', '.hdr', '.hdri', '.jpg', '.jpeg', '.png', '.tiff', '.tif'}
-        if source_file.suffix.lower() not in supported_extensions:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Unsupported file format: {source_file.suffix}. Supported: {', '.join(supported_extensions)}"
-            )
+        else:
+            raise HTTPException(status_code=400, detail="Asset type must be 'HDRI' or 'Textures'")
         
         # Clean and validate asset name
         clean_asset_name = upload_request.name.strip()
         if not clean_asset_name:
             raise HTTPException(status_code=400, detail="Asset name cannot be empty")
         
-        # Generate unique asset ID using same convention as houdiniae.py
-        # 11-character base UID + 2-character variant (AA) + 3-character version (001) = 16 characters total
-        base_uid = str(uuid.uuid4()).replace('-', '')[:11].upper()
-        variant_id = "AA"  # Always start with AA variant for new assets
-        version = 1
-        asset_id = f"{base_uid}{variant_id}{version:03d}"  # 16-character ID
-        asset_base_id = f"{base_uid}{variant_id}"  # 13-character base ID
+        # Generate unique asset ID for HDRI and Texture uploads
+        # Simple 10-character UID based on time (different from Houdini 3D assets)
+        import time
+        timestamp = str(int(time.time() * 1000))  # Millisecond timestamp for uniqueness
+        hash_input = f"{upload_request.name}_{upload_request.asset_type}_{timestamp}".encode()
+        asset_id = hashlib.md5(hash_input).hexdigest()[:10].upper()  # 10-character UID
+        asset_base_id = asset_id  # Same as asset_id since no variants/versions
         
         # Create folder structure for uploaded asset
-        # Structure: /app/assets/3D/{Textures|HDRI}/ASSETID_AssetName/
+        # Structure: /app/assets/3D/{Textures|HDRI}/{Subcategory}/{10_CHAR_UID}/
+        # Examples: /app/assets/3D/HDRI/Outdoor/A1B2C3D4E5/
+        #          /app/assets/3D/Textures/Alpha/F8A2B7E9D1/
         #   ├── Asset/          # ACTUAL asset file (original .exr/.hdr/etc)  
         #   ├── Thumbnail/      # Converted PNG for web (EXACT aspect ratio)
         #   └── metadata.json   # Database entry
         asset_library_path = Path(os.getenv('ASSET_LIBRARY_PATH', '/app/assets'))
-        category_path = asset_library_path / "3D" / upload_request.asset_type
-        asset_folder = category_path / f"{asset_id}_{clean_asset_name}"
+        # Place assets in their subcategory folders: HDRI/Outdoor, Textures/Alpha, etc.
+        category_path = asset_library_path / "3D" / upload_request.asset_type / upload_request.subcategory
+        # For HDRI and Texture uploads: folder name is just the UID (no asset name)
+        asset_folder = category_path / asset_id
         
         # Ensure category directory exists
         category_path.mkdir(parents=True, exist_ok=True)
@@ -1618,41 +2167,91 @@ async def upload_asset(upload_request: UploadAssetRequest):
         asset_subfolder.mkdir(exist_ok=True)
         thumbnail_folder.mkdir(exist_ok=True)
         
-        # Copy the actual asset file to the Asset folder (same for both Textures and HDRI)
-        target_file = asset_subfolder / source_file.name
-        shutil.copy2(source_file, target_file)
-        logger.info(f"📋 Copied {upload_request.asset_type.lower()} file to Asset folder: {source_file} -> {target_file}")
+        # Handle file copying and thumbnail generation based on asset type
+        copied_files = []
+        thumbnails_created = []
+        resolution_info = None
         
-        # Create thumbnail from the copied file (inside container where libraries work)
-        thumbnail_created = False
-        thumbnail_file = thumbnail_folder / f"{clean_asset_name}_thumbnail.png"
+        if upload_request.asset_type == 'HDRI':
+            # HDRI Logic: Single file handling
+            target_file = asset_subfolder / source_file.name
+            shutil.copy2(source_file, target_file)
+            copied_files.append(str(target_file))
+            logger.info(f"📋 Copied HDRI file to Asset folder: {source_file} -> {target_file}")
+            
+            # Handle HDRI preview/thumbnail
+            thumbnail_file = thumbnail_folder / f"{clean_asset_name}_thumbnail.png"
+            if upload_request.preview_path:
+                try:
+                    preview_source = Path(upload_request.preview_path)
+                    if preview_source.exists():
+                        shutil.copy2(preview_source, thumbnail_file)
+                        thumbnails_created.append(str(thumbnail_file))
+                        logger.info(f"✅ Copied HDRI preview: {preview_source} -> {thumbnail_file}")
+                        
+                        # Extract resolution from preview file
+                        from PIL import Image
+                        with Image.open(thumbnail_file) as img:
+                            resolution_info = {
+                                "width": img.width,
+                                "height": img.height,
+                                "resolution": f"{img.width}x{img.height}",
+                                "channels": len(img.getbands()) if hasattr(img, 'getbands') else 4
+                            }
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to copy HDRI preview: {e}")
         
-        if target_file.suffix.lower() in {'.exr', '.hdr', '.hdri', '.jpg', '.jpeg', '.png', '.tiff', '.tif'}:
-            try:
-                if target_file.suffix.lower() in {'.exr', '.hdr', '.hdri'}:
-                    # Use the copied file (inside container) for EXR conversion with existing libraries
-                    logger.info(f"🔧 Converting EXR from copied file: {target_file}")
-                    success = convert_hdr_to_exact_png(target_file, thumbnail_file)
-                    if success:
-                        thumbnail_created = True
-                        logger.info(f"✅ Created exact aspect ratio thumbnail from copied {upload_request.asset_type}: {thumbnail_file}")
-                else:
-                    # For regular image formats, convert to PNG preserving EXACT dimensions and aspect ratio
-                    from PIL import Image
-                    with Image.open(target_file) as img:  # Use copied file
-                        # Convert to RGBA to ensure transparency support
-                        if img.mode != 'RGBA':
-                            img = img.convert('RGBA')
-                        
-                        # NO RESIZING - preserve exact dimensions and aspect ratio
-                        img.save(thumbnail_file, 'PNG')
-                        thumbnail_created = True
-                        logger.info(f"✅ Created exact thumbnail from copied image ({img.width}x{img.height}): {thumbnail_file}")
-                        
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to create thumbnail from copied file: {e}")
-                logger.info(f"💡 Thumbnail creation failed but continuing with upload...")
-                thumbnail_created = False
+        elif upload_request.asset_type == 'Textures':
+            # Texture Logic: Handle single files or texture sets
+            if upload_request.subcategory == 'Texture Sets' and upload_request.texture_set_paths:
+                # Texture Set: Multiple files
+                texture_paths = upload_request.texture_set_paths
+                texture_map = {
+                    'baseColor': 'Base_Color',
+                    'metallic': 'Metallic', 
+                    'roughness': 'Roughness',
+                    'normal': 'Normal',
+                    'opacity': 'Opacity',
+                    'displacement': 'Displacement'
+                }
+                
+                for key, display_name in texture_map.items():
+                    file_path = texture_paths.get(key)
+                    if file_path and file_path.strip():
+                        try:
+                            source_path = Path(file_path.strip())
+                            if source_path.exists():
+                                # Copy texture file to Asset folder
+                                target_file = asset_subfolder / f"{clean_asset_name}_{display_name}{source_path.suffix}"
+                                shutil.copy2(source_path, target_file)
+                                copied_files.append(str(target_file))
+                                logger.info(f"📋 Copied {display_name} texture: {source_path} -> {target_file}")
+                                
+                                # Generate thumbnail for each texture
+                                thumbnail_file = thumbnail_folder / f"{clean_asset_name}_{display_name}_thumbnail.png"
+                                if await generate_texture_thumbnail(target_file, thumbnail_file):
+                                    thumbnails_created.append(str(thumbnail_file))
+                                    
+                                    # Use Base Color for resolution info
+                                    if key == 'baseColor' and not resolution_info:
+                                        resolution_info = await extract_image_info(target_file)
+                                        
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to process {display_name} texture: {e}")
+                            continue
+                            
+            else:
+                # Single Texture: One file
+                target_file = asset_subfolder / source_file.name
+                shutil.copy2(source_file, target_file)
+                copied_files.append(str(target_file))
+                logger.info(f"📋 Copied texture file to Asset folder: {source_file} -> {target_file}")
+                
+                # Generate thumbnail for single texture
+                thumbnail_file = thumbnail_folder / f"{clean_asset_name}_thumbnail.png"
+                if await generate_texture_thumbnail(target_file, thumbnail_file):
+                    thumbnails_created.append(str(thumbnail_file))
+                    resolution_info = await extract_image_info(target_file)
         
         # Create metadata.json file
         metadata = {
@@ -1663,19 +2262,42 @@ async def upload_asset(upload_request: UploadAssetRequest):
             "created_by": upload_request.created_by,
             "created_at": datetime.now().isoformat(),
             "description": upload_request.description,
+            "subcategory": upload_request.subcategory,
             "file_info": {
-                "original_path": str(source_file),
-                "filename": source_file.name,
-                "size_bytes": source_file.stat().st_size,
-                "extension": source_file.suffix
+                "original_path": str(source_file) if upload_request.asset_type == 'HDRI' or upload_request.subcategory != 'Texture Sets' else None,
+                "filename": source_file.name if upload_request.asset_type == 'HDRI' or upload_request.subcategory != 'Texture Sets' else None,
+                "size_bytes": source_file.stat().st_size if upload_request.asset_type == 'HDRI' or upload_request.subcategory != 'Texture Sets' else None,
+                "extension": source_file.suffix if upload_request.asset_type == 'HDRI' or upload_request.subcategory != 'Texture Sets' else None
             },
             "paths": {
                 "asset_folder": str(asset_folder),
                 "asset_subfolder": str(asset_subfolder),
-                "main_file": str(target_file),
-                "thumbnail": str(thumbnail_file) if thumbnail_created else None
+                "copied_files": copied_files,
+                "thumbnails": thumbnails_created
             }
         }
+        
+        # Add texture-specific metadata
+        if upload_request.asset_type == 'Textures':
+            if upload_request.alpha_subcategory:
+                metadata["alpha_subcategory"] = upload_request.alpha_subcategory
+            
+            if upload_request.subcategory == 'Texture Sets' and upload_request.texture_set_paths:
+                metadata["texture_set_info"] = {
+                    "type": "texture_set",
+                    "provided_paths": upload_request.texture_set_paths,
+                    "file_count": len([p for p in upload_request.texture_set_paths.values() if p and p.strip()])
+                }
+        
+        # Add resolution information if available
+        if resolution_info:
+            metadata["resolution"] = resolution_info["resolution"]
+            metadata["dimensions"] = {
+                "width": resolution_info["width"],
+                "height": resolution_info["height"],
+                "channels": resolution_info["channels"]
+            }
+            logger.info(f"📏 Added resolution to metadata: {resolution_info['resolution']}")
         
         metadata_file = asset_folder / "metadata.json"
         import json
@@ -1683,37 +2305,78 @@ async def upload_asset(upload_request: UploadAssetRequest):
             json.dump(metadata, f, indent=2)
         logger.info(f"📄 Created metadata file: {metadata_file}")
         
+        # Calculate total file sizes
+        total_size = 0
+        if upload_request.asset_type == 'HDRI' or upload_request.subcategory != 'Texture Sets':
+            total_size = source_file.stat().st_size
+        else:
+            # For texture sets, sum all file sizes
+            for file_path in copied_files:
+                try:
+                    total_size += Path(file_path).stat().st_size
+                except:
+                    pass
+        
         # Create asset document for database
         asset_doc = {
             "_key": asset_id,
             "id": asset_id,
             "name": clean_asset_name,
-            "category": upload_request.asset_type,
+            "category": upload_request.subcategory,  # Use subcategory as main category for textures
             "dimension": upload_request.dimension,
             "asset_type": upload_request.asset_type,
             "hierarchy": {
                 "dimension": upload_request.dimension,
                 "asset_type": upload_request.asset_type,
-                "subcategory": "Uploaded"
+                "subcategory": upload_request.subcategory or "General"
             },
             "metadata": metadata,
             "paths": {
                 "folder_path": str(asset_folder),
                 "asset_folder": str(asset_folder),
                 "asset_subfolder": str(asset_subfolder),
-                "main_file": str(target_file),
-                "thumbnail": str(thumbnail_file) if thumbnail_created else None
+                "copied_files": copied_files,
+                "thumbnails": thumbnails_created
             },
             "file_sizes": {
-                "main_file": source_file.stat().st_size,
-                "estimated_total_size": source_file.stat().st_size
+                "copied_files": len(copied_files),
+                "estimated_total_size": total_size
             },
-            "tags": ["uploaded", upload_request.asset_type.lower()],
+            "tags": [
+                "uploaded", 
+                upload_request.asset_type.lower(),
+                upload_request.subcategory.lower().replace(' ', '_') if upload_request.subcategory else "general"
+            ],
             "created_at": datetime.now().isoformat(),
             "created_by": upload_request.created_by,
             "status": "active",
             "folder_path": str(asset_folder)  # For compatibility with existing frontend
         }
+        
+        # Add texture-specific fields to database document
+        if upload_request.asset_type == 'Textures':
+            if upload_request.alpha_subcategory:
+                asset_doc["alpha_subcategory"] = upload_request.alpha_subcategory
+                asset_doc["tags"].append(upload_request.alpha_subcategory.lower())
+            
+            if upload_request.subcategory == 'Texture Sets':
+                asset_doc["texture_set"] = True
+                asset_doc["texture_count"] = len(copied_files)
+            
+            # Add texture type metadata
+            if upload_request.texture_type:
+                asset_doc["texture_type"] = upload_request.texture_type
+                asset_doc["tags"].append(upload_request.texture_type)
+            
+            if upload_request.seamless is not None:
+                asset_doc["seamless"] = upload_request.seamless
+                if upload_request.seamless:
+                    asset_doc["tags"].append("seamless")
+            
+            if upload_request.uv_tile is not None:
+                asset_doc["uv_tile"] = upload_request.uv_tile
+                if upload_request.uv_tile:
+                    asset_doc["tags"].append("uv_tile")
         
         # Insert into database using the same AssetQueries method as elsewhere
         try:
