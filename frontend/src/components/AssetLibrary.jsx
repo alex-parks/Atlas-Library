@@ -109,6 +109,22 @@ const AssetLibrary = ({
   const [viewMode, setViewMode] = useState('grid');
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [filterTab, setFilterTab] = useState('3d-assets'); // '3d-assets', 'textures', 'materials', 'hdri'
+  const [badgeSize, setBadgeSize] = useState(50); // Badge size slider (0-100, default 50 = medium)
+
+  // Calculate dynamic grid classes based on badge size
+  const getGridClasses = () => {
+    if (badgeSize <= 25) {
+      // Small: More cards per row
+      return "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-2";
+    } else if (badgeSize <= 75) {
+      // Medium: Default layout
+      return "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4";
+    } else {
+      // Large: Fewer cards per row, bigger cards
+      return "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6";
+    }
+  };
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [settingsTab, setSettingsTab] = useState('theme'); // 'theme' or 'database'
   const [dbStatus, setDbStatus] = useState({ status: 'unknown', assets_count: 0 });
@@ -1810,75 +1826,148 @@ const AssetLibrary = ({
                     onClick={() => setShowFilterMenu(false)}
                   ></div>
                   <div className="absolute right-0 top-12 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg z-50 w-80 pointer-events-auto">
-                  <div className="p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-white font-medium">Filters</h3>
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-white font-medium">Filters</h3>
+                        <button
+                          onClick={() => setShowFilterMenu(false)}
+                          className="text-neutral-400 hover:text-white"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+
+                      {/* Filter Tabs */}
+                      <div className="flex border-b border-neutral-600 mb-4">
+                        <button
+                          onClick={() => setFilterTab('3d-assets')}
+                          className={`px-3 py-2 text-sm font-medium transition-colors ${
+                            filterTab === '3d-assets' 
+                              ? 'text-blue-400 border-b-2 border-blue-400' 
+                              : 'text-neutral-400 hover:text-neutral-300'
+                          }`}
+                        >
+                          3D Assets
+                        </button>
+                        <button
+                          onClick={() => setFilterTab('textures')}
+                          className={`px-3 py-2 text-sm font-medium transition-colors ${
+                            filterTab === 'textures' 
+                              ? 'text-blue-400 border-b-2 border-blue-400' 
+                              : 'text-neutral-400 hover:text-neutral-300'
+                          }`}
+                        >
+                          Textures
+                        </button>
+                        <button
+                          onClick={() => setFilterTab('materials')}
+                          className={`px-3 py-2 text-sm font-medium transition-colors ${
+                            filterTab === 'materials' 
+                              ? 'text-blue-400 border-b-2 border-blue-400' 
+                              : 'text-neutral-400 hover:text-neutral-300'
+                          }`}
+                        >
+                          Materials
+                        </button>
+                        <button
+                          onClick={() => setFilterTab('hdri')}
+                          className={`px-3 py-2 text-sm font-medium transition-colors ${
+                            filterTab === 'hdri' 
+                              ? 'text-blue-400 border-b-2 border-blue-400' 
+                              : 'text-neutral-400 hover:text-neutral-300'
+                          }`}
+                        >
+                          HDRI
+                        </button>
+                      </div>
+
+                      {/* Tab Content */}
+                      {filterTab === '3d-assets' && (
+                        <>
+                          <div className="mb-4">
+                            <label className="block text-sm font-medium text-neutral-300 mb-2">Display Options</label>
+                            <div className="space-y-2">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedFilters.showVariants}
+                                  onChange={(e) => handleFilterChange('showVariants', e.target.checked)}
+                                  className="text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-neutral-300 text-sm">Variants</span>
+                                <span className="text-neutral-500 text-xs">(Show all variants)</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedFilters.showVersions}
+                                  onChange={(e) => handleFilterChange('showVersions', e.target.checked)}
+                                  className="text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-neutral-300 text-sm">Versions</span>
+                                <span className="text-neutral-500 text-xs">(Show all versions)</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedFilters.showBranded}
+                                  onChange={(e) => handleFilterChange('showBranded', e.target.checked)}
+                                  className="text-yellow-600 focus:ring-yellow-500"
+                                />
+                                <span className="text-neutral-300 text-sm">Branded</span>
+                                <span className="text-neutral-500 text-xs">(Show branded assets)</span>
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="mb-4">
+                            <label className="block text-sm font-medium text-neutral-300 mb-2">Creator</label>
+                            <select
+                              value={selectedFilters.creator}
+                              onChange={(e) => handleFilterChange('creator', e.target.value)}
+                              className="w-full bg-neutral-700 border border-neutral-600 rounded px-3 py-2 text-white text-sm"
+                            >
+                              <option value="all">All Creators</option>
+                              {creators.map(creator => (
+                                <option key={creator} value={creator}>{creator}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </>
+                      )}
+
+                      {filterTab === 'textures' && (
+                        <div className="mb-4">
+                          <div className="text-center py-8 text-neutral-400">
+                            <p className="text-sm">Texture filters coming soon...</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {filterTab === 'materials' && (
+                        <div className="mb-4">
+                          <div className="text-center py-8 text-neutral-400">
+                            <p className="text-sm">Material filters coming soon...</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {filterTab === 'hdri' && (
+                        <div className="mb-4">
+                          <div className="text-center py-8 text-neutral-400">
+                            <p className="text-sm">HDRI filters coming soon...</p>
+                          </div>
+                        </div>
+                      )}
+
                       <button
-                        onClick={() => setShowFilterMenu(false)}
-                        className="text-neutral-400 hover:text-white"
+                        onClick={clearFilters}
+                        className="w-full bg-neutral-700 hover:bg-neutral-600 text-white py-2 rounded text-sm transition-colors"
                       >
-                        <X size={18} />
+                        Clear All Filters
                       </button>
                     </div>
-
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-neutral-300 mb-2">Display Options</label>
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedFilters.showVariants}
-                            onChange={(e) => handleFilterChange('showVariants', e.target.checked)}
-                            className="text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-neutral-300 text-sm">Variants</span>
-                          <span className="text-neutral-500 text-xs">(Show all variants)</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedFilters.showVersions}
-                            onChange={(e) => handleFilterChange('showVersions', e.target.checked)}
-                            className="text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-neutral-300 text-sm">Versions</span>
-                          <span className="text-neutral-500 text-xs">(Show all versions)</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedFilters.showBranded}
-                            onChange={(e) => handleFilterChange('showBranded', e.target.checked)}
-                            className="text-yellow-600 focus:ring-yellow-500"
-                          />
-                          <span className="text-neutral-300 text-sm">Branded</span>
-                          <span className="text-neutral-500 text-xs">(Show branded assets)</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-neutral-300 mb-2">Creator</label>
-                      <select
-                        value={selectedFilters.creator}
-                        onChange={(e) => handleFilterChange('creator', e.target.value)}
-                        className="w-full bg-neutral-700 border border-neutral-600 rounded px-3 py-2 text-white text-sm"
-                      >
-                        <option value="all">All Creators</option>
-                        {creators.map(creator => (
-                          <option key={creator} value={creator}>{creator}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <button
-                      onClick={clearFilters}
-                      className="w-full bg-neutral-700 hover:bg-neutral-600 text-white py-2 rounded text-sm transition-colors"
-                    >
-                      Clear All Filters
-                    </button>
                   </div>
-                </div>
                 </>
               )}
               </div>
@@ -3669,18 +3758,59 @@ const AssetLibrary = ({
             ) : (
               <>
                 <div className="bg-neutral-800 rounded-lg p-4 mb-6">
-                  <div className="flex items-center gap-8 text-sm text-neutral-400">
-                    <span>{filteredAssets.length} assets found</span>
-                    <span>Path: /net/library/atlaslib/{selectedDimension}/{selectedCategory}{selectedSubcategory ? `/${selectedSubcategory}` : ''}</span>
-                    <span>Database: {dbStatus.database_type || 'JSON'}</span>
-                    {(selectedFilters.creator !== 'all' || selectedFilters.showVariants || selectedFilters.showVersions || !selectedFilters.showBranded) && (
-                      <span className="text-blue-400">Filtered</span>
-                    )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-8 text-sm text-neutral-400">
+                      <span>{filteredAssets.length} assets found</span>
+                      <span>Path: /net/library/atlaslib/{selectedDimension}/{selectedCategory}{selectedSubcategory ? `/${selectedSubcategory}` : ''}</span>
+                      <span>Database: {dbStatus.database_type || 'JSON'}</span>
+                      {(selectedFilters.creator !== 'all' || selectedFilters.showVariants || selectedFilters.showVersions || !selectedFilters.showBranded) && (
+                        <span className="text-blue-400">Filtered</span>
+                      )}
+                    </div>
+                    
+                    {/* Badge Size Slider */}
+                    <div className="flex items-center gap-3 text-sm text-neutral-400">
+                      <span>Badge Size:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs">S</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={badgeSize}
+                          onChange={(e) => setBadgeSize(Number(e.target.value))}
+                          className="w-20 h-1 bg-neutral-600 rounded-lg appearance-none cursor-pointer"
+                          style={{
+                            background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${badgeSize}%, #525252 ${badgeSize}%, #525252 100%)`
+                          }}
+                        />
+                        <style>{`
+                          input[type="range"]::-webkit-slider-thumb {
+                            appearance: none;
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 50%;
+                            background: #3b82f6;
+                            cursor: pointer;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                          }
+                          input[type="range"]::-moz-range-thumb {
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 50%;
+                            background: #3b82f6;
+                            cursor: pointer;
+                            border: none;
+                          }
+                        `}</style>
+                        <span className="text-xs">L</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 {viewMode === 'grid' ? (
-                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                  <div className={getGridClasses()}>
                     {filteredAssets.map(asset => {
                       const CardComponent = getAssetCardComponent(asset);
                       return (
