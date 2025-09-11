@@ -91,7 +91,7 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
 
   const getFileSize = () => {
     const totalBytes = asset.file_sizes?.estimated_total_size || 0;
-    if (totalBytes === 0) return <span className="text-neutral-500">Calc...</span>;
+    if (totalBytes === 0) return <span className="text-gray-500">Calc...</span>;
     
     if (totalBytes < 1024 * 1024) {
       return `${Math.round(totalBytes / 1024)} KB`;
@@ -301,12 +301,12 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
 
   return (
     <div className="group relative">
-      <div className={`bg-neutral-800 rounded-lg overflow-hidden border transition-all duration-200 hover:shadow-lg relative ${
+      <div className={`bg-gray-800 rounded-lg overflow-hidden border transition-all duration-200 hover:shadow-lg relative ${
         asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded 
           ? 'border-yellow-600/60 hover:border-yellow-500/80 hover:shadow-yellow-500/5 ring-1 ring-yellow-600/10' 
           : 'border-purple-500/30 hover:border-purple-400 hover:shadow-purple-500/10'
       }`}>
-        <div className="aspect-square bg-neutral-700 relative overflow-hidden">
+        <div className="aspect-square bg-gray-700 relative overflow-hidden">
           {imageList.length > 1 ? (
             // Custom image display for texture navigation
             <div className="w-full h-full relative">
@@ -325,7 +325,7 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
               ) : null}
               {/* Fallback icon */}
               <div 
-                className="text-neutral-500 text-3xl flex items-center justify-center w-full h-full absolute inset-0"
+                className="text-gray-500 text-3xl flex items-center justify-center w-full h-full absolute inset-0"
                 style={{ display: 'none' }}
               >
                 🖼️
@@ -350,7 +350,7 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
               />
               {/* Fallback icon */}
               <div 
-                className="text-neutral-500 text-3xl flex items-center justify-center w-full h-full absolute inset-0"
+                className="text-gray-500 text-3xl flex items-center justify-center w-full h-full absolute inset-0"
                 style={{ display: 'none' }}
               >
                 🖼️
@@ -390,7 +390,7 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
               
               {/* Dropdown menu */}
               {showDropdown && (
-                <div className="absolute right-0 top-full mt-1 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg z-50 min-w-[160px] texture-card-dropdown-menu">
+                <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50 min-w-[160px] texture-card-dropdown-menu">
                   <div className="py-1">
                     <button
                       onClick={(e) => {
@@ -398,7 +398,7 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
                         setShowDropdown(false);
                         onEditAsset?.(asset);
                       }}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
                     >
                       <Edit size={14} />
                       Edit Texture
@@ -409,12 +409,12 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
                         setShowDropdown(false);
                         onCopyAsset?.(asset);
                       }}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
                     >
                       <Copy size={14} />
                       Copy Info
                     </button>
-                    <div className="border-t border-neutral-700 my-1"></div>
+                    <div className="border-t border-gray-700 my-1"></div>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -500,7 +500,7 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
         {/* Asset Information Badge */}
         <div className="absolute bottom-0 left-0 right-0 z-10">
           {/* Expanded Content Panel */}
-          <div className={`bg-neutral-800/95 border-t border-l border-r border-neutral-700 shadow-lg transition-all duration-300 ease-in-out overflow-hidden ${
+          <div className={`bg-gray-800/95 border-t border-l border-r border-gray-700 shadow-lg transition-all duration-300 ease-in-out overflow-hidden ${
             isExpanded ? 'max-h-48 opacity-100' : 'max-h-0 opacity-0'
           }`}>
             <div className="p-3">
@@ -510,25 +510,25 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
               </div>
               
               {/* Texture Specific Fields - 2x2 layout with UV Layout */}
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-neutral-500">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
                 <div>
-                  <span className="text-neutral-400">Type:</span>
+                  <span className="text-gray-400">Type:</span>
                   <div className="text-purple-400 font-medium">Texture Map</div>
                 </div>
                 <div>
-                  <span className="text-neutral-400">Resolution:</span>
+                  <span className="text-gray-400">Resolution:</span>
                   <div className="text-cyan-300 font-medium truncate">{getResolution()}</div>
                 </div>
                 <div>
-                  <span className="text-neutral-400">Format:</span>
+                  <span className="text-gray-400">Format:</span>
                   <div className="text-orange-300 font-medium">{getFormat()}</div>
                 </div>
                 <div>
-                  <span className="text-neutral-400">Size:</span>
-                  <div className="text-neutral-300">{getFileSize()}</div>
+                  <span className="text-gray-400">Size:</span>
+                  <div className="text-gray-300">{getFileSize()}</div>
                 </div>
                 <div>
-                  <span className="text-neutral-400">UV Layout:</span>
+                  <span className="text-gray-400">UV Layout:</span>
                   <div className="text-blue-300 font-medium">{getUVLayout()}</div>
                 </div>
               </div>

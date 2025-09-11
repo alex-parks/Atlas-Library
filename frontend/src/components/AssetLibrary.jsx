@@ -634,7 +634,7 @@ const AssetLibrary = ({
     // For variants, show "Original Name" in white and "- Variant Name" in darker gray
     return (
       <span>
-        {asset.name} <span className="text-neutral-400">- {variantName}</span>
+        {asset.name} <span className="text-gray-400">- {variantName}</span>
       </span>
     );
   };
@@ -1395,7 +1395,7 @@ const AssetLibrary = ({
 
         {/* Fallback icon */}
         <div 
-          className="text-neutral-500 text-6xl flex items-center justify-center w-full h-full absolute inset-0"
+          className="text-gray-500 text-6xl flex items-center justify-center w-full h-full absolute inset-0"
           style={{ display: 'none' }}
         >
           🖼️
@@ -1409,7 +1409,7 @@ const AssetLibrary = ({
                 e.stopPropagation();
                 navigateImage('left');
               }}
-              className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10"
+              className="absolute left-4 top-1/2 transform -trangray-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10"
             >
               <ChevronLeft size={24} />
             </button>
@@ -1418,7 +1418,7 @@ const AssetLibrary = ({
                 e.stopPropagation();
                 navigateImage('right');
               }}
-              className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10"
+              className="absolute right-4 top-1/2 transform -trangray-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10"
             >
               <ChevronRight size={24} />
             </button>
@@ -1698,7 +1698,7 @@ const AssetLibrary = ({
 
     return (
       <div className="space-y-2 mb-4">
-        <div className="text-sm text-neutral-400 font-medium mb-2">Copy Individual Textures:</div>
+        <div className="text-sm text-gray-400 font-medium mb-2">Copy Individual Textures:</div>
         <div className="space-y-1">
           {Object.entries(textureTypeMap).map(([type, typeInfo]) => {
             const texture = getTextureByType(type);
@@ -1722,51 +1722,51 @@ const AssetLibrary = ({
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900 text-white">
+    <div className="min-h-screen bg-gray-900 text-gray-100">
       {/* Header */}
-      <div className="bg-neutral-800 border-b border-neutral-700 p-6">
+      <div className="bg-gray-500 border-b border-gray-400 p-6 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
-            <h1 className="text-3xl font-bold text-blue-400">Asset Library</h1>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-200 to-gray-400 bg-clip-text text-transparent">Asset Library</h1>
 
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full text-sm border">
-              <Database size={16} />
-              <span className={`${
-                dbStatus.status === 'healthy' ? 'text-green-400 border-green-500' :
-                dbStatus.status === 'error' ? 'text-red-400 border-red-500' :
-                'text-yellow-400 border-yellow-500'
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full text-sm bg-gray-700/50 border border-gray-600/30 backdrop-blur-sm shadow-sm">
+              <Database size={16} className="text-gray-400" />
+              <span className={`font-medium ${
+                dbStatus.status === 'healthy' ? 'text-emerald-400' :
+                dbStatus.status === 'error' ? 'text-rose-400' :
+                'text-amber-400'
               }`}>
                 {dbStatus.status === 'healthy' ? 'ArangoDB Ready' :
                  dbStatus.status === 'error' ? 'DB Error' :
                  'DB Unknown'}
               </span>
               {dbStatus.assets_count > 0 && (
-                <span className="text-neutral-400">({dbStatus.assets_count})</span>
+                <span className="text-gray-400">({dbStatus.assets_count})</span>
               )}
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <button
               onClick={syncDatabase}
               disabled={loading}
-              className="bg-purple-600 hover:bg-purple-700 disabled:bg-neutral-600 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+              className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all duration-200 shadow-lg hover:shadow-violet-500/25 font-medium"
             >
-              <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
               Sync DB
             </button>
             <button 
               onClick={() => setShowUploadModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+              className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all duration-200 shadow-lg hover:shadow-blue-500/25 font-medium"
             >
-              <Upload size={20} />
+              <Upload size={18} />
               Upload Asset
             </button>
             <button
               onClick={() => setShowSettingsPanel(true)}
-              className="bg-neutral-700 hover:bg-neutral-600 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+              className="bg-gray-700/50 hover:bg-gray-600/50 border border-gray-600/30 px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all duration-200 backdrop-blur-sm shadow-lg hover:shadow-lg font-medium"
             >
-              <Settings size={20} />
+              <Settings size={18} />
               Settings
             </button>
           </div>
@@ -1778,26 +1778,26 @@ const AssetLibrary = ({
             {/* Main Controls Row */}
             <div className="flex items-center gap-4">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-neutral-400" size={20} />
+                <Search className="absolute left-4 top-1/2 transform -trangray-y-1/2 text-gray-400" size={20} />
                 <input
                   type="text"
                   placeholder="Search assets..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-neutral-700 border border-neutral-600 rounded-lg pl-10 pr-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-gray-700/50 border border-gray-600/30 rounded-xl pl-12 pr-4 py-3 text-gray-100 placeholder-gray-400 focus:outline-none focus:border-blue-400/50 focus:bg-gray-700/70 transition-all duration-200 backdrop-blur-sm shadow-lg"
                 />
               </div>
 
-              <div className="flex items-center gap-2 bg-neutral-700 rounded-lg p-1">
+              <div className="flex items-center gap-1 bg-gray-700/50 border border-gray-600/30 rounded-xl p-1 backdrop-blur-sm shadow-lg">
                 <button
                   onClick={() => setViewMode('grid')}
-                  className={`p-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-blue-600' : 'hover:bg-neutral-600'}`}
+                  className={`p-2.5 rounded-lg transition-all duration-200 ${viewMode === 'grid' ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg' : 'hover:bg-gray-600/50 text-gray-400 hover:text-gray-300'}`}
                 >
                   <Grid3X3 size={18} />
                 </button>
                 <button
                   onClick={() => setViewMode('list')}
-                  className={`p-2 rounded transition-colors ${viewMode === 'list' ? 'bg-blue-600' : 'hover:bg-neutral-600'}`}
+                  className={`p-2.5 rounded-lg transition-all duration-200 ${viewMode === 'list' ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg' : 'hover:bg-gray-600/50 text-gray-400 hover:text-gray-300'}`}
                 >
                   <List size={18} />
                 </button>
@@ -1807,14 +1807,14 @@ const AssetLibrary = ({
               <div className="relative">
                 <button
                 onClick={() => setShowFilterMenu(!showFilterMenu)}
-                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
-                  showFilterMenu ? 'bg-blue-600' : 'bg-neutral-700 hover:bg-neutral-600'
+                className={`px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all duration-200 font-medium ${
+                  showFilterMenu ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg' : 'bg-gray-700/50 border border-gray-600/30 hover:bg-gray-600/50 text-gray-300 hover:text-gray-200 backdrop-blur-sm shadow-lg'
                 }`}
               >
                 <Filter size={18} />
                 Filter
                 {(selectedFilters.creator !== 'all' || selectedFilters.showVariants || selectedFilters.showVersions || !selectedFilters.showBranded) && (
-                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                  <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
                 )}
               </button>
 
@@ -1825,56 +1825,56 @@ const AssetLibrary = ({
                     className="fixed inset-0 z-40" 
                     onClick={() => setShowFilterMenu(false)}
                   ></div>
-                  <div className="absolute right-0 top-12 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg z-50 w-80 pointer-events-auto">
-                    <div className="p-4">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-white font-medium">Filters</h3>
+                  <div className="absolute right-0 top-14 bg-gray-800 border border-gray-600/30 rounded-xl shadow-2xl z-50 w-80 pointer-events-auto backdrop-blur-lg">
+                    <div className="p-5">
+                      <div className="flex items-center justify-between mb-5">
+                        <h3 className="text-gray-200 font-semibold text-lg">Filters</h3>
                         <button
                           onClick={() => setShowFilterMenu(false)}
-                          className="text-neutral-400 hover:text-white"
+                          className="text-gray-400 hover:text-gray-200 p-1 rounded-lg hover:bg-gray-700/50 transition-all duration-200"
                         >
                           <X size={18} />
                         </button>
                       </div>
 
                       {/* Filter Tabs */}
-                      <div className="flex border-b border-neutral-600 mb-4">
+                      <div className="flex border-b border-gray-600/30 mb-5">
                         <button
                           onClick={() => setFilterTab('3d-assets')}
-                          className={`px-3 py-2 text-sm font-medium transition-colors ${
+                          className={`px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
                             filterTab === '3d-assets' 
-                              ? 'text-blue-400 border-b-2 border-blue-400' 
-                              : 'text-neutral-400 hover:text-neutral-300'
+                              ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/10' 
+                              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
                           }`}
                         >
                           3D Assets
                         </button>
                         <button
                           onClick={() => setFilterTab('textures')}
-                          className={`px-3 py-2 text-sm font-medium transition-colors ${
+                          className={`px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
                             filterTab === 'textures' 
-                              ? 'text-blue-400 border-b-2 border-blue-400' 
-                              : 'text-neutral-400 hover:text-neutral-300'
+                              ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/10' 
+                              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
                           }`}
                         >
                           Textures
                         </button>
                         <button
                           onClick={() => setFilterTab('materials')}
-                          className={`px-3 py-2 text-sm font-medium transition-colors ${
+                          className={`px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
                             filterTab === 'materials' 
-                              ? 'text-blue-400 border-b-2 border-blue-400' 
-                              : 'text-neutral-400 hover:text-neutral-300'
+                              ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/10' 
+                              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
                           }`}
                         >
                           Materials
                         </button>
                         <button
                           onClick={() => setFilterTab('hdri')}
-                          className={`px-3 py-2 text-sm font-medium transition-colors ${
+                          className={`px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
                             filterTab === 'hdri' 
-                              ? 'text-blue-400 border-b-2 border-blue-400' 
-                              : 'text-neutral-400 hover:text-neutral-300'
+                              ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/10' 
+                              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
                           }`}
                         >
                           HDRI
@@ -1885,7 +1885,7 @@ const AssetLibrary = ({
                       {filterTab === '3d-assets' && (
                         <>
                           <div className="mb-4">
-                            <label className="block text-sm font-medium text-neutral-300 mb-2">Display Options</label>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Display Options</label>
                             <div className="space-y-2">
                               <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -1894,8 +1894,8 @@ const AssetLibrary = ({
                                   onChange={(e) => handleFilterChange('showVariants', e.target.checked)}
                                   className="text-blue-600 focus:ring-blue-500"
                                 />
-                                <span className="text-neutral-300 text-sm">Variants</span>
-                                <span className="text-neutral-500 text-xs">(Show all variants)</span>
+                                <span className="text-gray-300 text-sm">Variants</span>
+                                <span className="text-gray-500 text-xs">(Show all variants)</span>
                               </label>
                               <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -1904,8 +1904,8 @@ const AssetLibrary = ({
                                   onChange={(e) => handleFilterChange('showVersions', e.target.checked)}
                                   className="text-blue-600 focus:ring-blue-500"
                                 />
-                                <span className="text-neutral-300 text-sm">Versions</span>
-                                <span className="text-neutral-500 text-xs">(Show all versions)</span>
+                                <span className="text-gray-300 text-sm">Versions</span>
+                                <span className="text-gray-500 text-xs">(Show all versions)</span>
                               </label>
                               <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -1914,18 +1914,18 @@ const AssetLibrary = ({
                                   onChange={(e) => handleFilterChange('showBranded', e.target.checked)}
                                   className="text-yellow-600 focus:ring-yellow-500"
                                 />
-                                <span className="text-neutral-300 text-sm">Branded</span>
-                                <span className="text-neutral-500 text-xs">(Show branded assets)</span>
+                                <span className="text-gray-300 text-sm">Branded</span>
+                                <span className="text-gray-500 text-xs">(Show branded assets)</span>
                               </label>
                             </div>
                           </div>
 
                           <div className="mb-4">
-                            <label className="block text-sm font-medium text-neutral-300 mb-2">Creator</label>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Creator</label>
                             <select
                               value={selectedFilters.creator}
                               onChange={(e) => handleFilterChange('creator', e.target.value)}
-                              className="w-full bg-neutral-700 border border-neutral-600 rounded px-3 py-2 text-white text-sm"
+                              className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white text-sm"
                             >
                               <option value="all">All Creators</option>
                               {creators.map(creator => (
@@ -1938,7 +1938,7 @@ const AssetLibrary = ({
 
                       {filterTab === 'textures' && (
                         <div className="mb-4">
-                          <div className="text-center py-8 text-neutral-400">
+                          <div className="text-center py-8 text-gray-400">
                             <p className="text-sm">Texture filters coming soon...</p>
                           </div>
                         </div>
@@ -1946,7 +1946,7 @@ const AssetLibrary = ({
 
                       {filterTab === 'materials' && (
                         <div className="mb-4">
-                          <div className="text-center py-8 text-neutral-400">
+                          <div className="text-center py-8 text-gray-400">
                             <p className="text-sm">Material filters coming soon...</p>
                           </div>
                         </div>
@@ -1954,7 +1954,7 @@ const AssetLibrary = ({
 
                       {filterTab === 'hdri' && (
                         <div className="mb-4">
-                          <div className="text-center py-8 text-neutral-400">
+                          <div className="text-center py-8 text-gray-400">
                             <p className="text-sm">HDRI filters coming soon...</p>
                           </div>
                         </div>
@@ -1962,7 +1962,7 @@ const AssetLibrary = ({
 
                       <button
                         onClick={clearFilters}
-                        className="w-full bg-neutral-700 hover:bg-neutral-600 text-white py-2 rounded text-sm transition-colors"
+                        className="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded text-sm transition-colors"
                       >
                         Clear All Filters
                       </button>
@@ -1982,7 +1982,7 @@ const AssetLibrary = ({
                   value={tagSearchTerm}
                   onChange={(e) => setTagSearchTerm(e.target.value)}
                   onKeyDown={handleTagSearch}
-                  className="w-full bg-neutral-600/50 border border-neutral-500 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-green-400 focus:bg-neutral-600 transition-all text-sm"
+                  className="w-full bg-gray-600/50 border border-gray-500 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-green-400 focus:bg-gray-600 transition-all text-sm"
                 />
               </div>
               
@@ -1990,7 +1990,7 @@ const AssetLibrary = ({
               {activeTagFilters.length > 0 && (
                 <button
                   onClick={clearAllTagFilters}
-                  className="px-3 py-2 bg-neutral-600 hover:bg-neutral-500 border border-neutral-500 rounded-lg text-neutral-300 hover:text-white text-sm transition-colors"
+                  className="px-3 py-2 bg-gray-600 hover:bg-gray-500 border border-gray-500 rounded-lg text-gray-300 hover:text-white text-sm transition-colors"
                   title="Clear all tag filters"
                 >
                   Clear Tags
@@ -2001,7 +2001,7 @@ const AssetLibrary = ({
             {/* Active Tag Filters - Tag Bubbles */}
             {activeTagFilters.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span className="text-xs text-neutral-400 font-medium">Active Tags:</span>
+                <span className="text-xs text-gray-400 font-medium">Active Tags:</span>
                 {activeTagFilters.map((tag, index) => (
                   <div key={`${tag}-${index}`} className="flex items-center gap-1 bg-green-600/20 border border-green-500/60 rounded-full px-3 py-1 text-sm backdrop-blur-sm">
                     <span className="text-green-200 font-medium">{tag}</span>
@@ -2038,7 +2038,7 @@ const AssetLibrary = ({
 
         {/* Breadcrumb Navigation */}
         {currentView !== 'dimension' && (
-          <div className="flex items-center gap-2 text-sm text-neutral-400 mt-4">
+          <div className="flex items-center gap-2 text-sm text-gray-400 mt-4">
             <button
               onClick={handleBackToDimensions}
               className="hover:text-white transition-colors"
@@ -2080,25 +2080,25 @@ const AssetLibrary = ({
       {/* Settings Panel */}
       {showSettingsPanel && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-auto">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold text-white">Settings</h2>
               <button
                 onClick={() => setShowSettingsPanel(false)}
-                className="text-neutral-400 hover:text-white"
+                className="text-gray-400 hover:text-white"
               >
                 <X size={24} />
               </button>
             </div>
 
             {/* Tab Navigation */}
-            <div className="flex gap-1 mb-6 bg-neutral-700 rounded-lg p-1">
+            <div className="flex gap-1 mb-6 bg-gray-700 rounded-lg p-1">
               <button
                 onClick={() => setSettingsTab('theme')}
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                   settingsTab === 'theme'
-                    ? 'bg-neutral-600 text-white'
-                    : 'text-neutral-400 hover:text-white'
+                    ? 'bg-gray-600 text-white'
+                    : 'text-gray-400 hover:text-white'
                 }`}
               >
                 <Palette size={16} className="inline mr-2" />
@@ -2108,8 +2108,8 @@ const AssetLibrary = ({
                 onClick={() => setSettingsTab('database')}
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                   settingsTab === 'database'
-                    ? 'bg-neutral-600 text-white'
-                    : 'text-neutral-400 hover:text-white'
+                    ? 'bg-gray-600 text-white'
+                    : 'text-gray-400 hover:text-white'
                 }`}
               >
                 <Database size={16} className="inline mr-2" />
@@ -2123,7 +2123,7 @@ const AssetLibrary = ({
                 {/* Dark Mode Toggle */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-neutral-700">
+                    <div className="p-2 rounded-lg bg-gray-700">
                       {darkMode ? (
                         <Moon className="w-5 h-5 text-blue-500" />
                       ) : (
@@ -2131,10 +2131,10 @@ const AssetLibrary = ({
                       )}
                     </div>
                     <div>
-                      <div className="text-neutral-300 font-medium">
+                      <div className="text-gray-300 font-medium">
                         {darkMode ? 'Dark Mode' : 'Light Mode'}
                       </div>
-                      <p className="text-xs text-neutral-500">
+                      <p className="text-xs text-gray-500">
                         {darkMode ? 'Dark mode for low-light environments' : 'Light mode for bright environments'}
                       </p>
                     </div>
@@ -2143,12 +2143,12 @@ const AssetLibrary = ({
                   <button
                     onClick={() => handleDarkModeToggle && handleDarkModeToggle(!darkMode)}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                      darkMode ? 'bg-blue-600' : 'bg-neutral-600'
+                      darkMode ? 'bg-blue-600' : 'bg-gray-600'
                     }`}
                   >
                     <span
                       className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        darkMode ? 'translate-x-6' : 'translate-x-1'
+                        darkMode ? 'trangray-x-6' : 'trangray-x-1'
                       }`}
                     />
                   </button>
@@ -2156,7 +2156,7 @@ const AssetLibrary = ({
 
                 {/* Accent Color Selection */}
                 <div>
-                  <div className="text-neutral-300 font-medium mb-3">Accent Color</div>
+                  <div className="text-gray-300 font-medium mb-3">Accent Color</div>
                   <div className="flex gap-2">
                     {[
                       { name: 'Blue', value: 'blue', color: '#3b82f6' },
@@ -2174,7 +2174,7 @@ const AssetLibrary = ({
                         className={`w-8 h-8 rounded-full border-2 transition-all ${
                           accentColor === colorOption.value
                             ? 'border-white scale-110'
-                            : 'border-neutral-600 hover:border-neutral-500'
+                            : 'border-gray-600 hover:border-gray-500'
                         }`}
                         style={{ backgroundColor: colorOption.color }}
                         title={colorOption.name}
@@ -2188,10 +2188,10 @@ const AssetLibrary = ({
                 {/* Current Status */}
                 <div>
                   <h3 className="text-white font-medium mb-4">Current Status</h3>
-                  <div className="bg-neutral-700 rounded-lg p-4">
+                  <div className="bg-gray-700 rounded-lg p-4">
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <span className="text-neutral-400">Database:</span>
+                        <span className="text-gray-400">Database:</span>
                         <div className={`font-medium ${
                           dbStatus.status === 'healthy' ? 'text-green-400' : 'text-red-400'
                         }`}>
@@ -2199,15 +2199,15 @@ const AssetLibrary = ({
                         </div>
                       </div>
                       <div>
-                        <span className="text-neutral-400">Assets:</span>
+                        <span className="text-gray-400">Assets:</span>
                         <div className="text-blue-400 font-medium">{dbStatus.assets_count}</div>
                       </div>
                       <div>
-                        <span className="text-neutral-400">Type:</span>
+                        <span className="text-gray-400">Type:</span>
                         <div className="text-purple-400 font-medium">{dbStatus.database_type || 'ArangoDB Community Edition'}</div>
                       </div>
                       <div>
-                        <span className="text-neutral-400">API:</span>
+                        <span className="text-gray-400">API:</span>
                         <div className="text-green-400 font-medium">Local</div>
                       </div>
                     </div>
@@ -2228,10 +2228,10 @@ const AssetLibrary = ({
             )}
 
             {/* Close Button */}
-            <div className="flex justify-end mt-6 pt-6 border-t border-neutral-700">
+            <div className="flex justify-end mt-6 pt-6 border-t border-gray-700">
               <button
                 onClick={() => setShowSettingsPanel(false)}
-                className="bg-neutral-700 hover:bg-neutral-600 text-white py-2 px-4 rounded-lg transition-colors"
+                className="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-lg transition-colors"
               >
                 Close
               </button>
@@ -2243,9 +2243,9 @@ const AssetLibrary = ({
       {/* Edit Modal */}
       {showEditModal && editingAsset && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 border-b border-neutral-700">
+            <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <h2 className="text-xl font-semibold text-white">Edit Asset</h2>
               <button
                 onClick={() => {
@@ -2254,7 +2254,7 @@ const AssetLibrary = ({
                   setEditFormData({});
                   setNewTagInput('');
                 }}
-                className="text-neutral-400 hover:text-white transition-colors"
+                className="text-gray-400 hover:text-white transition-colors"
               >
                 <X size={24} />
               </button>
@@ -2310,19 +2310,19 @@ const AssetLibrary = ({
                 {/* Asset Name and Thumbnail Frame */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
                       Asset Name
                     </label>
                     <input
                       type="text"
                       value={editFormData.name || ''}
                       onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
-                      className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
                       placeholder="Enter asset name"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-neutral-300 mb-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
                       Thumbnail Frame
                     </label>
                     <input
@@ -2334,7 +2334,7 @@ const AssetLibrary = ({
                           e.preventDefault();
                         }
                       }}
-                      className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-green-500"
+                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-green-500"
                       placeholder="Default frame"
                       min="1001"
                       step="1"
@@ -2345,13 +2345,13 @@ const AssetLibrary = ({
 
                 {/* Description */}
                 <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
                     Description
                   </label>
                   <textarea
                     value={editFormData.description || ''}
                     onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
-                    className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
                     placeholder="Enter asset description"
                     rows={3}
                   />
@@ -2360,14 +2360,14 @@ const AssetLibrary = ({
 
                 {/* Tags */}
                 <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
                     Tags
                   </label>
                   
                   {/* Current Tags as Bubbles */}
                   {editFormData.tags && editFormData.tags.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-2 mb-3 p-3 bg-neutral-700/50 border border-neutral-600 rounded-lg">
-                      <span className="text-xs text-neutral-400 font-medium">Current Tags:</span>
+                    <div className="flex flex-wrap items-center gap-2 mb-3 p-3 bg-gray-700/50 border border-gray-600 rounded-lg">
+                      <span className="text-xs text-gray-400 font-medium">Current Tags:</span>
                       {editFormData.tags.map((tag, index) => (
                         <div key={`${tag}-${index}`} className="flex items-center gap-1 bg-green-600/20 border border-green-500/60 rounded-full px-3 py-1 text-sm backdrop-blur-sm">
                           <span className="text-green-200 font-medium">{tag}</span>
@@ -2390,10 +2390,10 @@ const AssetLibrary = ({
                     value={newTagInput}
                     onChange={(e) => setNewTagInput(e.target.value)}
                     onKeyDown={handleAddTag}
-                    className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-green-400 focus:bg-neutral-600 transition-all"
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-green-400 focus:bg-gray-600 transition-all"
                     placeholder="Type a tag and press Enter to add..."
                   />
-                  <p className="text-xs text-neutral-400 mt-1">Press Enter to add tags. Click the X on existing tags to remove them.</p>
+                  <p className="text-xs text-gray-400 mt-1">Press Enter to add tags. Click the X on existing tags to remove them.</p>
                 </div>
 
 
@@ -2414,7 +2414,7 @@ const AssetLibrary = ({
                       setEditFormData({});
                       setNewTagInput('');
                     }}
-                    className="bg-neutral-700 hover:bg-neutral-600 text-white py-2 px-4 rounded-lg transition-colors"
+                    className="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
@@ -2445,12 +2445,12 @@ const AssetLibrary = ({
       {/* Upload Asset Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg w-full max-w-md">
-            <div className="flex items-center justify-between p-4 border-b border-neutral-700">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <h2 className="text-xl font-semibold text-white">Upload Asset</h2>
               <button
                 onClick={() => setShowUploadModal(false)}
-                className="text-neutral-400 hover:text-white transition-colors"
+                className="text-gray-400 hover:text-white transition-colors"
               >
                 <X size={24} />
               </button>
@@ -2459,7 +2459,7 @@ const AssetLibrary = ({
             <div className="p-6 space-y-4">
               {/* Asset Type Selection */}
               <div>
-                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
                   Asset Type <span className="text-red-400">*</span>
                 </label>
                 <select
@@ -2510,7 +2510,7 @@ const AssetLibrary = ({
                       }));
                     }
                   }}
-                  className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 >
                   <option value="Textures">🖼️ Textures</option>
                   <option value="HDRI">🌅 HDRI</option>
@@ -2520,7 +2520,7 @@ const AssetLibrary = ({
               {/* Texture Category Selection - Only show for Texture type */}
               {uploadData.assetType === 'Textures' && (
                 <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
                     Category <span className="text-red-400">*</span>
                   </label>
                   <select
@@ -2578,7 +2578,7 @@ const AssetLibrary = ({
                         }));
                       }
                     }}
-                    className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                   >
                     <option value="Alpha">🔳 Alpha</option>
                     <option value="Texture Sets">📦 Texture Sets</option>
@@ -2595,13 +2595,13 @@ const AssetLibrary = ({
               {/* Alpha Subcategory - Only show for Alpha textures */}
               {uploadData.assetType === 'Textures' && uploadData.subcategory === 'Alpha' && (
                 <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
                     Alpha Type <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={uploadData.alphaSubcategory}
                     onChange={(e) => setUploadData(prev => ({ ...prev, alphaSubcategory: e.target.value }))}
-                    className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                   >
                     <option value="General">🔳 General</option>
                     <option value="Grunge">🟫 Grunge</option>
@@ -2619,13 +2619,13 @@ const AssetLibrary = ({
               {/* HDRI Category Selection - Only show for HDRI type */}
               {uploadData.assetType === 'HDRI' && (
                 <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
                     Category <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={uploadData.subcategory}
                     onChange={(e) => setUploadData(prev => ({ ...prev, subcategory: e.target.value }))}
-                    className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                   >
                     <option value="Outdoor">🏞️ Outdoor</option>
                     <option value="Skies">☁️ Skies</option>
@@ -2642,7 +2642,7 @@ const AssetLibrary = ({
 
               {/* Asset Name */}
               <div>
-                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
                   Asset Name <span className="text-red-400">*</span>
                 </label>
                 <input
@@ -2650,14 +2650,14 @@ const AssetLibrary = ({
                   value={uploadData.name}
                   onChange={(e) => setUploadData(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Enter asset name..."
-                  className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               {/* Single File Path - For non-texture-set uploads */}
               {(uploadData.assetType === 'HDRI' || (uploadData.assetType === 'Textures' && uploadData.subcategory !== 'Texture Sets')) && (
                 <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
                     {uploadData.assetType === 'HDRI' ? 'EXR File Path' : 'File Path'} <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -2665,9 +2665,9 @@ const AssetLibrary = ({
                     value={uploadData.filePath}
                     onChange={(e) => setUploadData(prev => ({ ...prev, filePath: e.target.value }))}
                     placeholder={uploadData.assetType === 'HDRI' ? "/net/general/your/path/environment.exr" : "/net/general/your/path/texture.jpg"}
-                    className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-sm"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-sm"
                   />
-                  <p className="text-xs text-neutral-400 mt-1">
+                  <p className="text-xs text-gray-400 mt-1">
                     Full path to the {uploadData.assetType === 'HDRI' ? 'EXR/HDR' : 'texture'} file (supports: {uploadData.assetType === 'HDRI' ? '.exr, .hdr' : '.jpg, .png, .tiff, .exr'})<br/>
                     Available paths: /net/general/... or /net/library/library/... or /app/assets/...
                   </p>
@@ -2677,12 +2677,12 @@ const AssetLibrary = ({
               {/* Texture Set File Paths - Only show for Texture Sets */}
               {uploadData.assetType === 'Textures' && uploadData.subcategory === 'Texture Sets' && (
                 <div className="space-y-3">
-                  <h3 className="text-sm font-medium text-neutral-300 mb-2">Texture Set Files</h3>
+                  <h3 className="text-sm font-medium text-gray-300 mb-2">Texture Set Files</h3>
                   
                   <div className="grid grid-cols-1 gap-3">
                     {/* Base Color */}
                     <div>
-                      <label className="block text-xs font-medium text-neutral-400 mb-1">
+                      <label className="block text-xs font-medium text-gray-400 mb-1">
                         🎨 Base Color <span className="text-red-400">*</span>
                       </label>
                       <input
@@ -2693,14 +2693,14 @@ const AssetLibrary = ({
                           textureSetPaths: { ...prev.textureSetPaths, baseColor: e.target.value }
                         }))}
                         placeholder="/net/library/library/your/path/material_BaseColor.jpg"
-                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                        className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
                       />
                     </div>
 
                     {/* Metallic */}
                     <div>
-                      <label className="block text-xs font-medium text-neutral-400 mb-1">
-                        ⚫ Metallic <span className="text-neutral-500">(optional)</span>
+                      <label className="block text-xs font-medium text-gray-400 mb-1">
+                        ⚫ Metallic <span className="text-gray-500">(optional)</span>
                       </label>
                       <input
                         type="text"
@@ -2710,14 +2710,14 @@ const AssetLibrary = ({
                           textureSetPaths: { ...prev.textureSetPaths, metallic: e.target.value }
                         }))}
                         placeholder="/net/library/library/your/path/material_Metallic.jpg"
-                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                        className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
                       />
                     </div>
 
                     {/* Roughness */}
                     <div>
-                      <label className="block text-xs font-medium text-neutral-400 mb-1">
-                        ⚪ Roughness <span className="text-neutral-500">(optional)</span>
+                      <label className="block text-xs font-medium text-gray-400 mb-1">
+                        ⚪ Roughness <span className="text-gray-500">(optional)</span>
                       </label>
                       <input
                         type="text"
@@ -2727,14 +2727,14 @@ const AssetLibrary = ({
                           textureSetPaths: { ...prev.textureSetPaths, roughness: e.target.value }
                         }))}
                         placeholder="/net/library/library/your/path/material_Roughness.jpg"
-                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                        className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
                       />
                     </div>
 
                     {/* Normal */}
                     <div>
-                      <label className="block text-xs font-medium text-neutral-400 mb-1">
-                        🔵 Normal <span className="text-neutral-500">(optional)</span>
+                      <label className="block text-xs font-medium text-gray-400 mb-1">
+                        🔵 Normal <span className="text-gray-500">(optional)</span>
                       </label>
                       <input
                         type="text"
@@ -2744,14 +2744,14 @@ const AssetLibrary = ({
                           textureSetPaths: { ...prev.textureSetPaths, normal: e.target.value }
                         }))}
                         placeholder="/net/library/library/your/path/material_Normal.jpg"
-                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                        className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
                       />
                     </div>
 
                     {/* Opacity */}
                     <div>
-                      <label className="block text-xs font-medium text-neutral-400 mb-1">
-                        🔳 Opacity <span className="text-neutral-500">(optional)</span>
+                      <label className="block text-xs font-medium text-gray-400 mb-1">
+                        🔳 Opacity <span className="text-gray-500">(optional)</span>
                       </label>
                       <input
                         type="text"
@@ -2761,14 +2761,14 @@ const AssetLibrary = ({
                           textureSetPaths: { ...prev.textureSetPaths, opacity: e.target.value }
                         }))}
                         placeholder="/net/library/library/your/path/material_Opacity.jpg"
-                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                        className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
                       />
                     </div>
 
                     {/* Displacement */}
                     <div>
-                      <label className="block text-xs font-medium text-neutral-400 mb-1">
-                        📐 Displacement <span className="text-neutral-500">(optional)</span>
+                      <label className="block text-xs font-medium text-gray-400 mb-1">
+                        📐 Displacement <span className="text-gray-500">(optional)</span>
                       </label>
                       <input
                         type="text"
@@ -2778,12 +2778,12 @@ const AssetLibrary = ({
                           textureSetPaths: { ...prev.textureSetPaths, displacement: e.target.value }
                         }))}
                         placeholder="/net/library/library/your/path/material_Displacement.jpg"
-                        className="w-full px-3 py-1.5 bg-neutral-700 border border-neutral-600 rounded text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                        className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
                       />
                     </div>
                   </div>
 
-                  <p className="text-xs text-neutral-400">
+                  <p className="text-xs text-gray-400">
                     At least Base Color is required. All texture files will be organized in the material folder.<br/>
                     Supported formats: .jpg, .png, .tiff, .exr
                   </p>
@@ -2793,17 +2793,17 @@ const AssetLibrary = ({
               {/* Preview JPEG/PNG - Only show for HDRI */}
               {uploadData.assetType === 'HDRI' && (
                 <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">
-                    Preview JPEG/PNG <span className="text-neutral-500">(optional)</span>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Preview JPEG/PNG <span className="text-gray-500">(optional)</span>
                   </label>
                   <input
                     type="text"
                     value={uploadData.previewPath}
                     onChange={(e) => setUploadData(prev => ({ ...prev, previewPath: e.target.value }))}
                     placeholder="/net/general/your/path/preview.jpg"
-                    className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500 font-mono text-sm"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-sm"
                   />
-                  <p className="text-xs text-neutral-400 mt-1">
+                  <p className="text-xs text-gray-400 mt-1">
                     Optional preview image for web display (supports: .jpg, .jpeg, .png)<br/>
                     If not provided, no thumbnail will be generated
                   </p>
@@ -2814,13 +2814,13 @@ const AssetLibrary = ({
               {/* Texture Type Settings - Only show for Textures */}
               {uploadData.assetType === 'Textures' && (
                 <div className="space-y-3">
-                  <h3 className="text-sm font-medium text-neutral-300">Texture Properties</h3>
+                  <h3 className="text-sm font-medium text-gray-300">Texture Properties</h3>
                   
                   {/* Seamless/UV Tile Toggle */}
                   <div className="flex items-center justify-between">
                     <div>
-                      <label className="text-sm font-medium text-neutral-300">Texture Type</label>
-                      <p className="text-xs text-neutral-400">Choose how this texture should be displayed</p>
+                      <label className="text-sm font-medium text-gray-300">Texture Type</label>
+                      <p className="text-xs text-gray-400">Choose how this texture should be displayed</p>
                     </div>
                     <div className="flex items-center gap-4">
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -2830,7 +2830,7 @@ const AssetLibrary = ({
                           value="seamless"
                           checked={uploadData.textureType === 'seamless'}
                           onChange={(e) => setUploadData(prev => ({ ...prev, textureType: e.target.value }))}
-                          className="w-4 h-4 text-orange-500 bg-neutral-700 border-neutral-600 focus:ring-orange-500"
+                          className="w-4 h-4 text-orange-500 bg-gray-700 border-gray-600 focus:ring-orange-500"
                         />
                         <span className="text-sm text-orange-300">Seamless</span>
                       </label>
@@ -2841,7 +2841,7 @@ const AssetLibrary = ({
                           value="uv_tile"
                           checked={uploadData.textureType === 'uv_tile'}
                           onChange={(e) => setUploadData(prev => ({ ...prev, textureType: e.target.value }))}
-                          className="w-4 h-4 text-blue-500 bg-neutral-700 border-neutral-600 focus:ring-blue-500"
+                          className="w-4 h-4 text-blue-500 bg-gray-700 border-gray-600 focus:ring-blue-500"
                         />
                         <span className="text-sm text-blue-300">UV Tile</span>
                       </label>
@@ -2854,7 +2854,7 @@ const AssetLibrary = ({
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => setShowUploadModal(false)}
-                  className="flex-1 px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded-lg transition-colors"
+                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
@@ -2864,7 +2864,7 @@ const AssetLibrary = ({
                     (uploadData.assetType === 'Textures' && uploadData.subcategory === 'Texture Sets' 
                       ? !uploadData.textureSetPaths.baseColor.trim() 
                       : false)}
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   {uploading ? (
                     <>
@@ -2887,22 +2887,22 @@ const AssetLibrary = ({
       {/* Preview Modal */}
       {showPreview && previewAsset && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 transition-all duration-300 ease-in-out">
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg w-[75vw] max-h-[80vh] overflow-auto transform transition-all duration-300 ease-in-out scale-100">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg w-[75vw] max-h-[80vh] overflow-auto transform transition-all duration-300 ease-in-out scale-100">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 border-b border-neutral-700">
+            <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <div>
                 <h2 className="text-xl font-semibold text-white">{previewAsset.name}</h2>
                 <div className="flex items-center gap-4 mt-2">
                   {/* Hierarchy Path */}
                   <div className="flex items-center gap-2 text-sm">
                     <span className="px-2 py-1 bg-blue-600/20 text-blue-300 rounded">{previewAsset.metadata?.dimension || '3D'}</span>
-                    <span className="text-neutral-400">→</span>
+                    <span className="text-gray-400">→</span>
                     <span className="px-2 py-1 bg-purple-600/20 text-purple-300 rounded">{previewAsset.metadata?.asset_type || previewAsset.category}</span>
-                    <span className="text-neutral-400">→</span>
+                    <span className="text-gray-400">→</span>
                     <span className="px-2 py-1 bg-green-600/20 text-green-300 rounded">{previewAsset.metadata?.subcategory || 'General'}</span>
                     {(previewAsset.branded || previewAsset.metadata?.branded || previewAsset.metadata?.export_metadata?.branded) && (
                       <>
-                        <span className="text-neutral-400">→</span>
+                        <span className="text-gray-400">→</span>
                         <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded font-bold">⚠ BRANDED</span>
                       </>
                     )}
@@ -2911,7 +2911,7 @@ const AssetLibrary = ({
               </div>
               <button
                 onClick={closePreview}
-                className="text-neutral-400 hover:text-white transition-colors"
+                className="text-gray-400 hover:text-white transition-colors"
               >
                 <X size={24} />
               </button>
@@ -2924,7 +2924,7 @@ const AssetLibrary = ({
                 <div className="space-y-6">
                   {/* Full HDRI Thumbnail - Centered and Uncropped */}
                   <div className="flex justify-center">
-                    <div className="bg-neutral-700 rounded-lg overflow-hidden relative" style={{ maxWidth: '100%', maxHeight: '60vh' }}>
+                    <div className="bg-gray-700 rounded-lg overflow-hidden relative" style={{ maxWidth: '100%', maxHeight: '60vh' }}>
                       <SequenceThumbnail
                         assetId={previewAsset.id || previewAsset._key}
                         assetName={formatAssetName(previewAsset)}
@@ -2941,11 +2941,11 @@ const AssetLibrary = ({
                       <h3 className="text-lg font-medium text-white mb-2">HDRI Environment Information</h3>
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm">
                         <div>
-                          <span className="text-neutral-400">Resolution:</span>
+                          <span className="text-gray-400">Resolution:</span>
                           <div className="text-cyan-300 font-medium">{previewAsset.metadata?.resolution || previewAsset.metadata?.dimensions || 'Unknown'}</div>
                         </div>
                         <div>
-                          <span className="text-neutral-400">Format:</span>
+                          <span className="text-gray-400">Format:</span>
                           <div className="text-purple-300 font-medium">
                             {previewAsset.paths?.template_file 
                               ? previewAsset.paths.template_file.split('.').pop()?.toUpperCase() || 'Unknown'
@@ -2953,7 +2953,7 @@ const AssetLibrary = ({
                           </div>
                         </div>
                         <div>
-                          <span className="text-neutral-400">Size:</span>
+                          <span className="text-gray-400">Size:</span>
                           <div className="text-white">
                             {(() => {
                               const totalBytes = previewAsset.file_sizes?.estimated_total_size || 0;
@@ -2965,26 +2965,26 @@ const AssetLibrary = ({
                           </div>
                         </div>
                         <div>
-                          <span className="text-neutral-400">Environment:</span>
+                          <span className="text-gray-400">Environment:</span>
                           <div className="text-green-400 font-medium">{previewAsset.hierarchy?.subcategory || previewAsset.metadata?.subcategory || 'Studio'}</div>
                         </div>
                         <div>
-                          <span className="text-neutral-400">ID:</span>
+                          <span className="text-gray-400">ID:</span>
                           <div className="text-white font-mono text-xs">{previewAsset.id}</div>
                         </div>
                         <div>
-                          <span className="text-neutral-400">Created:</span>
+                          <span className="text-gray-400">Created:</span>
                           <div className="text-white">{previewAsset.created_at ? new Date(previewAsset.created_at).toLocaleDateString() : 'Unknown'}</div>
                         </div>
                         {previewAsset.artist && (
                           <div>
-                            <span className="text-neutral-400">Artist:</span>
+                            <span className="text-gray-400">Artist:</span>
                             <div className="text-blue-300 font-medium">{previewAsset.artist}</div>
                           </div>
                         )}
                         {(previewAsset.branded || previewAsset.metadata?.branded) && (
                           <div>
-                            <span className="text-neutral-400">Status:</span>
+                            <span className="text-gray-400">Status:</span>
                             <div className="text-yellow-300 font-bold">⚠ BRANDED</div>
                           </div>
                         )}
@@ -2995,7 +2995,7 @@ const AssetLibrary = ({
                     {previewAsset.description && (
                       <div>
                         <h3 className="text-lg font-medium text-white mb-2">Description</h3>
-                        <div className="bg-neutral-700/50 rounded-lg p-3">
+                        <div className="bg-gray-700/50 rounded-lg p-3">
                           <p className="text-white text-sm leading-relaxed">{previewAsset.description}</p>
                         </div>
                       </div>
@@ -3075,7 +3075,7 @@ const AssetLibrary = ({
                             alert('❌ Failed to copy asset folder path. Please check console for details.');
                           }
                         }}
-                        className="w-full bg-neutral-600 hover:bg-neutral-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                        className="w-full bg-gray-600 hover:bg-gray-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
                       >
                         <Copy size={20} />
                         Copy Asset Folder Path
@@ -3087,7 +3087,7 @@ const AssetLibrary = ({
                 /* Houdini Assets Preview Layout - Side by side with full aspect ratio */
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Large Preview Image with Interactive Sequence - Full aspect ratio */}
-                  <div className="bg-neutral-700 rounded-lg overflow-hidden relative flex items-center justify-center" style={{ minHeight: '400px' }}>
+                  <div className="bg-gray-700 rounded-lg overflow-hidden relative flex items-center justify-center" style={{ minHeight: '400px' }}>
                     <SequenceThumbnail
                       assetId={previewAsset.id || previewAsset._key}
                       assetName={formatAssetName(previewAsset)}
@@ -3103,19 +3103,19 @@ const AssetLibrary = ({
                       <h3 className="text-lg font-medium text-white mb-2">Asset Information</h3>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-neutral-400">Asset Name:</span>
+                          <span className="text-gray-400">Asset Name:</span>
                           <span className="text-white font-medium text-lg">{formatAssetNameJSX(previewAsset)}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-neutral-400">ID:</span>
+                          <span className="text-gray-400">ID:</span>
                           <span className="text-white font-mono">{previewAsset.id}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-neutral-400">Category:</span>
+                          <span className="text-gray-400">Category:</span>
                           <span className="text-white">{previewAsset.category}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-neutral-400">Size:</span>
+                          <span className="text-gray-400">Size:</span>
                           <span className="text-white">
                             {(() => {
                               const totalBytes = previewAsset.file_sizes?.estimated_total_size || 0;
@@ -3133,7 +3133,7 @@ const AssetLibrary = ({
                     {previewAsset.description && (
                       <div>
                         <h3 className="text-lg font-medium text-white mb-2">Description</h3>
-                        <div className="bg-neutral-700/50 rounded-lg p-3">
+                        <div className="bg-gray-700/50 rounded-lg p-3">
                           <p className="text-white text-sm leading-relaxed">{previewAsset.description}</p>
                         </div>
                       </div>
@@ -3146,31 +3146,31 @@ const AssetLibrary = ({
                         <div className="space-y-1 text-sm">
                           {(previewAsset.metadata.hierarchy?.render_engine || previewAsset.metadata.render_engine) && (
                             <div className="flex justify-between">
-                              <span className="text-neutral-400">Render Engine:</span>
+                              <span className="text-gray-400">Render Engine:</span>
                               <span className="text-white">{previewAsset.metadata.hierarchy?.render_engine || previewAsset.metadata.render_engine}</span>
                             </div>
                           )}
                           {previewAsset.artist && (
                             <div className="flex justify-between">
-                              <span className="text-neutral-400">Artist:</span>
+                              <span className="text-gray-400">Artist:</span>
                               <span className="text-white">{previewAsset.artist}</span>
                             </div>
                           )}
                           {previewAsset.metadata.houdini_version && (
                             <div className="flex justify-between">
-                              <span className="text-neutral-400">Houdini Version:</span>
+                              <span className="text-gray-400">Houdini Version:</span>
                               <span className="text-white">{previewAsset.metadata.houdini_version}</span>
                             </div>
                           )}
                           {previewAsset.metadata.export_time && (
                             <div className="flex justify-between">
-                              <span className="text-neutral-400">Export Time:</span>
+                              <span className="text-gray-400">Export Time:</span>
                               <span className="text-white">{new Date(previewAsset.metadata.export_time).toLocaleString()}</span>
                             </div>
                           )}
                           {previewAsset.created_at && (
                             <div className="flex justify-between">
-                              <span className="text-neutral-400">Created:</span>
+                              <span className="text-gray-400">Created:</span>
                               <span className="text-white">{new Date(previewAsset.created_at).toLocaleDateString()}</span>
                             </div>
                           )}
@@ -3291,7 +3291,7 @@ const AssetLibrary = ({
                             alert('❌ Failed to open folder. Please check console for details.');
                           }
                         }}
-                        className="w-full bg-neutral-600 hover:bg-neutral-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                        className="w-full bg-gray-600 hover:bg-gray-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
                       >
                         <FolderOpen size={20} />
                         Open in Explorer
@@ -3303,7 +3303,7 @@ const AssetLibrary = ({
                 /* Regular Preview Layout for Texture assets */
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Large Preview Image with Interactive Sequence - Texture specific or regular */}
-                  <div className="aspect-square bg-neutral-700 rounded-lg overflow-hidden relative">
+                  <div className="aspect-square bg-gray-700 rounded-lg overflow-hidden relative">
                     {(previewAsset.asset_type === 'Textures' || previewAsset.category === 'Textures') ? (
                       <TexturePreviewImage asset={previewAsset} />
                     ) : (
@@ -3330,19 +3330,19 @@ const AssetLibrary = ({
                     <h3 className="text-lg font-medium text-white mb-2">Asset Information</h3>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-neutral-400">Asset Name:</span>
+                        <span className="text-gray-400">Asset Name:</span>
                         <span className="text-white font-medium text-lg">{formatAssetNameJSX(previewAsset)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-neutral-400">ID:</span>
+                        <span className="text-gray-400">ID:</span>
                         <span className="text-white font-mono">{previewAsset.id}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-neutral-400">Category:</span>
+                        <span className="text-gray-400">Category:</span>
                         <span className="text-white">{previewAsset.category}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-neutral-400">Size:</span>
+                        <span className="text-gray-400">Size:</span>
                         <span className="text-white">
                           {(() => {
                             const totalBytes = previewAsset.file_sizes?.estimated_total_size || 0;
@@ -3360,7 +3360,7 @@ const AssetLibrary = ({
                   {!(previewAsset.asset_type === 'Textures' || previewAsset.category === 'Textures') && previewAsset.description && (
                     <div>
                       <h3 className="text-lg font-medium text-white mb-2">Description</h3>
-                      <div className="bg-neutral-700/50 rounded-lg p-3">
+                      <div className="bg-gray-700/50 rounded-lg p-3">
                         <p className="text-white text-sm leading-relaxed">{previewAsset.description}</p>
                       </div>
                     </div>
@@ -3374,12 +3374,12 @@ const AssetLibrary = ({
                       <div className="space-y-1 text-sm">
                         {(previewAsset.metadata?.resolution || previewAsset.resolution) && (
                           <div className="flex justify-between">
-                            <span className="text-neutral-400">Resolution:</span>
+                            <span className="text-gray-400">Resolution:</span>
                             <span className="text-white">{previewAsset.metadata?.resolution || previewAsset.resolution}</span>
                           </div>
                         )}
                         <div className="flex justify-between">
-                          <span className="text-neutral-400">Format:</span>
+                          <span className="text-gray-400">Format:</span>
                           <span className="text-white">{(() => {
                             // Check for format in metadata first
                             if (previewAsset.metadata?.file_format) {
@@ -3418,7 +3418,7 @@ const AssetLibrary = ({
                         </div>
                         {previewAsset.created_at && (
                           <div className="flex justify-between">
-                            <span className="text-neutral-400">Created:</span>
+                            <span className="text-gray-400">Created:</span>
                             <span className="text-white">{new Date(previewAsset.created_at).toLocaleDateString()}</span>
                           </div>
                         )}
@@ -3432,31 +3432,31 @@ const AssetLibrary = ({
                         <div className="space-y-1 text-sm">
                           {(previewAsset.metadata.hierarchy?.render_engine || previewAsset.metadata.render_engine) && (
                             <div className="flex justify-between">
-                              <span className="text-neutral-400">Render Engine:</span>
+                              <span className="text-gray-400">Render Engine:</span>
                               <span className="text-white">{previewAsset.metadata.hierarchy?.render_engine || previewAsset.metadata.render_engine}</span>
                             </div>
                           )}
                           {previewAsset.artist && (
                             <div className="flex justify-between">
-                              <span className="text-neutral-400">Artist:</span>
+                              <span className="text-gray-400">Artist:</span>
                               <span className="text-white">{previewAsset.artist}</span>
                             </div>
                           )}
                           {previewAsset.metadata.houdini_version && (
                             <div className="flex justify-between">
-                              <span className="text-neutral-400">Houdini Version:</span>
+                              <span className="text-gray-400">Houdini Version:</span>
                               <span className="text-white">{previewAsset.metadata.houdini_version}</span>
                             </div>
                           )}
                           {previewAsset.metadata.export_time && (
                             <div className="flex justify-between">
-                              <span className="text-neutral-400">Export Time:</span>
+                              <span className="text-gray-400">Export Time:</span>
                               <span className="text-white">{new Date(previewAsset.metadata.export_time).toLocaleString()}</span>
                             </div>
                           )}
                           {previewAsset.created_at && (
                             <div className="flex justify-between">
-                              <span className="text-neutral-400">Created:</span>
+                              <span className="text-gray-400">Created:</span>
                               <span className="text-white">{new Date(previewAsset.created_at).toLocaleDateString()}</span>
                             </div>
                           )}
@@ -3581,14 +3581,14 @@ const AssetLibrary = ({
                         <div className="flex gap-2 pt-2">
                           <button 
                             onClick={() => copyVersionId(previewAsset)}
-                            className="flex-1 bg-neutral-600 hover:bg-neutral-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
+                            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
                           >
                             <Copy size={14} />
                             Copy Version ID
                           </button>
                           <button 
                             onClick={() => copyVariantId(previewAsset)}
-                            className="flex-1 bg-neutral-600 hover:bg-neutral-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
+                            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
                           >
                             <Copy size={14} />
                             Copy Variant ID
@@ -3612,7 +3612,7 @@ const AssetLibrary = ({
           <div className="max-w-4xl mx-auto">
             <div className="text-center mb-8">
               <h2 className="text-4xl font-bold text-white mb-4">Choose Asset Type</h2>
-              <p className="text-neutral-400 text-lg">Select the type of assets you want to browse</p>
+              <p className="text-gray-400 text-lg">Select the type of assets you want to browse</p>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -3620,7 +3620,7 @@ const AssetLibrary = ({
                 <button
                   key={dimension.id}
                   onClick={() => handleDimensionSelect(dimension.id)}
-                  className="group bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-blue-500 rounded-xl p-8 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 hover:scale-105"
+                  className="group bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 rounded-xl p-8 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 hover:scale-105"
                 >
                   <div className="text-8xl mb-6 group-hover:scale-110 transition-transform duration-300">
                     {dimension.icon}
@@ -3628,7 +3628,7 @@ const AssetLibrary = ({
                   <h3 className="text-3xl font-bold text-white mb-3 group-hover:text-blue-400 transition-colors">
                     {dimension.name}
                   </h3>
-                  <p className="text-neutral-400 group-hover:text-neutral-300 transition-colors">
+                  <p className="text-gray-400 group-hover:text-gray-300 transition-colors">
                     {dimension.description}
                   </p>
                   <div className="mt-6 inline-flex items-center gap-2 text-blue-400 group-hover:text-blue-300 transition-colors">
@@ -3643,7 +3643,7 @@ const AssetLibrary = ({
             <div className="flex justify-center mt-12">
               <button
                 onClick={handleJumpToLibrary}
-                className="group bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-blue-500 text-white px-6 py-2 rounded-xl font-medium transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:scale-105"
+                className="group bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 text-white px-6 py-2 rounded-xl font-medium transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:scale-105"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-base group-hover:text-blue-400 transition-colors">Jump To Library</span>
@@ -3659,7 +3659,7 @@ const AssetLibrary = ({
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-8">
               <h2 className="text-4xl font-bold text-white mb-4">{selectedDimension} Categories</h2>
-              <p className="text-neutral-400 text-lg">Choose a category to browse {selectedDimension} assets</p>
+              <p className="text-gray-400 text-lg">Choose a category to browse {selectedDimension} assets</p>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -3667,7 +3667,7 @@ const AssetLibrary = ({
                 <button
                   key={category.id}
                   onClick={() => handleCategorySelect(category.id)}
-                  className="group bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-blue-500 rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 hover:scale-105"
+                  className="group bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 hover:scale-105"
                 >
                   <div className="text-6xl mb-4 group-hover:scale-110 transition-transform duration-300">
                     {category.icon}
@@ -3675,7 +3675,7 @@ const AssetLibrary = ({
                   <h3 className="text-2xl font-bold text-white mb-2 group-hover:text-blue-400 transition-colors">
                     {category.name}
                   </h3>
-                  <p className="text-neutral-400 group-hover:text-neutral-300 transition-colors text-sm">
+                  <p className="text-gray-400 group-hover:text-gray-300 transition-colors text-sm">
                     {category.description}
                   </p>
                   <div className="mt-4 inline-flex items-center gap-2 text-blue-400 group-hover:text-blue-300 transition-colors">
@@ -3690,7 +3690,7 @@ const AssetLibrary = ({
             <div className="flex justify-center mt-12">
               <button
                 onClick={handleJumpToLibrary}
-                className="group bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-blue-500 text-white px-6 py-2 rounded-xl font-medium transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:scale-105"
+                className="group bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 text-white px-6 py-2 rounded-xl font-medium transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:scale-105"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-base group-hover:text-blue-400 transition-colors">Jump To Library</span>
@@ -3706,7 +3706,7 @@ const AssetLibrary = ({
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-8">
               <h2 className="text-4xl font-bold text-white mb-4">{selectedCategory} Subcategories</h2>
-              <p className="text-neutral-400 text-lg">Choose a subcategory from {selectedCategory}</p>
+              <p className="text-gray-400 text-lg">Choose a subcategory from {selectedCategory}</p>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -3714,7 +3714,7 @@ const AssetLibrary = ({
                 <button
                   key={subcategory.id}
                   onClick={() => handleSubcategorySelect(subcategory.name)}
-                  className="group bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-blue-500 rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 hover:scale-105"
+                  className="group bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 hover:scale-105"
                 >
                   <div className="text-5xl mb-4 group-hover:scale-110 transition-transform duration-300">
                     {subcategory.icon}
@@ -3722,7 +3722,7 @@ const AssetLibrary = ({
                   <h3 className="text-xl font-bold text-white mb-2 group-hover:text-blue-400 transition-colors">
                     {subcategory.name}
                   </h3>
-                  <p className="text-neutral-400 group-hover:text-neutral-300 transition-colors text-sm">
+                  <p className="text-gray-400 group-hover:text-gray-300 transition-colors text-sm">
                     {subcategory.description}
                   </p>
                   <div className="mt-4 inline-flex items-center gap-2 text-blue-400 group-hover:text-blue-300 transition-colors">
@@ -3737,7 +3737,7 @@ const AssetLibrary = ({
             <div className="flex justify-center mt-12">
               <button
                 onClick={handleJumpToLibrary}
-                className="group bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-blue-500 text-white px-6 py-2 rounded-xl font-medium transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:scale-105"
+                className="group bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 text-white px-6 py-2 rounded-xl font-medium transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10 hover:scale-105"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-base group-hover:text-blue-400 transition-colors">Jump To Library</span>
@@ -3753,57 +3753,59 @@ const AssetLibrary = ({
           <>
             {loading ? (
               <div className="flex items-center justify-center h-64">
-                <div className="text-neutral-400 text-lg">Loading assets...</div>
+                <div className="text-gray-400 text-lg">Loading assets...</div>
               </div>
             ) : (
               <>
-                <div className="bg-neutral-800 rounded-lg p-4 mb-6">
+                <div className="bg-gray-700 rounded-xl p-4 mb-6 border border-gray-600/30 shadow-lg">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-8 text-sm text-neutral-400">
-                      <span>{filteredAssets.length} assets found</span>
-                      <span>Path: /net/library/atlaslib/{selectedDimension}/{selectedCategory}{selectedSubcategory ? `/${selectedSubcategory}` : ''}</span>
-                      <span>Database: {dbStatus.database_type || 'JSON'}</span>
+                    <div className="flex items-center gap-8 text-sm text-gray-300">
+                      <span className="font-medium text-gray-200">{filteredAssets.length} assets found</span>
+                      <span>Path: <span className="text-gray-400 font-mono text-xs">/net/library/atlaslib/{selectedDimension}/{selectedCategory}{selectedSubcategory ? `/${selectedSubcategory}` : ''}</span></span>
+                      <span>Database: <span className="text-emerald-400 font-medium">{dbStatus.database_type || 'JSON'}</span></span>
                       {(selectedFilters.creator !== 'all' || selectedFilters.showVariants || selectedFilters.showVersions || !selectedFilters.showBranded) && (
-                        <span className="text-blue-400">Filtered</span>
+                        <span className="text-cyan-400 font-medium">Filtered</span>
                       )}
                     </div>
                     
                     {/* Badge Size Slider */}
-                    <div className="flex items-center gap-3 text-sm text-neutral-400">
-                      <span>Badge Size:</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs">S</span>
+                    <div className="flex items-center gap-3 text-sm text-gray-300">
+                      <span className="font-medium">Badge Size:</span>
+                      <div className="flex items-center gap-3 bg-gray-600/30 px-3 py-2 rounded-lg border border-gray-500/20">
+                        <span className="text-xs font-medium text-gray-400">S</span>
                         <input
                           type="range"
                           min="0"
                           max="100"
                           value={badgeSize}
                           onChange={(e) => setBadgeSize(Number(e.target.value))}
-                          className="w-20 h-1 bg-neutral-600 rounded-lg appearance-none cursor-pointer"
+                          className="w-24 h-1.5 rounded-full appearance-none cursor-pointer"
                           style={{
-                            background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${badgeSize}%, #525252 ${badgeSize}%, #525252 100%)`
+                            background: `linear-gradient(to right, #06b6d4 0%, #06b6d4 ${badgeSize}%, #475569 ${badgeSize}%, #475569 100%)`
                           }}
                         />
                         <style>{`
                           input[type="range"]::-webkit-slider-thumb {
                             appearance: none;
-                            width: 16px;
-                            height: 16px;
+                            width: 18px;
+                            height: 18px;
                             border-radius: 50%;
-                            background: #3b82f6;
+                            background: linear-gradient(135deg, #06b6d4, #0891b2);
                             cursor: pointer;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                            box-shadow: 0 4px 8px rgba(6, 182, 212, 0.3);
+                            border: 2px solid rgba(255,255,255,0.2);
                           }
                           input[type="range"]::-moz-range-thumb {
-                            width: 16px;
-                            height: 16px;
+                            width: 18px;
+                            height: 18px;
                             border-radius: 50%;
-                            background: #3b82f6;
+                            background: linear-gradient(135deg, #06b6d4, #0891b2);
                             cursor: pointer;
-                            border: none;
+                            border: 2px solid rgba(255,255,255,0.2);
+                            box-shadow: 0 4px 8px rgba(6, 182, 212, 0.3);
                           }
                         `}</style>
-                        <span className="text-xs">L</span>
+                        <span className="text-xs font-medium text-gray-400">L</span>
                       </div>
                     </div>
                   </div>
@@ -3828,8 +3830,8 @@ const AssetLibrary = ({
                     })}
                   </div>
                 ) : (
-                  <div className="bg-neutral-800 rounded-lg overflow-hidden">
-                    <div className="grid grid-cols-12 gap-4 p-4 border-b border-neutral-700 text-sm font-medium text-neutral-400">
+                  <div className="bg-gray-800 rounded-lg overflow-hidden">
+                    <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-700 text-sm font-medium text-gray-400">
                       <div className="col-span-4">Name</div>
                       <div className="col-span-2">Category</div>
                       <div className="col-span-2">Artist</div>
@@ -3840,7 +3842,7 @@ const AssetLibrary = ({
                       <div key={asset.id} className={`grid grid-cols-12 gap-4 p-4 border-b transition-colors ${
                         asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded
                           ? 'border-yellow-600/30 bg-yellow-600/5 hover:bg-yellow-600/8'
-                          : 'border-neutral-700 hover:bg-neutral-750'
+                          : 'border-gray-700 hover:bg-gray-750'
                       }`}>
                         <div className="col-span-4">
                           <div className="flex items-center gap-2">
@@ -3849,11 +3851,11 @@ const AssetLibrary = ({
                               <span className="text-yellow-500 text-sm font-bold">⚠</span>
                             )}
                           </div>
-                          <div className="text-sm text-neutral-400 truncate">{asset.description || 'No description'}</div>
+                          <div className="text-sm text-gray-400 truncate">{asset.description || 'No description'}</div>
                         </div>
                         <div className="col-span-2 text-blue-400">{asset.category}</div>
                         <div className="col-span-2 text-green-400">{asset.artist || 'Unknown'}</div>
-                        <div className="col-span-2 text-neutral-300">
+                        <div className="col-span-2 text-gray-300">
                           {Math.round(Object.values(asset.file_sizes || {}).reduce((sum, size) => sum + (typeof size === 'number' ? size : 0), 0) / 1024)} KB
                         </div>
                         <div className="col-span-2 flex gap-2">
@@ -3878,15 +3880,15 @@ const AssetLibrary = ({
 
                 {filteredAssets.length === 0 && !loading && (
                   <div className="text-center py-12">
-                    <div className="text-neutral-400 text-lg mb-2">No assets found</div>
-                    <div className="text-neutral-500">
+                    <div className="text-gray-400 text-lg mb-2">No assets found</div>
+                    <div className="text-gray-500">
                       Try adjusting your filters or sync the database
                     </div>
                   </div>
                 )}
 
-                <div className="mt-8 pt-4 border-t border-neutral-700">
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm text-neutral-400">
+                <div className="mt-8 pt-4 border-t border-gray-700">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm text-gray-400">
                     <div>
                       <span className="block">Total Files:</span>
                       <span className="text-white font-medium">{filteredAssets.length}</span>

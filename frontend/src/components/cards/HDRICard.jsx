@@ -44,7 +44,7 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
 
   const getFileSize = () => {
     const totalBytes = asset.file_sizes?.estimated_total_size || 0;
-    if (totalBytes === 0) return <span className="text-neutral-500">Calc...</span>;
+    if (totalBytes === 0) return <span className="text-gray-500">Calc...</span>;
     
     if (totalBytes < 1024 * 1024) {
       return `${Math.round(totalBytes / 1024)} KB`;
@@ -79,12 +79,12 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
 
   return (
     <div className="group relative">
-      <div className={`bg-neutral-800 rounded-lg overflow-hidden border transition-all duration-200 hover:shadow-lg relative ${
+      <div className={`bg-gray-800 rounded-lg overflow-hidden border transition-all duration-200 hover:shadow-lg relative ${
         asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded 
           ? 'border-yellow-600/60 hover:border-yellow-500/80 hover:shadow-yellow-500/5 ring-1 ring-yellow-600/10' 
           : 'border-orange-500/30 hover:border-orange-400 hover:shadow-orange-500/10'
       }`}>
-        <div className="aspect-square bg-neutral-700 relative overflow-hidden hdri-thumbnail-container">
+        <div className="aspect-square bg-gray-700 relative overflow-hidden hdri-thumbnail-container">
           {/* HDRI Thumbnail with aspect ratio preservation and zoom/pan functionality */}
           <style>{`
             .hdri-thumbnail-container img {
@@ -139,7 +139,7 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
         {/* Asset Information Badge */}
         <div className="absolute bottom-0 left-0 right-0 z-10">
           {/* Expanded Content Panel */}
-          <div className={`bg-neutral-800/95 border-t border-l border-r border-neutral-700 shadow-lg transition-all duration-300 ease-in-out overflow-hidden ${
+          <div className={`bg-gray-800/95 border-t border-l border-r border-gray-700 shadow-lg transition-all duration-300 ease-in-out overflow-hidden ${
             isExpanded ? 'max-h-48 opacity-100' : 'max-h-0 opacity-0'
           }`}>
             <div className="p-3">
@@ -149,30 +149,30 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
               </div>
               
               {/* HDRI Specific Fields - 2x3 layout */}
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-neutral-500">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
                 <div>
-                  <span className="text-neutral-400">Type:</span>
+                  <span className="text-gray-400">Type:</span>
                   <div className="text-orange-400 font-medium">HDRI Map</div>
                 </div>
                 <div>
-                  <span className="text-neutral-400">Resolution:</span>
+                  <span className="text-gray-400">Resolution:</span>
                   <div className="text-cyan-300 font-medium truncate">{getResolution()}</div>
                 </div>
                 <div>
-                  <span className="text-neutral-400">Format:</span>
+                  <span className="text-gray-400">Format:</span>
                   <div className="text-purple-300 font-medium">{getFormat()}</div>
                 </div>
                 <div>
-                  <span className="text-neutral-400">Size:</span>
-                  <div className="text-neutral-300">{getFileSize()}</div>
+                  <span className="text-gray-400">Size:</span>
+                  <div className="text-gray-300">{getFileSize()}</div>
                 </div>
                 <div>
-                  <span className="text-neutral-400">Environment:</span>
+                  <span className="text-gray-400">Environment:</span>
                   <div className="text-green-400 font-medium">{getEnvironmentType()}</div>
                 </div>
                 <div>
-                  <span className="text-neutral-400">Created:</span>
-                  <div className="text-neutral-300 font-medium truncate">{getCreatedDate()}</div>
+                  <span className="text-gray-400">Created:</span>
+                  <div className="text-gray-300 font-medium truncate">{getCreatedDate()}</div>
                 </div>
               </div>
             </div>

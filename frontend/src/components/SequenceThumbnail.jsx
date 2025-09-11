@@ -225,8 +225,8 @@ const SequenceThumbnail = ({
   // Render loading state
   if (loading) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-neutral-700">
-        <div className="text-neutral-500 text-sm">Loading...</div>
+      <div className="w-full h-full flex items-center justify-center bg-gray-700">
+        <div className="text-gray-500 text-sm">Loading...</div>
       </div>
     );
   }
@@ -235,7 +235,7 @@ const SequenceThumbnail = ({
   if (error || !sequenceData) {
     return (
       <div 
-        className="text-neutral-500 text-3xl flex items-center justify-center w-full h-full cursor-pointer"
+        className="text-gray-500 text-3xl flex items-center justify-center w-full h-full cursor-pointer"
         onClick={onClick}
       >
         {fallbackIcon}
@@ -317,7 +317,7 @@ const SequenceThumbnail = ({
       
       {/* Fallback icon */}
       <div 
-        className="text-neutral-500 text-3xl flex items-center justify-center w-full h-full"
+        className="text-gray-500 text-3xl flex items-center justify-center w-full h-full"
         style={{ display: frameUrl ? 'none' : 'flex' }}
       >
         {fallbackIcon}

@@ -17,12 +17,12 @@
 
 /* Dark theme variables */
 .dark {
-  --bg-primary: #2a2a2a;
-  --bg-secondary: #3a3a3a;
-  --bg-tertiary: #4a4a4a;
+  --bg-primary: #1f1f1f;
+  --bg-secondary: #2a2a2a;
+  --bg-tertiary: #353535;
   --text-primary: #f8fafc;
   --text-secondary: #cbd5e1;
-  --border-color: #5a5a5a;
+  --border-color: #404040;
 }
 
 /* Light theme variables */
@@ -37,7 +37,7 @@
 
 /* Apply theme colors to main elements */
 .dark .bg-neutral-900 {
-  background-color: #2a2a2a !important;
+  background-color: #1f1f1f !important;
 }
 
 .light .bg-neutral-900 {
@@ -45,7 +45,7 @@
 }
 
 .dark .bg-neutral-800 {
-  background-color: #3a3a3a !important;
+  background-color: #2a2a2a !important;
 }
 
 .light .bg-neutral-800 {
@@ -53,11 +53,7 @@
 }
 
 .dark .bg-neutral-700 {
-  background-color: #4a4a4a !important;
-}
-
-.light .bg-neutral-700 {
-  background-color: #d1d5db !important;
+  background-color: #353535 !important;
 }
 
 /* Text colors for themes */
@@ -105,6 +101,49 @@
 
 .focus\:ring-blue-500:focus {
   --tw-ring-color: var(--accent-primary) !important;
+}
+
+/* Override gray backgrounds in AssetLibrary to pure dark grey */
+.dark .bg-gray-900 {
+  background-color: #1f1f1f !important;
+}
+
+.dark .bg-gray-800 {
+  background-color: #2a2a2a !important;
+}
+
+.dark .bg-gray-700 {
+  background-color: #353535 !important;
+}
+
+.dark .bg-gray-600 {
+  background-color: #404040 !important;
+}
+
+.dark .bg-gray-500 {
+  background-color: #4a4a4a !important;
+}
+
+/* Override border colors */
+.dark .border-gray-700 {
+  border-color: #404040 !important;
+}
+
+.dark .border-gray-600 {
+  border-color: #4a4a4a !important;
+}
+
+.dark .border-gray-500 {
+  border-color: #555555 !important;
+}
+
+.dark .border-gray-400 {
+  border-color: #606060 !important;
+}
+
+/* Add light theme override for bg-neutral-700 */
+.light .bg-neutral-700 {
+  background-color: #d1d5db !important;
 }
 
 /* Smooth transitions for theme changes */
