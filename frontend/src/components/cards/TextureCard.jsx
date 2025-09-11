@@ -193,14 +193,8 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
           const data = await response.json();
           console.log('🖼️ Texture images loaded:', data);
           
-          // Sort images by texture type priority
-          const sortedImages = (data.images || []).sort((a, b) => {
-            const abbrA = getTextureTypeAbbr(a.filename || '');
-            const abbrB = getTextureTypeAbbr(b.filename || '');
-            return TEXTURE_PRIORITY[abbrA] - TEXTURE_PRIORITY[abbrB];
-          });
-          
-          setImageList(sortedImages);
+          // Images are now naturally sorted alphabetically by priority prefix
+          setImageList(data.images || []);
           setImageResolutions(data.resolutions || {});
         }
       } catch (error) {
@@ -231,9 +225,40 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
     return getResolution();
   };
 
-  // Map texture types to their abbreviations
+  // Map texture types to their abbreviations using metadata texture slots
   const getTextureTypeAbbr = (filename) => {
+    // First check if we have texture slot metadata (more reliable)
+    if (asset.metadata?.texture_set_info?.texture_slots) {
+      const slots = asset.metadata.texture_set_info.texture_slots;
+      // Find which slot this filename corresponds to
+      for (const [slotKey, slotInfo] of Object.entries(slots)) {
+        if (filename.includes(`_${slotInfo.position}_${slotInfo.type}_`)) {
+          // Map slot types to abbreviations
+          const typeMap = {
+            'BaseColor': 'BC',
+            'Metallic': 'M', 
+            'Roughness': 'R',
+            'Normal': 'N',
+            'Opacity': 'O',
+            'Displacement': 'D'
+          };
+          return typeMap[slotInfo.type] || '?';
+        }
+      }
+    }
+    
     const lower = filename.toLowerCase();
+    
+    // New format: AssetName_Position_Type_thumbnail.png
+    if (lower.includes('_0_basecolor')) return 'BC';
+    if (lower.includes('_1_metallic')) return 'M';
+    if (lower.includes('_2_roughness')) return 'R';
+    if (lower.includes('_3_normal')) return 'N';
+    if (lower.includes('_4_opacity')) return 'O';
+    if (lower.includes('_5_displacement')) return 'D';
+    
+    // Fallback to content-based detection for backward compatibility
+    if (lower.includes('displacement') || lower.includes('height') || lower.includes('disp')) return 'D';
     if (lower.includes('base') && lower.includes('color')) return 'BC';
     if (lower.includes('albedo')) return 'BC';
     if (lower.includes('alpha')) return 'A';
@@ -241,7 +266,6 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
     if (lower.includes('roughness')) return 'R';
     if (lower.includes('normal')) return 'N';
     if (lower.includes('opacity')) return 'O';
-    if (lower.includes('displacement') || lower.includes('height')) return 'D';
     return '?';
   };
 
@@ -258,13 +282,12 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
 
   // Get texture types from image list in priority order
   const getTextureTypes = () => {
-    return imageList
-      .map((img, index) => ({
-        abbr: getTextureTypeAbbr(img.filename || ''),
-        index: index,
-        filename: img.filename
-      }))
-      .sort((a, b) => TEXTURE_PRIORITY[a.abbr] - TEXTURE_PRIORITY[b.abbr]);
+    // Since imageList is already sorted by priority, just map with current index
+    return imageList.map((img, index) => ({
+      abbr: getTextureTypeAbbr(img.filename || ''),
+      index: index,
+      filename: img.filename
+    }));
   };
 
   // No longer needed - removing version display
@@ -309,15 +332,30 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
               </div>
             </div>
           ) : (
-            // Use standard SequenceThumbnail for single images or fallback
-            <SequenceThumbnail
-              assetId={asset.id || asset._key}
-              assetName={formatAssetName(asset)}
-              thumbnailFrame={asset.thumbnail_frame}
-              fallbackIcon="🖼️"
-              onClick={() => openPreview(asset)}
-              disableScrubbing={true}
-            />
+            // Direct image with proper aspect ratio for single textures
+            <div className="w-full h-full relative">
+              <img
+                src={`http://localhost:8000/thumbnails/${asset.id || asset._key}`}
+                alt={formatAssetName(asset)}
+                className="w-full h-full object-cover cursor-pointer"
+                style={{
+                  objectFit: 'cover',
+                  objectPosition: 'center'
+                }}
+                onClick={() => openPreview(asset)}
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
+              />
+              {/* Fallback icon */}
+              <div 
+                className="text-neutral-500 text-3xl flex items-center justify-center w-full h-full absolute inset-0"
+                style={{ display: 'none' }}
+              >
+                🖼️
+              </div>
+            </div>
           )}
           
           {/* Category Badge - Top Left */}

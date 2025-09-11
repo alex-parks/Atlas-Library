@@ -118,14 +118,8 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
           const data = await response.json();
           console.log('🖼️ Texture images loaded for badge:', data);
           
-          // Sort images by texture type priority
-          const sortedImages = (data.images || []).sort((a, b) => {
-            const abbrA = getTextureTypeAbbr(a.filename || '');
-            const abbrB = getTextureTypeAbbr(b.filename || '');
-            return TEXTURE_PRIORITY[abbrA] - TEXTURE_PRIORITY[abbrB];
-          });
-          
-          setImageList(sortedImages);
+          // Backend now returns images in correct position order (BC-M-R-N-O-D)
+          setImageList(data.images || []);
           setImageResolutions(data.resolutions || {});
         }
       } catch (error) {
@@ -170,9 +164,40 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
     return getResolution();
   };
 
-  // Map texture types to their abbreviations
+  // Map texture types to their abbreviations using metadata texture slots
   const getTextureTypeAbbr = (filename) => {
+    // First check if we have texture slot metadata (more reliable)
+    if (asset.metadata?.texture_set_info?.texture_slots) {
+      const slots = asset.metadata.texture_set_info.texture_slots;
+      // Find which slot this filename corresponds to
+      for (const [slotKey, slotInfo] of Object.entries(slots)) {
+        if (filename.includes(`_${slotInfo.position}_${slotInfo.type}_`)) {
+          // Map slot types to abbreviations
+          const typeMap = {
+            'BaseColor': 'BC',
+            'Metallic': 'M', 
+            'Roughness': 'R',
+            'Normal': 'N',
+            'Opacity': 'O',
+            'Displacement': 'D'
+          };
+          return typeMap[slotInfo.type] || '?';
+        }
+      }
+    }
+    
     const lower = filename.toLowerCase();
+    
+    // New format: AssetName_Position_Type_thumbnail.png
+    if (lower.includes('_0_basecolor')) return 'BC';
+    if (lower.includes('_1_metallic')) return 'M';
+    if (lower.includes('_2_roughness')) return 'R';
+    if (lower.includes('_3_normal')) return 'N';
+    if (lower.includes('_4_opacity')) return 'O';
+    if (lower.includes('_5_displacement')) return 'D';
+    
+    // Fallback to content-based detection for backward compatibility
+    if (lower.includes('displacement') || lower.includes('height') || lower.includes('disp')) return 'D';
     if (lower.includes('base') && lower.includes('color')) return 'BC';
     if (lower.includes('albedo')) return 'BC';
     if (lower.includes('alpha')) return 'A';
@@ -180,30 +205,17 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
     if (lower.includes('roughness')) return 'R';
     if (lower.includes('normal')) return 'N';
     if (lower.includes('opacity')) return 'O';
-    if (lower.includes('displacement') || lower.includes('height')) return 'D';
     return '?';
   };
 
-  // Define texture priority order
-  const TEXTURE_PRIORITY = {
-    'BC': 1, // Base Color
-    'M': 2,  // Metallic
-    'R': 3,  // Roughness
-    'N': 4,  // Normal
-    'O': 5,  // Opacity
-    'D': 6,  // Displacement
-    '?': 99  // Unknown
-  };
-
-  // Get texture types from image list in priority order
+  // Get texture types in the correct display order (BC-M-R-N-O-D)
   const getTextureTypes = () => {
-    return imageList
-      .map((img, index) => ({
-        abbr: getTextureTypeAbbr(img.filename || ''),
-        index: index,
-        filename: img.filename
-      }))
-      .sort((a, b) => TEXTURE_PRIORITY[a.abbr] - TEXTURE_PRIORITY[b.abbr]);
+    // Since the backend now returns images sorted by position, we can use them directly
+    return imageList.map((img, index) => ({
+      abbr: getTextureTypeAbbr(img.filename || ''),
+      index: index, // This is now the correct position index
+      filename: img.filename
+    }));
   };
 
   return (

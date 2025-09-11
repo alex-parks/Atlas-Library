@@ -84,13 +84,22 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
           ? 'border-yellow-600/60 hover:border-yellow-500/80 hover:shadow-yellow-500/5 ring-1 ring-yellow-600/10' 
           : 'border-orange-500/30 hover:border-orange-400 hover:shadow-orange-500/10'
       }`}>
-        <div className="aspect-square bg-neutral-700 relative overflow-hidden">
+        <div className="aspect-square bg-neutral-700 relative overflow-hidden hdri-thumbnail-container">
+          {/* HDRI Thumbnail with aspect ratio preservation and zoom/pan functionality */}
+          <style>{`
+            .hdri-thumbnail-container img {
+              object-fit: cover !important;
+              object-position: center !important;
+            }
+          `}</style>
           <SequenceThumbnail
             assetId={asset.id || asset._key}
             assetName={formatAssetName(asset)}
             thumbnailFrame={asset.thumbnail_frame}
             fallbackIcon="🌅"
             onClick={() => openPreview(asset)}
+            className="w-full h-full"
+            hideZoomMessage={true}
           />
           
 

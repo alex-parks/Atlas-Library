@@ -2798,7 +2798,7 @@ const AssetLibrary = ({
       {/* Preview Modal */}
       {showPreview && previewAsset && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 transition-all duration-300 ease-in-out">
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg w-[75vw] h-[80vh] overflow-auto transform transition-all duration-300 ease-in-out scale-100">
+          <div className="bg-neutral-800 border border-neutral-700 rounded-lg w-[75vw] max-h-[80vh] overflow-auto transform transition-all duration-300 ease-in-out scale-100">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-neutral-700">
               <div>
@@ -2830,28 +2830,410 @@ const AssetLibrary = ({
 
             {/* Modal Body */}
             <div className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Large Preview Image with Interactive Sequence - Texture specific or regular */}
-                <div className="aspect-square bg-neutral-700 rounded-lg overflow-hidden relative">
-                  {(previewAsset.asset_type === 'Textures' || previewAsset.category === 'Textures') ? (
-                    <TexturePreviewImage asset={previewAsset} />
-                  ) : (
+              {/* Custom HDRI Preview Modal Layout */}
+              {(previewAsset.asset_type === 'HDRIs' || previewAsset.category === 'HDRIs' || previewAsset.asset_type === 'HDRI') ? (
+                <div className="space-y-6">
+                  {/* Full HDRI Thumbnail - Centered and Uncropped */}
+                  <div className="flex justify-center">
+                    <div className="bg-neutral-700 rounded-lg overflow-hidden relative" style={{ maxWidth: '100%', maxHeight: '60vh' }}>
+                      <SequenceThumbnail
+                        assetId={previewAsset.id || previewAsset._key}
+                        assetName={formatAssetName(previewAsset)}
+                        thumbnailFrame={previewAsset.thumbnail_frame}
+                        fallbackIcon="🌅"
+                        className="w-auto h-auto max-w-full max-h-[60vh] object-contain"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* HDRI Information Below Image */}
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-lg font-medium text-white mb-2">HDRI Environment Information</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <span className="text-neutral-400">Resolution:</span>
+                          <div className="text-cyan-300 font-medium">{previewAsset.metadata?.resolution || previewAsset.metadata?.dimensions || 'Unknown'}</div>
+                        </div>
+                        <div>
+                          <span className="text-neutral-400">Format:</span>
+                          <div className="text-purple-300 font-medium">
+                            {previewAsset.paths?.template_file 
+                              ? previewAsset.paths.template_file.split('.').pop()?.toUpperCase() || 'Unknown'
+                              : previewAsset.metadata?.file_format?.toUpperCase() || 'EXR'}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-neutral-400">Size:</span>
+                          <div className="text-white">
+                            {(() => {
+                              const totalBytes = previewAsset.file_sizes?.estimated_total_size || 0;
+                              if (totalBytes === 0) return 'Calculating...';
+                              if (totalBytes < 1024 * 1024) return `${Math.round(totalBytes / 1024)} KB`;
+                              else if (totalBytes < 1024 * 1024 * 1024) return `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
+                              else return `${(totalBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+                            })()}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-neutral-400">Environment:</span>
+                          <div className="text-green-400 font-medium">{previewAsset.hierarchy?.subcategory || previewAsset.metadata?.subcategory || 'Studio'}</div>
+                        </div>
+                        <div>
+                          <span className="text-neutral-400">ID:</span>
+                          <div className="text-white font-mono text-xs">{previewAsset.id}</div>
+                        </div>
+                        <div>
+                          <span className="text-neutral-400">Created:</span>
+                          <div className="text-white">{previewAsset.created_at ? new Date(previewAsset.created_at).toLocaleDateString() : 'Unknown'}</div>
+                        </div>
+                        {previewAsset.artist && (
+                          <div>
+                            <span className="text-neutral-400">Artist:</span>
+                            <div className="text-blue-300 font-medium">{previewAsset.artist}</div>
+                          </div>
+                        )}
+                        {(previewAsset.branded || previewAsset.metadata?.branded) && (
+                          <div>
+                            <span className="text-neutral-400">Status:</span>
+                            <div className="text-yellow-300 font-bold">⚠ BRANDED</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Description if available */}
+                    {previewAsset.description && (
+                      <div>
+                        <h3 className="text-lg font-medium text-white mb-2">Description</h3>
+                        <div className="bg-neutral-700/50 rounded-lg p-3">
+                          <p className="text-white text-sm leading-relaxed">{previewAsset.description}</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Action Buttons for HDRI */}
+                    <div className="space-y-3 pt-4">
+                      <button 
+                        onClick={async () => {
+                          try {
+                            // Get the HDRI file path from the asset's copied_files (should be the .exr/.hdr file)
+                            const copiedFiles = previewAsset.paths?.copied_files || previewAsset.metadata?.paths?.copied_files || [];
+                            if (copiedFiles.length === 0) {
+                              alert('❌ HDRI file path not found in asset data');
+                              return;
+                            }
+                            
+                            // Get the first (and should be only) HDRI file path
+                            let hdriPath = copiedFiles[0];
+                            
+                            // Convert from container path to network path if needed
+                            if (hdriPath.startsWith('/app/assets/')) {
+                              hdriPath = hdriPath.replace('/app/assets/', '/net/library/atlaslib/');
+                            }
+                            
+                            // Copy to clipboard
+                            await navigator.clipboard.writeText(hdriPath);
+                            
+                            // Show success message
+                            let message = `✅ HDRI file path copied to clipboard!\n\n`;
+                            message += `🌅 Asset: ${previewAsset.name}\n`;
+                            message += `📁 HDRI File: ${hdriPath}`;
+                            
+                            alert(message);
+                            console.log('📋 HDRI file path copied to clipboard:', hdriPath);
+                            
+                          } catch (error) {
+                            console.error('Error copying HDRI path:', error);
+                            alert('❌ Failed to copy HDRI path. Please check console for details.');
+                          }
+                        }}
+                        className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                      >
+                        <Copy size={20} />
+                        Copy HDRI Path
+                      </button>
+                      
+                      <button 
+                        onClick={async () => {
+                          try {
+                            // Get the asset folder path
+                            let folderPath = previewAsset.paths?.folder_path || previewAsset.paths?.asset_folder || previewAsset.folder_path;
+                            
+                            if (!folderPath) {
+                              alert('❌ Asset folder path not found in asset data');
+                              return;
+                            }
+                            
+                            // Convert from container path to network path if needed
+                            if (folderPath.startsWith('/app/assets/')) {
+                              folderPath = folderPath.replace('/app/assets/', '/net/library/atlaslib/');
+                            }
+                            
+                            // Copy to clipboard
+                            await navigator.clipboard.writeText(folderPath);
+                            
+                            // Show success message
+                            let message = `✅ Asset folder path copied to clipboard!\n\n`;
+                            message += `🌅 Asset: ${previewAsset.name}\n`;
+                            message += `📂 Folder: ${folderPath}`;
+                            
+                            alert(message);
+                            console.log('📋 Asset folder path copied to clipboard:', folderPath);
+                            
+                          } catch (error) {
+                            console.error('Error copying asset folder path:', error);
+                            alert('❌ Failed to copy asset folder path. Please check console for details.');
+                          }
+                        }}
+                        className="w-full bg-neutral-600 hover:bg-neutral-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                      >
+                        <Copy size={20} />
+                        Copy Asset Folder Path
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (previewAsset.asset_type === 'Assets' || previewAsset.category === 'Assets' || previewAsset.metadata?.asset_type === 'Assets') ? (
+                /* Houdini Assets Preview Layout - Side by side with full aspect ratio */
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Large Preview Image with Interactive Sequence - Full aspect ratio */}
+                  <div className="bg-neutral-700 rounded-lg overflow-hidden relative flex items-center justify-center" style={{ minHeight: '400px' }}>
                     <SequenceThumbnail
                       assetId={previewAsset.id || previewAsset._key}
                       assetName={formatAssetName(previewAsset)}
                       thumbnailFrame={previewAsset.thumbnail_frame}
-                      fallbackIcon={
-                        previewAsset.category === 'Characters' ? '🎭' :
-                        previewAsset.category === 'Props' ? '📦' :
-                        previewAsset.category === 'Environments' ? '🏞️' :
-                        previewAsset.category === 'Vehicles' ? '🚗' :
-                        previewAsset.category === 'Effects' ? '✨' :
-                        '🎨'
-                      }
-                      className="w-full h-full object-cover"
+                      fallbackIcon="🎨"
+                      className="w-full h-full object-contain"
                     />
-                  )}
+                  </div>
+
+                  {/* Houdini Asset Details */}
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-lg font-medium text-white mb-2">Asset Information</h3>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-neutral-400">Asset Name:</span>
+                          <span className="text-white font-medium text-lg">{formatAssetNameJSX(previewAsset)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-neutral-400">ID:</span>
+                          <span className="text-white font-mono">{previewAsset.id}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-neutral-400">Category:</span>
+                          <span className="text-white">{previewAsset.category}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-neutral-400">Size:</span>
+                          <span className="text-white">
+                            {(() => {
+                              const totalBytes = previewAsset.file_sizes?.estimated_total_size || 0;
+                              if (totalBytes === 0) return 'Calculating...';
+                              if (totalBytes < 1024 * 1024) return `${Math.round(totalBytes / 1024)} KB`;
+                              else if (totalBytes < 1024 * 1024 * 1024) return `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
+                              else return `${(totalBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+                            })()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Description for Houdini Assets */}
+                    {previewAsset.description && (
+                      <div>
+                        <h3 className="text-lg font-medium text-white mb-2">Description</h3>
+                        <div className="bg-neutral-700/50 rounded-lg p-3">
+                          <p className="text-white text-sm leading-relaxed">{previewAsset.description}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Technical Details for Houdini Assets */}
+                    {previewAsset.metadata && (
+                      <div>
+                        <h3 className="text-lg font-medium text-white mb-2">Technical Details</h3>
+                        <div className="space-y-1 text-sm">
+                          {(previewAsset.metadata.hierarchy?.render_engine || previewAsset.metadata.render_engine) && (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-400">Render Engine:</span>
+                              <span className="text-white">{previewAsset.metadata.hierarchy?.render_engine || previewAsset.metadata.render_engine}</span>
+                            </div>
+                          )}
+                          {previewAsset.artist && (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-400">Artist:</span>
+                              <span className="text-white">{previewAsset.artist}</span>
+                            </div>
+                          )}
+                          {previewAsset.metadata.houdini_version && (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-400">Houdini Version:</span>
+                              <span className="text-white">{previewAsset.metadata.houdini_version}</span>
+                            </div>
+                          )}
+                          {previewAsset.metadata.export_time && (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-400">Export Time:</span>
+                              <span className="text-white">{new Date(previewAsset.metadata.export_time).toLocaleString()}</span>
+                            </div>
+                          )}
+                          {previewAsset.created_at && (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-400">Created:</span>
+                              <span className="text-white">{new Date(previewAsset.created_at).toLocaleDateString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Action Buttons for Houdini Assets */}
+                    <div className="space-y-3 pt-4">
+                      <button 
+                        onClick={async () => {
+                          try {
+                            console.log('Getting template path for asset:', previewAsset.id);
+                            
+                            const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/copy-template-path`, {
+                              method: 'POST'
+                            });
+                            
+                            if (response.ok) {
+                              const result = await response.json();
+                              console.log('Template path response:', result);
+                              
+                              // Copy to clipboard
+                              try {
+                                await navigator.clipboard.writeText(result.template_path);
+                                
+                                // Show success message
+                                let message = `✅ Template path copied to clipboard!\n\n`;
+                                message += `🎨 Asset: ${result.asset_name}\n`;
+                                message += `📄 Template: ${result.template_path}\n`;
+                                message += `📋 Status: ${result.template_exists ? 'Template exists' : 'Template may not exist'}`;
+                                
+                                alert(message);
+                                console.log('📋 Template path copied to clipboard:', result.template_path);
+                                
+                              } catch (clipboardError) {
+                                console.log('Could not copy to clipboard:', clipboardError);
+                                alert(`❌ Could not copy to clipboard, but here's the path:\n\n${result.template_path}`);
+                              }
+                            } else {
+                              const error = await response.json();
+                              console.log('Failed to get template path:', error);
+                              alert(`❌ Failed to get template path: ${error.detail || 'Unknown error'}\n\nAsset ID: ${previewAsset.id}`);
+                            }
+                          } catch (error) {
+                            console.error('Error getting template path:', error);
+                            alert('❌ Failed to get template path. Please check console for details.');
+                          }
+                        }}
+                        className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                      >
+                        <Copy size={20} />
+                        Copy Template Path
+                      </button>
+                      
+                      <button 
+                        onClick={async () => {
+                          try {
+                            console.log('Getting folder path for asset:', previewAsset.id);
+                            
+                            const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
+                              method: 'POST'
+                            });
+                            
+                            if (response.ok) {
+                              const result = await response.json();
+                              console.log('Folder path response:', result);
+                              
+                              // Copy to clipboard
+                              try {
+                                await navigator.clipboard.writeText(result.folder_path);
+                                
+                                // Show success message
+                                let message = `✅ Folder path copied to clipboard!\n\n`;
+                                message += `🎨 Asset: ${result.asset_name}\n`;
+                                message += `📂 Path: ${result.folder_path}\n`;
+                                message += `📋 Status: ${result.folder_exists ? 'Folder exists' : 'Folder may not exist'}`;
+                                
+                                alert(message);
+                                console.log('📋 Folder path copied to clipboard:', result.folder_path);
+                                
+                              } catch (clipboardError) {
+                                console.log('Could not copy to clipboard:', clipboardError);
+                                alert(`❌ Could not copy to clipboard, but here's the path:\n\n${result.folder_path}`);
+                              }
+                            } else {
+                              const error = await response.json();
+                              console.log('Failed to get folder path:', error);
+                              alert(`❌ Failed to get folder path: ${error.detail || 'Unknown error'}\n\nAsset ID: ${previewAsset.id}`);
+                            }
+                          } catch (error) {
+                            console.error('Error getting folder path:', error);
+                            alert('❌ Failed to get folder path. Please check console for details.');
+                          }
+                        }}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                      >
+                        <Copy size={20} />
+                        Copy Folder Path
+                      </button>
+                      
+                      <button
+                        onClick={async () => {
+                          try {
+                            const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/open-folder`, {
+                              method: 'POST'
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (response.ok) {
+                              alert(`✅ ${result.message || 'Folder opened successfully!'}`);
+                            } else {
+                              alert(`❌ ${result.detail || 'Failed to open folder'}`);
+                            }
+                          } catch (error) {
+                            console.error('Error opening folder:', error);
+                            alert('❌ Failed to open folder. Please check console for details.');
+                          }
+                        }}
+                        className="w-full bg-neutral-600 hover:bg-neutral-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                      >
+                        <FolderOpen size={20} />
+                        Open in Explorer
+                      </button>
+                    </div>
+                  </div>
                 </div>
+              ) : (
+                /* Regular Preview Layout for Texture assets */
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Large Preview Image with Interactive Sequence - Texture specific or regular */}
+                  <div className="aspect-square bg-neutral-700 rounded-lg overflow-hidden relative">
+                    {(previewAsset.asset_type === 'Textures' || previewAsset.category === 'Textures') ? (
+                      <TexturePreviewImage asset={previewAsset} />
+                    ) : (
+                      <SequenceThumbnail
+                        assetId={previewAsset.id || previewAsset._key}
+                        assetName={formatAssetName(previewAsset)}
+                        thumbnailFrame={previewAsset.thumbnail_frame}
+                        fallbackIcon={
+                          previewAsset.category === 'Characters' ? '🎭' :
+                          previewAsset.category === 'Props' ? '📦' :
+                          previewAsset.category === 'Environments' ? '🏞️' :
+                          previewAsset.category === 'Vehicles' ? '🚗' :
+                          previewAsset.category === 'Effects' ? '✨' :
+                          '🎨'
+                        }
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                  </div>
 
                 {/* Asset Details */}
                 <div className="space-y-4">
@@ -3128,6 +3510,7 @@ const AssetLibrary = ({
                   </div>
                 </div>
               </div>
+              )}
             </div>
           </div>
         </div>

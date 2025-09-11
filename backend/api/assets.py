@@ -1430,8 +1430,37 @@ async def get_texture_images(asset_id: str):
                 logger.warning(f"⚠️ No Assets or Thumbnail folder found in {folder}")
                 return {"images": [], "resolutions": {}}
         
-        # Sort images by filename
-        images.sort(key=lambda x: x['filename'])
+        # Sort images by position in filename (Position 0, 1, 2, etc.)
+        def get_texture_position(image_info):
+            filename = image_info['filename'].lower()
+            # Check for position pattern: Name_Position_Type_
+            parts = filename.split('_')
+            for i, part in enumerate(parts):
+                if part.isdigit() and i > 0:  # Position should not be the first part
+                    # Check if next part matches texture type
+                    if i + 1 < len(parts):
+                        next_part = parts[i + 1]
+                        if any(tex_type in next_part for tex_type in ['basecolor', 'metallic', 'roughness', 'normal', 'opacity', 'displacement']):
+                            return int(part)
+            
+            # Fallback to texture type priority for files without position numbers
+            texture_priority = {
+                'basecolor': 0, 'albedo': 0, 'diffuse': 0,
+                'metallic': 1, 'metalness': 1, 'metal': 1,
+                'roughness': 2, 'rough': 2,
+                'normal': 3, 'bump': 3,
+                'opacity': 4, 'alpha': 4, 'transparency': 4,
+                'displacement': 5, 'height': 5, 'disp': 5
+            }
+            
+            for tex_type, position in texture_priority.items():
+                if tex_type in filename:
+                    return position
+            
+            # Unknown texture types go last
+            return 99
+            
+        images.sort(key=get_texture_position)
         
         logger.info(f"📸 Found {len(images)} texture images for asset {asset_id}")
         
@@ -1972,11 +2001,46 @@ def convert_texture_exr_to_png(exr_path, png_path):
             if result.returncode != 0:
                 raise Exception("oiiotool not found in PATH")
             
-            # Use oiiotool WITHOUT color conversion but resize to 1024x1024 for thumbnails
+            # Get original dimensions first to calculate proper resize without upscaling
+            info_cmd = ['oiiotool', '--info', str(exr_path)]
+            info_result = subprocess.run(info_cmd, capture_output=True, text=True, timeout=10)
+            
+            resize_arg = '1024x1024'  # Default fallback
+            if info_result.returncode == 0:
+                import re
+                match = re.search(r'(\d+)\s*x\s*(\d+)', info_result.stdout)
+                if match:
+                    original_width = int(match.group(1))
+                    original_height = int(match.group(2))
+                    max_dimension = 1024
+                    
+                    # Don't downscale if either dimension is already below 1028
+                    if original_width <= 1028 or original_height <= 1028:
+                        # Keep original size - one dimension is already small enough
+                        new_width = original_width
+                        new_height = original_height
+                        scale_factor = 1.0
+                        resize_arg = f'{new_width}x{new_height}'
+                        logger.info(f"📏 EXR: Keeping original size - one dimension already <= 1028")
+                    else:
+                        # Calculate scale factor to never upscale
+                        scale_factor = min(
+                            max_dimension / original_width,
+                            max_dimension / original_height,
+                            1.0  # Never exceed original size
+                        )
+                        
+                        new_width = int(original_width * scale_factor)
+                        new_height = int(original_height * scale_factor)
+                        resize_arg = f'{new_width}x{new_height}'
+                    
+                    logger.info(f"📏 EXR oiiotool: {original_width}x{original_height} -> {resize_arg} (scale: {scale_factor:.3f})")
+
+            # Use oiiotool WITHOUT color conversion but resize appropriately
             cmd = [
                 'oiiotool',
                 str(exr_path),
-                '--resize', '1024x1024',
+                '--resize', resize_arg,
                 '-o', str(png_path)
             ]
             
@@ -2034,6 +2098,20 @@ def convert_texture_exr_to_png(exr_path, png_path):
         return False, {}
 
 # Helper functions for texture processing
+def get_texture_position_and_type_from_slot(texture_slot_key):
+    """Get position and type for texture thumbnails based on the upload slot the user chose"""
+    # Map texture slots to position and display name
+    slot_mapping = {
+        'baseColor': ('0', 'BaseColor'),
+        'metallic': ('1', 'Metallic'), 
+        'roughness': ('2', 'Roughness'),
+        'normal': ('3', 'Normal'),
+        'opacity': ('4', 'Opacity'),
+        'displacement': ('5', 'Displacement')
+    }
+    
+    return slot_mapping.get(texture_slot_key, ('9', 'Unknown'))
+
 async def generate_texture_thumbnail(source_file, thumbnail_file):
     """Generate thumbnail for texture files, handling EXR conversion WITHOUT tone mapping"""
     try:
@@ -2051,8 +2129,8 @@ async def generate_texture_thumbnail(source_file, thumbnail_file):
                 return False
                 
         elif source_path.suffix.lower() in {'.jpg', '.jpeg', '.png', '.tiff', '.tif'}:
-            # Resize all texture images to 1024x1024 for thumbnails
-            logger.info(f"🔧 Resizing texture image to 1024x1024: {source_path} -> {thumbnail_file}")
+            # Resize texture images preserving aspect ratio, max dimension 1024
+            logger.info(f"🔧 Resizing texture image (preserving aspect ratio): {source_path} -> {thumbnail_file}")
             
             # Check original file size first
             try:
@@ -2064,10 +2142,44 @@ async def generate_texture_thumbnail(source_file, thumbnail_file):
             try:
                 # First try with oiiotool for better quality
                 import subprocess
+                # Get original dimensions first to calculate proper resize without upscaling
+                info_cmd = ['oiiotool', '--info', str(source_path)]
+                info_result = subprocess.run(info_cmd, capture_output=True, text=True, timeout=10)
+                
+                resize_arg = '1024x1024'  # Default fallback
+                if info_result.returncode == 0:
+                    import re
+                    match = re.search(r'(\d+)\s*x\s*(\d+)', info_result.stdout)
+                    if match:
+                        original_width = int(match.group(1))
+                        original_height = int(match.group(2))
+                        max_dimension = 1024
+                        
+                        # Don't downscale if either dimension is already below 1028
+                        if original_width <= 1028 or original_height <= 1028:
+                            # Keep original size - one dimension is already small enough
+                            new_width = original_width
+                            new_height = original_height
+                            scale_factor = 1.0
+                            logger.info(f"📏 Keeping original size - one dimension already <= 1028")
+                        else:
+                            # Calculate scale factor to never upscale, only downscale large images
+                            scale_factor = min(
+                                max_dimension / original_width,
+                                max_dimension / original_height,
+                                1.0  # Never exceed original size
+                            )
+                            
+                            new_width = int(original_width * scale_factor)
+                            new_height = int(original_height * scale_factor)
+                        resize_arg = f'{new_width}x{new_height}'
+                        
+                        logger.info(f"📏 oiiotool: {original_width}x{original_height} -> {resize_arg} (scale: {scale_factor:.3f})")
+                
                 cmd = [
                     'oiiotool',
                     str(source_path),
-                    '--resize', '1024x1024',
+                    '--resize', resize_arg,
                     '--colorconvert', 'sRGB', 'sRGB',
                     '-o', str(thumbnail_file)
                 ]
@@ -2098,9 +2210,33 @@ async def generate_texture_thumbnail(source_file, thumbnail_file):
                             img = img.convert('RGB')
                             logger.info(f"🎨 Converted image mode from {img.mode} to RGB")
                         
-                        # Resize to exactly 1024x1024 (may distort aspect ratio slightly)
-                        img = img.resize((1024, 1024), Image.Resampling.LANCZOS)
-                        logger.info(f"📏 Resized image to: {img.size}")
+                        # Calculate new size preserving aspect ratio, max dimension 1024 (never upscale)
+                        original_width, original_height = img.size
+                        max_dimension = 1024
+                        
+                        # Don't downscale if either dimension is already below 1028
+                        if original_width <= 1028 or original_height <= 1028:
+                            # Keep original size - one dimension is already small enough
+                            new_width = original_width
+                            new_height = original_height
+                            scale_factor = 1.0
+                            logger.info(f"📏 PIL: Keeping original size - one dimension already <= 1028")
+                        else:
+                            # Find the scaling factor needed - only downscale, never upscale
+                            scale_factor = min(
+                                max_dimension / original_width,
+                                max_dimension / original_height,
+                                1.0  # Never exceed original size (no upscaling)
+                            )
+                            
+                            new_width = int(original_width * scale_factor)
+                            new_height = int(original_height * scale_factor)
+                        
+                        logger.info(f"📏 Scale factor: {scale_factor:.3f} ({original_width}x{original_height} -> {new_width}x{new_height})")
+                        
+                        # Resize preserving aspect ratio
+                        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                        logger.info(f"📏 Resized image from {original_width}x{original_height} to: {img.size} (aspect ratio preserved)")
                         
                         # Save as PNG for thumbnails
                         img.save(thumbnail_file, 'PNG', optimize=True)
@@ -2348,27 +2484,44 @@ async def upload_asset(upload_request: UploadAssetRequest):
             copied_files.append(convert_to_network_path(str(target_file)))
             logger.info(f"📋 Copied HDRI file to Asset folder: {source_file} -> {target_file}")
             
-            # Handle HDRI preview/thumbnail
+            # First, extract resolution from the EXR HDRI file (this is the real resolution)
+            try:
+                resolution_info = await extract_image_info(target_file)
+                logger.info(f"📏 Extracted EXR resolution: {resolution_info}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to extract EXR resolution, using defaults: {e}")
+                resolution_info = {
+                    "width": 4096,
+                    "height": 2048,
+                    "resolution": "4096x2048",
+                    "channels": 4
+                }
+
+            # Handle HDRI preview/thumbnail - downscale to match EXR resolution
             thumbnail_file = thumbnail_folder / f"{clean_asset_name}_thumbnail.png"
             if upload_request.preview_path:
                 try:
                     preview_source = Path(upload_request.preview_path)
                     if preview_source.exists():
-                        shutil.copy2(preview_source, thumbnail_file)
-                        thumbnails_created.append(str(thumbnail_file))
-                        logger.info(f"✅ Copied HDRI preview: {preview_source} -> {thumbnail_file}")
+                        # Get EXR dimensions for target resize
+                        exr_width = resolution_info.get("width", 4096)
+                        exr_height = resolution_info.get("height", 2048)
                         
-                        # Extract resolution from preview file
+                        # Resize the preview/thumbnail to match EXR resolution
                         from PIL import Image
-                        with Image.open(thumbnail_file) as img:
-                            resolution_info = {
-                                "width": img.width,
-                                "height": img.height,
-                                "resolution": f"{img.width}x{img.height}",
-                                "channels": len(img.getbands()) if hasattr(img, 'getbands') else 4
-                            }
+                        with Image.open(preview_source) as preview_img:
+                            logger.info(f"📏 Original preview size: {preview_img.size}")
+                            
+                            # Resize to match EXR dimensions exactly
+                            resized_preview = preview_img.resize((exr_width, exr_height), Image.Resampling.LANCZOS)
+                            resized_preview.save(thumbnail_file, 'PNG', optimize=True)
+                            
+                            logger.info(f"✅ Resized HDRI preview to match EXR: {preview_source} -> {thumbnail_file} ({exr_width}x{exr_height})")
+                            
+                        thumbnails_created.append(str(thumbnail_file))
+                        
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to copy HDRI preview: {e}")
+                    logger.warning(f"⚠️ Failed to process HDRI preview: {e}")
         
         elif upload_request.asset_type == 'Textures':
             # Texture Logic: Handle single files or texture sets
@@ -2398,9 +2551,11 @@ async def upload_asset(upload_request: UploadAssetRequest):
                                 copied_files.append(convert_to_network_path(str(target_file)))
                                 logger.info(f"📋 Copied {display_name} texture: {source_path} -> {target_file}")
                                 
-                                # Generate thumbnail for each texture (use original filename without extension)
-                                original_filename_base = source_path.stem  # Get filename without extension
-                                thumbnail_file = thumbnail_folder / f"{original_filename_base}_thumbnail.png"
+                                # Generate thumbnail with asset name, position, and type based on upload slot
+                                position, texture_type = get_texture_position_and_type_from_slot(key)
+                                # Clean asset name - replace spaces with underscores
+                                clean_asset_name_for_thumbnail = clean_asset_name.replace(' ', '_')
+                                thumbnail_file = thumbnail_folder / f"{clean_asset_name_for_thumbnail}_{position}_{texture_type}_thumbnail.png"
                                 if await generate_texture_thumbnail(target_file, thumbnail_file):
                                     thumbnails_created.append(str(thumbnail_file))
                                     
@@ -2419,9 +2574,12 @@ async def upload_asset(upload_request: UploadAssetRequest):
                 copied_files.append(convert_to_network_path(str(target_file)))
                 logger.info(f"📋 Copied texture file to Asset folder: {source_file} -> {target_file}")
                 
-                # Generate thumbnail for single texture (use original filename without extension)
-                original_filename_base = source_file.stem  # Get filename without extension
-                thumbnail_file = thumbnail_folder / f"{original_filename_base}_thumbnail.png"
+                # For single textures, default to BaseColor (position 0) - user should specify if different
+                # TODO: Add texture_slot field to UploadAssetRequest for single textures
+                position, texture_type = get_texture_position_and_type_from_slot('baseColor')  # Default to baseColor
+                # Clean asset name - replace spaces with underscores
+                clean_asset_name_for_thumbnail = clean_asset_name.replace(' ', '_')
+                thumbnail_file = thumbnail_folder / f"{clean_asset_name_for_thumbnail}_{position}_{texture_type}_thumbnail.png"
                 if await generate_texture_thumbnail(target_file, thumbnail_file):
                     thumbnails_created.append(str(thumbnail_file))
                     resolution_info = await extract_image_info(target_file)
@@ -2481,10 +2639,22 @@ async def upload_asset(upload_request: UploadAssetRequest):
             metadata["tags"] = texture_tags
             
             if upload_request.subcategory == 'Texture Sets' and upload_request.texture_set_paths:
+                # Add texture slot mapping for frontend
+                texture_slots = {}
+                for key, file_path in upload_request.texture_set_paths.items():
+                    if file_path and file_path.strip():
+                        position, texture_type = get_texture_position_and_type_from_slot(key)
+                        texture_slots[key] = {
+                            "position": position,
+                            "type": texture_type,
+                            "original_filename": Path(file_path).name if file_path else None
+                        }
+                
                 metadata["texture_set_info"] = {
                     "type": "texture_set",
                     "provided_paths": upload_request.texture_set_paths,
-                    "file_count": len([p for p in upload_request.texture_set_paths.values() if p and p.strip()])
+                    "file_count": len([p for p in upload_request.texture_set_paths.values() if p and p.strip()]),
+                    "texture_slots": texture_slots
                 }
         
         # Add resolution information if available

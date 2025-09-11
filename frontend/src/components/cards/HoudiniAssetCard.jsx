@@ -90,7 +90,13 @@ const HoudiniAssetCard = ({ asset, formatAssetName, formatAssetNameJSX, openPrev
           ? 'border-yellow-600/60 hover:border-yellow-500/80 hover:shadow-yellow-500/5 ring-1 ring-yellow-600/10' 
           : 'border-neutral-700 hover:border-blue-500 hover:shadow-blue-500/10'
       }`}>
-        <div className="aspect-square bg-neutral-700 relative overflow-hidden">
+        <div className="aspect-square bg-neutral-700 relative overflow-hidden houdini-thumbnail-container">
+          <style>{`
+            .houdini-thumbnail-container img {
+              object-fit: cover !important;
+              object-position: center !important;
+            }
+          `}</style>
           <SequenceThumbnail
             assetId={asset.id || asset._key}
             assetName={formatAssetName(asset)}
