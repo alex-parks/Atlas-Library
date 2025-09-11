@@ -1,15 +1,30 @@
 // Texture Asset Card Component
 // Full card component for uploaded Texture assets
 import React, { useState, useEffect } from 'react';
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Edit, Eye, Copy, Trash2 } from 'lucide-react';
 import SequenceThumbnail from '../SequenceThumbnail';
 
-const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) => {
+const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, onEditAsset, onCopyAsset }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isClickedOpen, setIsClickedOpen] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imageList, setImageList] = useState([]);
   const [imageResolutions, setImageResolutions] = useState({});
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showDropdown && !event.target.closest('.texture-card-dropdown-menu')) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDropdown]);
 
   const handleBannerHover = () => {
     if (!isClickedOpen) {
@@ -102,7 +117,7 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
     if (uvTile) return 'UV Tile';
     if (seamless) return 'Seamless';
     
-    return 'Standard';
+    return null;
   };
 
   const getCreatedDate = () => {
@@ -123,15 +138,21 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
     if (category.includes('alpha')) {
       return { text: 'Alpha', color: 'bg-white/90 text-black' };
     } else if (category.includes('texture set') || category.includes('textureset')) {
-      return { text: 'Texture Set', color: 'bg-neutral-500/90 text-white' };
+      return { text: 'Texture Set', color: 'bg-gray-500/90 text-white' };
     } else if (category.includes('general')) {
-      return { text: 'General', color: 'bg-blue-500/90 text-white' };
+      return { text: 'General', color: 'bg-gray-500/90 text-white' };
     } else if (category.includes('displacement')) {
-      return { text: 'Displacement', color: 'bg-purple-500/90 text-white' };
+      return { text: 'Displacement', color: 'bg-gray-500/90 text-white' };
     } else if (category.includes('normal')) {
-      return { text: 'Normal', color: 'bg-green-500/90 text-white' };
+      return { text: 'Normal', color: 'bg-gray-500/90 text-white' };
+    } else if (category.includes('base') && category.includes('color')) {
+      return { text: 'Base Color', color: 'bg-gray-500/90 text-white' };
+    } else if (category.includes('metallic')) {
+      return { text: 'Metallic', color: 'bg-gray-500/90 text-white' };
+    } else if (category.includes('roughness')) {
+      return { text: 'Roughness', color: 'bg-gray-500/90 text-white' };
     }
-    return { text: getCategoryType(), color: 'bg-neutral-600/90 text-white' };
+    return { text: getCategoryType(), color: 'bg-gray-500/90 text-white' };
   };
 
   // Get texture type (Seamless or UV Tile)
@@ -171,7 +192,15 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
         if (response.ok) {
           const data = await response.json();
           console.log('🖼️ Texture images loaded:', data);
-          setImageList(data.images || []);
+          
+          // Sort images by texture type priority
+          const sortedImages = (data.images || []).sort((a, b) => {
+            const abbrA = getTextureTypeAbbr(a.filename || '');
+            const abbrB = getTextureTypeAbbr(b.filename || '');
+            return TEXTURE_PRIORITY[abbrA] - TEXTURE_PRIORITY[abbrB];
+          });
+          
+          setImageList(sortedImages);
           setImageResolutions(data.resolutions || {});
         }
       } catch (error) {
@@ -216,13 +245,26 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
     return '?';
   };
 
-  // Get texture types from image list
+  // Define texture priority order
+  const TEXTURE_PRIORITY = {
+    'BC': 1, // Base Color
+    'M': 2,  // Metallic
+    'R': 3,  // Roughness
+    'N': 4,  // Normal
+    'O': 5,  // Opacity
+    'D': 6,  // Displacement
+    '?': 99  // Unknown
+  };
+
+  // Get texture types from image list in priority order
   const getTextureTypes = () => {
-    return imageList.map((img, index) => ({
-      abbr: getTextureTypeAbbr(img.filename || ''),
-      index: index,
-      filename: img.filename
-    }));
+    return imageList
+      .map((img, index) => ({
+        abbr: getTextureTypeAbbr(img.filename || ''),
+        index: index,
+        filename: img.filename
+      }))
+      .sort((a, b) => TEXTURE_PRIORITY[a.abbr] - TEXTURE_PRIORITY[b.abbr]);
   };
 
   // No longer needed - removing version display
@@ -285,8 +327,8 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
             </span>
           </div>
 
-          {/* Resolution Tag - Top Right */}
-          <div className="absolute top-2 right-2">
+          {/* Resolution Tag - Top Right (slides left on hover to make room for menu) */}
+          <div className="absolute top-2 right-2 group-hover:right-14 transition-all duration-200">
             {getCurrentResolution() !== 'Unknown' && (
               <span className="px-2 py-1 text-xs rounded font-medium bg-cyan-500/20 text-cyan-300 backdrop-blur-sm">
                 {getCurrentResolution()}
@@ -294,11 +336,70 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }
             )}
           </div>
 
-          {/* Texture Type Tag - Bottom Right (Seamless/UV Tile) */}
-          {getTextureType() && (
+          {/* Three-dot menu button - Top Right (appears on hover) */}
+          <div className="absolute top-2 right-2">
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDropdown(!showDropdown);
+                }}
+                className="bg-black/60 hover:bg-black/80 text-white rounded-lg p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100"
+                title="Asset Actions"
+              >
+                <MoreVertical size={14} />
+              </button>
+              
+              {/* Dropdown menu */}
+              {showDropdown && (
+                <div className="absolute right-0 top-full mt-1 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg z-50 min-w-[160px] texture-card-dropdown-menu">
+                  <div className="py-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        onEditAsset?.(asset);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+                    >
+                      <Edit size={14} />
+                      Edit Texture
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        onCopyAsset?.(asset);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+                    >
+                      <Copy size={14} />
+                      Copy Info
+                    </button>
+                    <div className="border-t border-neutral-700 my-1"></div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        console.log('Delete texture:', asset.name);
+                        // Add delete functionality later - textures might use different delete logic
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-400 hover:bg-red-600/20 hover:text-red-300 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                      Move to Trashbin
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Texture Type Tag - Bottom Right (Only show for Seamless) */}
+          {getTextureType() === 'Seamless' && (
             <div className="absolute bottom-2 right-2">
               <span className="px-2 py-1 text-xs rounded font-medium bg-orange-500/20 text-orange-300 backdrop-blur-sm">
-                {getTextureType()}
+                Seamless
               </span>
             </div>
           )}

@@ -42,10 +42,141 @@ def get_asset_queries():
         logger.error(f"❌ Traceback: {traceback.format_exc()}")
         return None
 
+
+def generate_texture_tags(
+    asset_name: str,
+    subcategory: str,
+    alpha_subcategory: Optional[str] = None,
+    texture_set_paths: Optional[dict] = None,
+    texture_type: Optional[str] = None,
+    seamless: Optional[bool] = None,
+    uv_tile: Optional[bool] = None,
+    resolution_info: Optional[dict] = None
+) -> List[str]:
+    """Generate comprehensive tags for texture assets"""
+    tags = set()
+    
+    # 1. Basic texture category tags
+    tags.add("texture")
+    tags.add("material")
+    
+    # 2. Subcategory tags
+    if subcategory:
+        tags.add(subcategory.lower().replace(' ', '_'))
+        
+        # Special subcategory-specific tags
+        if subcategory == 'Texture Sets':
+            tags.add("texture_set")
+            tags.add("material_set")
+            tags.add("multi_channel")
+        else:
+            tags.add("single_texture")
+    
+    # 3. Alpha subcategory tags
+    if alpha_subcategory:
+        tags.add(alpha_subcategory.lower().replace(' ', '_'))
+    
+    # 4. Texture type tags (already handled above but included for completeness)
+    if texture_type:
+        tags.add(texture_type.lower())
+    
+    if seamless:
+        tags.add("tileable")
+        tags.add("repeatable")
+    
+    if uv_tile:
+        tags.add("udim")
+        tags.add("uv_tiles")
+    
+    # 5. Channel-specific tags for texture sets
+    if texture_set_paths:
+        available_channels = []
+        channel_mapping = {
+            'baseColor': ['base_color', 'albedo', 'diffuse'],
+            'metallic': ['metallic', 'metalness', 'metal'],
+            'roughness': ['roughness', 'rough'],
+            'normal': ['normal', 'bump', 'normal_map'],
+            'displacement': ['displacement', 'height', 'disp'],
+            'opacity': ['opacity', 'alpha', 'transparency']
+        }
+        
+        for channel_key, channel_tags in channel_mapping.items():
+            if texture_set_paths.get(channel_key) and texture_set_paths[channel_key].strip():
+                available_channels.extend(channel_tags)
+                tags.add(f"has_{channel_tags[0]}")
+        
+        # Add all channel tags
+        tags.update(available_channels)
+        
+        # Add combined channel tags for common combinations
+        if texture_set_paths.get('baseColor') and texture_set_paths.get('normal'):
+            tags.add("pbr_ready")
+        
+        if texture_set_paths.get('metallic') and texture_set_paths.get('roughness'):
+            tags.add("metallic_workflow")
+    
+    # 6. Asset name word tags (for searchability)
+    for word in asset_name.lower().replace('_', ' ').split():
+        word = word.strip()
+        if word and len(word) > 2:  # Skip very short words
+            # Filter out common texture terms that aren't useful for search
+            skip_words = {'texture', 'material', 'map', 'set', 'asset', 'file'}
+            if word not in skip_words:
+                tags.add(word)
+    
+    # 7. Resolution tags
+    if resolution_info:
+        resolution = resolution_info.get('resolution', '')
+        if resolution:
+            # Extract resolution quality tags
+            if '4096' in resolution or '4K' in resolution.upper():
+                tags.add("4k")
+                tags.add("high_res")
+            elif '2048' in resolution or '2K' in resolution.upper():
+                tags.add("2k")
+                tags.add("medium_res")
+            elif '1024' in resolution or '1K' in resolution.upper():
+                tags.add("1k")
+                tags.add("low_res")
+            elif '8192' in resolution or '8K' in resolution.upper():
+                tags.add("8k")
+                tags.add("ultra_high_res")
+        
+        # Add aspect ratio tags
+        width = resolution_info.get('width', 0)
+        height = resolution_info.get('height', 0)
+        if width and height:
+            if width == height:
+                tags.add("square")
+            elif width > height * 1.5:
+                tags.add("wide")
+            elif height > width * 1.5:
+                tags.add("tall")
+    
+    # 8. File format tags (can be inferred from common texture formats)
+    common_formats = ['jpg', 'png', 'exr', 'tiff', 'tga', 'hdr']
+    for fmt in common_formats:
+        # This would require checking the actual file paths, but we can add logic later
+        pass
+    
+    # Convert to lowercase and return as sorted list
+    return sorted([tag.lower() for tag in tags])
+
+
 # Force reload marker
 
 # Docker-friendly asset library base path
 ASSET_LIBRARY_BASE = Path(os.getenv('ASSET_LIBRARY_PATH', '/app/assets')) / "3D"
+
+# Network library base path (actual path that external applications use)
+NETWORK_LIBRARY_BASE = Path("/net/library/atlaslib/3D")
+
+def convert_to_network_path(container_path: str) -> str:
+    """Convert container mount path to network library path"""
+    container_path_str = str(container_path)
+    if '/app/assets/' in container_path_str:
+        return container_path_str.replace('/app/assets/', '/net/library/atlaslib/')
+    return container_path_str
 
 class AssetResponse(BaseModel):
     id: str
@@ -1239,27 +1370,65 @@ async def get_texture_images(asset_id: str):
             else:
                 return {"images": [], "resolutions": {}}
         
-        # Look for thumbnail images in the Thumbnail subfolder
-        thumbnail_folder = folder / "Thumbnail"
-        if not thumbnail_folder.exists():
-            logger.warning(f"⚠️ No Thumbnail folder found in {folder}")
-            return {"images": [], "resolutions": {}}
-        
-        # Scan for thumbnail files (these are the 1024x1024 resized images)
-        image_extensions = {'.png', '.jpg', '.jpeg', '.tiff', '.tga'}
+        # Look for original texture files in the Assets subfolder (for copying)
+        assets_folder = folder / "Assets"
         images = []
         resolutions = {}
         
-        for file_path in thumbnail_folder.iterdir():
-            if file_path.is_file() and file_path.suffix.lower() in image_extensions:
+        # First, get original files from copied_files in the database
+        copied_files = asset_data.get('paths', {}).get('copied_files', [])
+        
+        if copied_files:
+            logger.info(f"🖼️ Using copied_files from database: {len(copied_files)} files")
+            for i, file_path in enumerate(copied_files):
+                file_path_obj = Path(file_path)
                 images.append({
-                    "filename": file_path.name,
-                    "path": str(file_path),
-                    "relative_path": str(file_path.relative_to(folder))
+                    "filename": file_path_obj.name,
+                    "path": str(file_path),  # Full path to original file in Assets folder
+                    "relative_path": f"Assets/{file_path_obj.name}",
+                    "is_original": True
                 })
+                resolutions[i] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
+        
+        # Fallback: Scan Assets folder if no copied_files in database
+        elif assets_folder.exists():
+            logger.info(f"🖼️ Scanning Assets folder: {assets_folder}")
+            image_extensions = {'.png', '.jpg', '.jpeg', '.tiff', '.tga', '.exr', '.tif'}
+            
+            for file_path in assets_folder.iterdir():
+                if file_path.is_file() and file_path.suffix.lower() in image_extensions:
+                    images.append({
+                        "filename": file_path.name,
+                        "path": str(file_path),  # Full path to original file in Assets folder
+                        "relative_path": str(file_path.relative_to(folder)),
+                        "is_original": True
+                    })
+                    # Try to get resolution from asset metadata
+                    resolutions[len(images) - 1] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
+        
+        # Last resort: Fall back to thumbnails (but mark them appropriately)
+        else:
+            thumbnail_folder = folder / "Thumbnail"
+            if thumbnail_folder.exists():
+                logger.warning(f"⚠️ Using thumbnail files as fallback for {asset_id}")
+                image_extensions = {'.png', '.jpg', '.jpeg', '.tiff', '.tga'}
                 
-                # Since these are thumbnails, they should be 1024x1024
-                resolutions[len(images) - 1] = "1024x1024"
+                for file_path in thumbnail_folder.iterdir():
+                    if file_path.is_file() and file_path.suffix.lower() in image_extensions:
+                        # For thumbnails, try to find corresponding original file path
+                        original_name = file_path.name.replace('_thumbnail', '')
+                        original_path = assets_folder / original_name if assets_folder.exists() else None
+                        
+                        images.append({
+                            "filename": original_name,
+                            "path": str(original_path) if original_path and original_path.exists() else str(file_path),
+                            "relative_path": f"Assets/{original_name}" if original_path and original_path.exists() else str(file_path.relative_to(folder)),
+                            "is_original": original_path and original_path.exists()
+                        })
+                        resolutions[len(images) - 1] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
+            else:
+                logger.warning(f"⚠️ No Assets or Thumbnail folder found in {folder}")
+                return {"images": [], "resolutions": {}}
         
         # Sort images by filename
         images.sort(key=lambda x: x['filename'])
@@ -2026,7 +2195,7 @@ class UploadAssetRequest(BaseModel):
     alpha_subcategory: Optional[str] = None  # For Alpha texture subcategories
     texture_set_paths: Optional[dict] = None  # For texture sets with multiple files
     # Texture type metadata
-    texture_type: Optional[str] = None  # 'seamless', 'uv_tile', or 'standard'
+    texture_type: Optional[str] = None  # 'seamless' or 'uv_tile'
     seamless: Optional[bool] = None  # True if texture is seamless
     uv_tile: Optional[bool] = None  # True if texture uses UV tiles
 
@@ -2176,7 +2345,7 @@ async def upload_asset(upload_request: UploadAssetRequest):
             # HDRI Logic: Single file handling
             target_file = asset_subfolder / source_file.name
             shutil.copy2(source_file, target_file)
-            copied_files.append(str(target_file))
+            copied_files.append(convert_to_network_path(str(target_file)))
             logger.info(f"📋 Copied HDRI file to Asset folder: {source_file} -> {target_file}")
             
             # Handle HDRI preview/thumbnail
@@ -2206,14 +2375,16 @@ async def upload_asset(upload_request: UploadAssetRequest):
             if upload_request.subcategory == 'Texture Sets' and upload_request.texture_set_paths:
                 # Texture Set: Multiple files
                 texture_paths = upload_request.texture_set_paths
-                texture_map = {
-                    'baseColor': 'Base_Color',
-                    'metallic': 'Metallic', 
-                    'roughness': 'Roughness',
-                    'normal': 'Normal',
-                    'opacity': 'Opacity',
-                    'displacement': 'Displacement'
-                }
+                # Process textures in priority order: BC → M → R → N → O → D
+                from collections import OrderedDict
+                texture_map = OrderedDict([
+                    ('baseColor', 'Base_Color'),
+                    ('metallic', 'Metallic'), 
+                    ('roughness', 'Roughness'),
+                    ('normal', 'Normal'),
+                    ('opacity', 'Opacity'),
+                    ('displacement', 'Displacement')
+                ])
                 
                 for key, display_name in texture_map.items():
                     file_path = texture_paths.get(key)
@@ -2221,14 +2392,15 @@ async def upload_asset(upload_request: UploadAssetRequest):
                         try:
                             source_path = Path(file_path.strip())
                             if source_path.exists():
-                                # Copy texture file to Asset folder
-                                target_file = asset_subfolder / f"{clean_asset_name}_{display_name}{source_path.suffix}"
+                                # Copy texture file to Asset folder (preserve original filename)
+                                target_file = asset_subfolder / source_path.name
                                 shutil.copy2(source_path, target_file)
-                                copied_files.append(str(target_file))
+                                copied_files.append(convert_to_network_path(str(target_file)))
                                 logger.info(f"📋 Copied {display_name} texture: {source_path} -> {target_file}")
                                 
-                                # Generate thumbnail for each texture
-                                thumbnail_file = thumbnail_folder / f"{clean_asset_name}_{display_name}_thumbnail.png"
+                                # Generate thumbnail for each texture (use original filename without extension)
+                                original_filename_base = source_path.stem  # Get filename without extension
+                                thumbnail_file = thumbnail_folder / f"{original_filename_base}_thumbnail.png"
                                 if await generate_texture_thumbnail(target_file, thumbnail_file):
                                     thumbnails_created.append(str(thumbnail_file))
                                     
@@ -2244,11 +2416,12 @@ async def upload_asset(upload_request: UploadAssetRequest):
                 # Single Texture: One file
                 target_file = asset_subfolder / source_file.name
                 shutil.copy2(source_file, target_file)
-                copied_files.append(str(target_file))
+                copied_files.append(convert_to_network_path(str(target_file)))
                 logger.info(f"📋 Copied texture file to Asset folder: {source_file} -> {target_file}")
                 
-                # Generate thumbnail for single texture
-                thumbnail_file = thumbnail_folder / f"{clean_asset_name}_thumbnail.png"
+                # Generate thumbnail for single texture (use original filename without extension)
+                original_filename_base = source_file.stem  # Get filename without extension
+                thumbnail_file = thumbnail_folder / f"{original_filename_base}_thumbnail.png"
                 if await generate_texture_thumbnail(target_file, thumbnail_file):
                     thumbnails_created.append(str(thumbnail_file))
                     resolution_info = await extract_image_info(target_file)
@@ -2270,8 +2443,8 @@ async def upload_asset(upload_request: UploadAssetRequest):
                 "extension": source_file.suffix if upload_request.asset_type == 'HDRI' or upload_request.subcategory != 'Texture Sets' else None
             },
             "paths": {
-                "asset_folder": str(asset_folder),
-                "asset_subfolder": str(asset_subfolder),
+                "asset_folder": convert_to_network_path(str(asset_folder)),
+                "asset_subfolder": convert_to_network_path(str(asset_subfolder)),
                 "copied_files": copied_files,
                 "thumbnails": thumbnails_created
             }
@@ -2281,6 +2454,31 @@ async def upload_asset(upload_request: UploadAssetRequest):
         if upload_request.asset_type == 'Textures':
             if upload_request.alpha_subcategory:
                 metadata["alpha_subcategory"] = upload_request.alpha_subcategory
+            
+            # Add texture type metadata fields
+            if upload_request.texture_type is not None:
+                metadata["texture_type"] = upload_request.texture_type
+            
+            if upload_request.seamless is not None:
+                metadata["seamless"] = upload_request.seamless
+            
+            if upload_request.uv_tile is not None:
+                metadata["uv_tile"] = upload_request.uv_tile
+            
+            # Generate comprehensive texture tags for metadata
+            texture_tags = generate_texture_tags(
+                asset_name=clean_asset_name,
+                subcategory=upload_request.subcategory,
+                alpha_subcategory=upload_request.alpha_subcategory,
+                texture_set_paths=upload_request.texture_set_paths,
+                texture_type=upload_request.texture_type,
+                seamless=upload_request.seamless,
+                uv_tile=upload_request.uv_tile,
+                resolution_info=resolution_info
+            )
+            
+            # Add tags to metadata
+            metadata["tags"] = texture_tags
             
             if upload_request.subcategory == 'Texture Sets' and upload_request.texture_set_paths:
                 metadata["texture_set_info"] = {
@@ -2332,9 +2530,9 @@ async def upload_asset(upload_request: UploadAssetRequest):
             },
             "metadata": metadata,
             "paths": {
-                "folder_path": str(asset_folder),
-                "asset_folder": str(asset_folder),
-                "asset_subfolder": str(asset_subfolder),
+                "folder_path": convert_to_network_path(str(asset_folder)),
+                "asset_folder": convert_to_network_path(str(asset_folder)),
+                "asset_subfolder": convert_to_network_path(str(asset_subfolder)),
                 "copied_files": copied_files,
                 "thumbnails": thumbnails_created
             },
@@ -2377,6 +2575,21 @@ async def upload_asset(upload_request: UploadAssetRequest):
                 asset_doc["uv_tile"] = upload_request.uv_tile
                 if upload_request.uv_tile:
                     asset_doc["tags"].append("uv_tile")
+            
+            # Generate comprehensive texture tags
+            texture_tags = generate_texture_tags(
+                asset_name=clean_asset_name,
+                subcategory=upload_request.subcategory,
+                alpha_subcategory=upload_request.alpha_subcategory,
+                texture_set_paths=upload_request.texture_set_paths,
+                texture_type=upload_request.texture_type,
+                seamless=upload_request.seamless,
+                uv_tile=upload_request.uv_tile,
+                resolution_info=resolution_info
+            )
+            
+            # Add all texture tags to the asset document
+            asset_doc["tags"].extend(texture_tags)
         
         # Insert into database using the same AssetQueries method as elsewhere
         try:

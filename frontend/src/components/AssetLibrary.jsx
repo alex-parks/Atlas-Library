@@ -8,6 +8,7 @@ import HDRIBadge from './badges/HDRIBadge';
 import HoudiniAssetCard from './cards/HoudiniAssetCard';
 import TextureCard from './cards/TextureCard';
 import HDRICard from './cards/HDRICard';
+import TextureEditAsset from './TextureEditAsset';
 
 // Asset Badge Factory - determines which badge component to use
 const getAssetBadgeComponent = (asset) => {
@@ -198,6 +199,10 @@ const AssetLibrary = ({
   const [editFormData, setEditFormData] = useState({});
   const [newTagInput, setNewTagInput] = useState('');
 
+  // Texture edit modal state
+  const [showTextureEditModal, setShowTextureEditModal] = useState(false);
+  const [editingTextureAsset, setEditingTextureAsset] = useState(null);
+
   // Upload Asset modal state
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadData, setUploadData] = useState({
@@ -208,7 +213,7 @@ const AssetLibrary = ({
     description: '',
     subcategory: 'Alpha', // Default for Textures
     alphaSubcategory: 'General', // For Alpha textures
-    textureType: 'standard', // 'seamless', 'uv_tile', or 'standard'
+    textureType: 'seamless', // 'seamless' or 'uv_tile'
     textureSetPaths: {
       baseColor: '',
       metallic: '',
@@ -927,12 +932,19 @@ const AssetLibrary = ({
           subcategory: uploadData.subcategory,
           created_by: 'web_uploader',
           // Add texture type metadata for Textures
-          ...(uploadData.assetType === 'Textures' && uploadData.textureType && {
+          ...(uploadData.assetType === 'Textures' && {
             texture_type: uploadData.textureType,
             seamless: uploadData.textureType === 'seamless',
             uv_tile: uploadData.textureType === 'uv_tile'
           })
         })
+      });
+
+      console.log('🔧 Texture Type Debug:', {
+        assetType: uploadData.assetType,
+        textureType: uploadData.textureType,
+        seamless: uploadData.textureType === 'seamless',
+        uv_tile: uploadData.textureType === 'uv_tile'
       });
 
       if (response.ok) {
@@ -949,7 +961,7 @@ const AssetLibrary = ({
           description: '',
           subcategory: 'Alpha',
           alphaSubcategory: 'General',
-          textureType: 'standard',
+          textureType: 'seamless',
           textureSetPaths: {
             baseColor: '',
             metallic: '',
@@ -1027,6 +1039,33 @@ const AssetLibrary = ({
     }
   };
 
+  const handleEditAsset = (asset) => {
+    // Determine if this is a texture asset
+    const isTexture = asset.asset_type === 'Textures' || asset.asset_type === 'Texture' || 
+                     asset.category === 'Textures' || asset.category === 'Texture' ||
+                     (asset.paths?.template_file && 
+                      (asset.paths.template_file.toLowerCase().includes('.jpg') || 
+                       asset.paths.template_file.toLowerCase().includes('.png') || 
+                       asset.paths.template_file.toLowerCase().includes('.tiff') || 
+                       asset.paths.template_file.toLowerCase().includes('.tga')));
+    
+    if (isTexture) {
+      // Use specialized texture edit modal
+      setEditingTextureAsset(asset);
+      setShowTextureEditModal(true);
+    } else {
+      // Use regular edit modal for 3D assets
+      setEditingAsset(asset);
+      setEditFormData({
+        name: asset.name || '',
+        description: asset.description || '',
+        tags: asset.tags || [],
+        thumbnail_frame: asset.thumbnail_frame
+      });
+      setShowEditModal(true);
+    }
+  };
+
   useEffect(() => {
     const savedSettings = localStorage.getItem('blacksmith-atlas-settings');
     if (savedSettings) {
@@ -1071,6 +1110,17 @@ const AssetLibrary = ({
     const [isHovering, setIsHovering] = useState(false);
     const containerRef = useRef(null);
 
+    // Define texture priority order (same as TextureCard/TextureBadge)
+    const TEXTURE_PRIORITY = {
+      'BC': 1, // Base Color
+      'M': 2,  // Metallic
+      'R': 3,  // Roughness
+      'N': 4,  // Normal
+      'O': 5,  // Opacity
+      'D': 6,  // Displacement
+      '?': 99  // Unknown
+    };
+
     // Load image list for navigation (for all textures, not just texture sets)
     useEffect(() => {
       const loadImageList = async () => {
@@ -1079,7 +1129,15 @@ const AssetLibrary = ({
           if (response.ok) {
             const data = await response.json();
             console.log('🖼️ Texture images loaded for preview:', data);
-            setImageList(data.images || []);
+            
+            // Sort images by texture type priority (same as TextureCard/TextureBadge)
+            const sortedImages = (data.images || []).sort((a, b) => {
+              const abbrA = getTextureTypeAbbr(a.filename || '');
+              const abbrB = getTextureTypeAbbr(b.filename || '');
+              return TEXTURE_PRIORITY[abbrA] - TEXTURE_PRIORITY[abbrB];
+            });
+            
+            setImageList(sortedImages);
             setImageResolutions(data.resolutions || {});
           } else {
             // For single textures or if API call fails, create a single image entry
@@ -1196,13 +1254,59 @@ const AssetLibrary = ({
       return '?';
     };
 
-    // Get texture types from image list
+    // Get texture types from image list in priority order
     const getTextureTypes = () => {
-      return imageList.map((img, index) => ({
-        abbr: getTextureTypeAbbr(img.filename || ''),
-        index: index,
-        filename: img.filename
-      }));
+      return imageList
+        .map((img, index) => ({
+          abbr: getTextureTypeAbbr(img.filename || ''),
+          index: index,
+          filename: img.filename
+        }))
+        .sort((a, b) => TEXTURE_PRIORITY[a.abbr] - TEXTURE_PRIORITY[b.abbr]);
+    };
+
+    // Helper functions for texture preview tags (same as TextureCard/TextureBadge)
+    const getResolution = () => {
+      return asset.metadata?.resolution || asset.metadata?.dimensions || 'Unknown';
+    };
+
+    const getCategoryBadge = () => {
+      const category = (asset.metadata?.subcategory || asset.subcategory || 'texture').toLowerCase();
+      if (category.includes('alpha')) {
+        return { text: 'Alpha', color: 'bg-white/90 text-black' };
+      } else if (category.includes('texture set') || category.includes('textureset')) {
+        return { text: 'Texture Set', color: 'bg-gray-500/90 text-white' };
+      } else if (category.includes('general')) {
+        return { text: 'General', color: 'bg-gray-500/90 text-white' };
+      } else if (category.includes('displacement')) {
+        return { text: 'Displacement', color: 'bg-gray-500/90 text-white' };
+      } else if (category.includes('normal')) {
+        return { text: 'Normal', color: 'bg-gray-500/90 text-white' };
+      } else if (category.includes('base') && category.includes('color')) {
+        return { text: 'Base Color', color: 'bg-gray-500/90 text-white' };
+      } else if (category.includes('metallic')) {
+        return { text: 'Metallic', color: 'bg-gray-500/90 text-white' };
+      } else if (category.includes('roughness')) {
+        return { text: 'Roughness', color: 'bg-gray-500/90 text-white' };
+      }
+      return { text: (asset.metadata?.subcategory || asset.subcategory || 'Texture'), color: 'bg-gray-500/90 text-white' };
+    };
+
+    const getTextureType = () => {
+      // Check the new texture_type field first
+      const textureType = asset.texture_type || asset.metadata?.texture_type;
+      if (textureType) {
+        if (textureType === 'seamless') return 'Seamless';
+        if (textureType === 'uv_tile') return 'UV Tile';
+      }
+      
+      // Fallback to legacy seamless/uv_tile fields
+      const seamless = asset.seamless || asset.metadata?.seamless || asset.metadata?.tiling;
+      const uvTile = asset.uv_tile || asset.metadata?.uv_tile || asset.metadata?.uvtile;
+      
+      if (uvTile) return 'UV Tile';
+      if (seamless) return 'Seamless';
+      return null;
     };
 
     // Calculate transform style for zoom and pan (same as SequenceThumbnail)
@@ -1348,12 +1452,255 @@ const AssetLibrary = ({
           </div>
         )}
         
+        {/* Resolution Tag - Top Right */}
+        <div className="absolute top-2 right-2 z-10">
+          {getResolution() !== 'Unknown' && (
+            <span className="px-2 py-1 text-xs rounded font-medium bg-cyan-500/80 text-white backdrop-blur-sm">
+              {getResolution()}
+            </span>
+          )}
+        </div>
+
+        {/* Category Badge - Top Left */}
+        <div className="absolute top-2 left-2 z-10">
+          <span className={`px-2 py-1 text-xs rounded font-medium backdrop-blur-sm ${getCategoryBadge().color}`}>
+            {getCategoryBadge().text}
+          </span>
+        </div>
+
+        {/* Texture Type Tag - Bottom Right (Seamless/UV Tile) */}
+        {getTextureType() && (
+          <div className="absolute bottom-2 right-2 z-10">
+            <span className="px-2 py-1 text-xs rounded font-medium bg-orange-500/80 text-white backdrop-blur-sm">
+              {getTextureType()}
+            </span>
+          </div>
+        )}
+
         {/* Zoom instructions - show briefly when hovering and not zoomed */}
-        {isHovering && zoom === 1 && (
-          <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded opacity-70">
+        {isHovering && zoom === 1 && !getResolution() && (
+          <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded opacity-70 z-10">
             Scroll to zoom
           </div>
         )}
+      </div>
+    );
+  };
+
+  // Texture File Copy Buttons Component
+  const TextureFileCopyButtons = ({ asset }) => {
+    const [availableTextures, setAvailableTextures] = useState([]);
+
+    // Load available texture files from the asset
+    useEffect(() => {
+      const loadTextureFiles = async () => {
+        let textureFiles = [];
+        
+        try {
+          // First try the texture-images endpoint (for texture sets)
+          const response = await fetch(`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-images`);
+          if (response.ok) {
+            const data = await response.json();
+            console.log('🖼️ Available texture files from endpoint:', data);
+            if (data.images && data.images.length > 0) {
+              textureFiles = data.images;
+            }
+          }
+        } catch (error) {
+          console.log('Texture images endpoint failed:', error);
+        }
+        
+        // If no texture files found from endpoint, check asset paths for single textures
+        if (textureFiles.length === 0) {
+          console.log('🖼️ Checking asset paths for single texture files...');
+          console.log('🖼️ Asset paths:', asset.paths);
+          
+          // Check various possible locations for copied files
+          const possibleFilePaths = [
+            ...(asset.paths?.copied_files || []),
+            ...(asset.paths?.textures || []),
+            ...(asset.metadata?.textures?.files || []),
+            ...(asset.metadata?.copied_files || [])
+          ];
+          
+          if (possibleFilePaths.length > 0) {
+            textureFiles = possibleFilePaths.map(filePath => {
+              const filename = typeof filePath === 'string' ? filePath.split('/').pop() : filePath;
+              return { 
+                filename: filename, 
+                path: typeof filePath === 'string' ? filePath : filename 
+              };
+            });
+            console.log('🖼️ Found texture files from paths:', textureFiles);
+          }
+          
+          // If still no files, check if this is a single texture by examining the asset name and category
+          if (textureFiles.length === 0 && asset.asset_type === 'Textures') {
+            console.log('🖼️ Single texture detected, using asset name as filename');
+            // For single textures, use the asset name as the filename
+            const assetName = asset.name || 'texture';
+            textureFiles = [{ 
+              filename: `${assetName}.png`, // Default extension, will be detected from actual file
+              path: `${asset.paths?.folder_path || ''}/Assets/${assetName}.png`
+            }];
+          }
+        }
+        
+        console.log('🖼️ Final available texture files:', textureFiles);
+        setAvailableTextures(textureFiles);
+      };
+
+      if (asset.id || asset._key) {
+        loadTextureFiles();
+      }
+    }, [asset.id, asset._key]);
+
+    // Define texture types and their display names
+    const textureTypeMap = {
+      'base_color': { name: 'Copy Base Color', keywords: ['base', 'color', 'albedo'] },
+      'metallic': { name: 'Copy Metallic', keywords: ['metallic', 'metalness'] },
+      'roughness': { name: 'Copy Roughness', keywords: ['roughness'] },
+      'normal': { name: 'Copy Normal', keywords: ['normal'] },
+      'displacement': { name: 'Copy Displacement', keywords: ['displacement', 'height'] },
+      'alpha': { name: 'Copy Alpha', keywords: ['alpha', 'opacity'] }
+    };
+
+    // Find texture files for each type based on upload metadata, not filename
+    const getTextureByType = (type) => {
+      const typeInfo = textureTypeMap[type];
+      if (!typeInfo) return null;
+
+      // Check if this is a single texture (not a texture set)
+      const subcategory = asset.subcategory || asset.metadata?.subcategory;
+      const isTextureSet = subcategory === 'Texture Sets' || asset.metadata?.texture_set_info;
+      
+      if (!isTextureSet) {
+        // For single textures, match based on the uploaded subcategory
+        const subcategoryToTypeMap = {
+          'Alpha': 'alpha',
+          'Base Color': 'base_color', 
+          'Albedo': 'base_color',
+          'Metallic': 'metallic',
+          'Roughness': 'roughness',
+          'Normal': 'normal',
+          'Displacement': 'displacement',
+          'Height': 'displacement'
+        };
+        
+        // Check if the asset's subcategory matches the requested type
+        const assetTextureType = subcategoryToTypeMap[subcategory] || 
+                                 subcategoryToTypeMap[asset.alpha_subcategory];
+        
+        if (assetTextureType === type && availableTextures.length > 0) {
+          console.log(`🎯 Single texture match: ${subcategory} -> ${type}`);
+          return availableTextures[0]; // Return the single texture file
+        }
+      } else {
+        // For texture sets - check texture_set_paths in metadata
+        if (asset.metadata?.texture_set_info?.provided_paths) {
+          const textureSetPaths = asset.metadata.texture_set_info.provided_paths;
+          
+          // Map texture types to the texture set keys
+          const textureSetKeyMap = {
+            'base_color': ['baseColor', 'albedo'],
+            'metallic': ['metallic', 'metalness'],
+            'roughness': ['roughness'],
+            'normal': ['normal'],
+            'displacement': ['displacement', 'height'],
+            'alpha': ['alpha', 'opacity']
+          };
+          
+          const possibleKeys = textureSetKeyMap[type] || [];
+          for (const key of possibleKeys) {
+            if (textureSetPaths[key]) {
+              // Find the texture file that matches this texture set path
+              const pathFilename = textureSetPaths[key].split('/').pop();
+              const matchingTexture = availableTextures.find(texture => 
+                texture.filename === pathFilename || texture.path.includes(pathFilename)
+              );
+              if (matchingTexture) {
+                console.log(`🎯 Texture set match: ${key} -> ${type}`);
+                return matchingTexture;
+              }
+            }
+          }
+        }
+      }
+
+      // Fallback to filename detection for older assets or edge cases
+      const fallbackTexture = availableTextures.find(texture => {
+        const filename = texture.filename.toLowerCase();
+        return typeInfo.keywords.some(keyword => filename.includes(keyword));
+      });
+      
+      if (fallbackTexture) {
+        console.log(`🔄 Fallback filename match: ${fallbackTexture.filename} -> ${type}`);
+      }
+      
+      return fallbackTexture;
+    };
+
+    // Copy texture file path to clipboard
+    const copyTextureFilePath = async (textureType, texture) => {
+      try {
+        let fullTexturePath;
+
+        // PRIORITY 1: Use texture path directly (should now be correct network path from backend)
+        if (texture.path) {
+          fullTexturePath = texture.path;
+          console.log(`📋 Using texture path: ${fullTexturePath}`);
+        }
+        // PRIORITY 2: Use the asset's folder_path + Assets + filename (network library path)
+        else if (asset.paths?.folder_path) {
+          fullTexturePath = `${asset.paths.folder_path}/Assets/${texture.filename}`;
+          console.log(`📋 Constructed path from folder_path: ${fullTexturePath}`);
+        } 
+        // PRIORITY 3: Fallback construction for texture assets
+        else {
+          const assetId = asset.id || asset._key;
+          const subcategory = asset.metadata?.subcategory || asset.subcategory || 'TextureSet';
+          fullTexturePath = `/net/library/atlaslib/3D/Textures/${subcategory}/${assetId}/Assets/${texture.filename}`;
+          console.log(`📋 Fallback constructed path: ${fullTexturePath}`);
+        }
+
+        await navigator.clipboard.writeText(fullTexturePath);
+        
+        // Show success message
+        const message = `✅ ${textureTypeMap[textureType].name} path copied!\n\n📄 File: ${texture.filename}\n📂 Path: ${fullTexturePath}`;
+        alert(message);
+        console.log(`📋 ${textureType} texture path copied:`, fullTexturePath);
+
+      } catch (error) {
+        console.error(`Failed to copy ${textureType} path:`, error);
+        alert(`❌ Failed to copy ${textureTypeMap[textureType].name} path to clipboard`);
+      }
+    };
+
+    if (availableTextures.length === 0) {
+      return null; // No textures to show buttons for
+    }
+
+    return (
+      <div className="space-y-2 mb-4">
+        <div className="text-sm text-neutral-400 font-medium mb-2">Copy Individual Textures:</div>
+        <div className="space-y-1">
+          {Object.entries(textureTypeMap).map(([type, typeInfo]) => {
+            const texture = getTextureByType(type);
+            if (!texture) return null; // Don't show button if texture doesn't exist
+
+            return (
+              <button
+                key={type}
+                onClick={() => copyTextureFilePath(type, texture)}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md transition-colors bg-gray-500/20 text-gray-300 hover:bg-gray-500/30 text-sm font-medium"
+                title={`Copy ${typeInfo.name} file path: ${texture.filename}`}
+              >
+                <Copy size={14} />
+                {typeInfo.name}
+              </button>
+            );
+          })}
+        </div>
       </div>
     );
   };
@@ -1807,7 +2154,7 @@ const AssetLibrary = ({
       {/* Edit Modal */}
       {showEditModal && editingAsset && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-auto">
+          <div className="bg-neutral-800 border border-neutral-700 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-neutral-700">
               <h2 className="text-xl font-semibold text-white">Edit Asset</h2>
@@ -1989,6 +2336,23 @@ const AssetLibrary = ({
         </div>
       )}
 
+      {/* Texture Edit Modal */}
+      {showTextureEditModal && editingTextureAsset && (
+        <TextureEditAsset
+          isOpen={showTextureEditModal}
+          onClose={() => {
+            setShowTextureEditModal(false);
+            setEditingTextureAsset(null);
+          }}
+          asset={editingTextureAsset}
+          onSave={(updatedAsset) => {
+            // Reload assets to show changes
+            loadAssets();
+          }}
+          apiEndpoint={settings.apiEndpoint}
+        />
+      )}
+
       {/* Upload Asset Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -2024,7 +2388,7 @@ const AssetLibrary = ({
                         description: '',
                         // Clear all texture-specific fields
                         alphaSubcategory: '',
-                        textureType: 'standard',
+                        textureType: 'seamless',
                         textureSetPaths: {
                           baseColor: '',
                           metallic: '',
@@ -2040,7 +2404,7 @@ const AssetLibrary = ({
                         assetType: 'Textures',
                         subcategory: 'Alpha', // Default texture subcategory
                         alphaSubcategory: 'General', // Default alpha subcategory
-                        textureType: 'standard', // Default texture type
+                        textureType: 'seamless', // Default texture type
                         filePath: '',
                         description: '',
                         // Clear all HDRI-specific fields
@@ -2357,19 +2721,6 @@ const AssetLibrary = ({
                 </div>
               )}
 
-              {/* Description - For all asset types */}
-              <div>
-                <label className="block text-sm font-medium text-neutral-300 mb-2">
-                  Description <span className="text-neutral-500">(optional)</span>
-                </label>
-                <textarea
-                  value={uploadData.description}
-                  onChange={(e) => setUploadData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Enter asset description..."
-                  className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-white placeholder-neutral-400 focus:outline-none focus:border-blue-500"
-                  rows={3}
-                />
-              </div>
 
               {/* Texture Type Settings - Only show for Textures */}
               {uploadData.assetType === 'Textures' && (
@@ -2404,17 +2755,6 @@ const AssetLibrary = ({
                           className="w-4 h-4 text-blue-500 bg-neutral-700 border-neutral-600 focus:ring-blue-500"
                         />
                         <span className="text-sm text-blue-300">UV Tile</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="textureType"
-                          value="standard"
-                          checked={uploadData.textureType === 'standard' || !uploadData.textureType}
-                          onChange={(e) => setUploadData(prev => ({ ...prev, textureType: e.target.value }))}
-                          className="w-4 h-4 text-neutral-500 bg-neutral-700 border-neutral-600 focus:ring-neutral-500"
-                        />
-                        <span className="text-sm text-neutral-300">Standard</span>
                       </label>
                     </div>
                   </div>
@@ -2478,8 +2818,6 @@ const AssetLibrary = ({
                       </>
                     )}
                   </div>
-                  <div className="text-neutral-400 text-sm">•</div>
-                  <div className="text-neutral-400 text-sm">{previewAsset.artist || 'Unknown Artist'}</div>
                 </div>
               </div>
               <button
@@ -2522,7 +2860,7 @@ const AssetLibrary = ({
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-neutral-400">Asset Name:</span>
-                        <span className="text-white font-medium">{formatAssetNameJSX(previewAsset)}</span>
+                        <span className="text-white font-medium text-lg">{formatAssetNameJSX(previewAsset)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-neutral-400">ID:</span>
@@ -2530,19 +2868,11 @@ const AssetLibrary = ({
                       </div>
                       <div className="flex justify-between">
                         <span className="text-neutral-400">Category:</span>
-                        <span className="text-blue-400">{previewAsset.category}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-neutral-400">Artist:</span>
-                        <span className="text-green-400">{previewAsset.artist || 'Unknown'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-neutral-400">Render Engine:</span>
-                        <span className="text-orange-400">{previewAsset.metadata?.hierarchy?.render_engine || previewAsset.metadata?.render_engine || 'Unknown'}</span>
+                        <span className="text-white">{previewAsset.category}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-neutral-400">Size:</span>
-                        <span className="text-neutral-300">
+                        <span className="text-white">
                           {(() => {
                             const totalBytes = previewAsset.file_sizes?.estimated_total_size || 0;
                             if (totalBytes === 0) return 'Calculating...';
@@ -2552,105 +2882,174 @@ const AssetLibrary = ({
                           })()}
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-neutral-400">Version:</span>
-                        <span className="text-purple-400 font-medium">
-                          {(() => {
-                            const assetId = previewAsset.id || previewAsset._key || '';
-                            if (assetId.length >= 16) {
-                              // Extract version only (last 3 characters): 11 base + 2 variant + 3 version
-                              return `v${assetId.substring(13)}`;
-                            }
-                            return 'v001';
-                          })()}
-                        </span>
-                      </div>
                     </div>
                   </div>
 
-                  {previewAsset.description && (
+                  {/* Description for 3D Assets */}
+                  {!(previewAsset.asset_type === 'Textures' || previewAsset.category === 'Textures') && previewAsset.description && (
                     <div>
                       <h3 className="text-lg font-medium text-white mb-2">Description</h3>
-                      <p className="text-neutral-300 text-sm">{previewAsset.description}</p>
+                      <div className="bg-neutral-700/50 rounded-lg p-3">
+                        <p className="text-white text-sm leading-relaxed">{previewAsset.description}</p>
+                      </div>
                     </div>
                   )}
 
-                  {previewAsset.metadata && (
+                  {/* Technical Details - Different for Textures vs 3D Assets */}
+                  {(previewAsset.asset_type === 'Textures' || previewAsset.category === 'Textures') ? (
+                    /* Texture-specific technical details */
                     <div>
-                      <h3 className="text-lg font-medium text-white mb-2">Technical Details</h3>
+                      <h3 className="text-lg font-medium text-white mb-2">Texture Details</h3>
                       <div className="space-y-1 text-sm">
-                        {previewAsset.metadata.houdini_version && (
+                        {(previewAsset.metadata?.resolution || previewAsset.resolution) && (
                           <div className="flex justify-between">
-                            <span className="text-neutral-400">Houdini Version:</span>
-                            <span className="text-neutral-300">{previewAsset.metadata.houdini_version}</span>
+                            <span className="text-neutral-400">Resolution:</span>
+                            <span className="text-white">{previewAsset.metadata?.resolution || previewAsset.resolution}</span>
                           </div>
                         )}
-                        {previewAsset.metadata.export_time && (
-                          <div className="flex justify-between">
-                            <span className="text-neutral-400">Export Time:</span>
-                            <span className="text-neutral-300">{new Date(previewAsset.metadata.export_time).toLocaleString()}</span>
-                          </div>
-                        )}
+                        <div className="flex justify-between">
+                          <span className="text-neutral-400">Format:</span>
+                          <span className="text-white">{(() => {
+                            // Check for format in metadata first
+                            if (previewAsset.metadata?.file_format) {
+                              return previewAsset.metadata.file_format.toUpperCase();
+                            }
+                            
+                            // Check copied files for extensions
+                            if (previewAsset.paths?.copied_files && previewAsset.paths.copied_files.length > 0) {
+                              // Get all unique extensions from copied files
+                              const extensions = new Set();
+                              previewAsset.paths.copied_files.forEach(file => {
+                                const extension = file.split('.').pop()?.toLowerCase();
+                                if (extension) {
+                                  extensions.add(extension.toUpperCase());
+                                }
+                              });
+                              
+                              // If multiple different formats, return "Mixed"
+                              if (extensions.size > 1) {
+                                return 'Mixed';
+                              }
+                              
+                              // If only one format, return it
+                              if (extensions.size === 1) {
+                                return Array.from(extensions)[0];
+                              }
+                            }
+                            
+                            // Fallback to template file
+                            if (previewAsset.paths?.template_file) {
+                              return previewAsset.paths.template_file.split('.').pop()?.toUpperCase() || 'Unknown';
+                            }
+                            
+                            return 'Unknown';
+                          })()}</span>
+                        </div>
                         {previewAsset.created_at && (
                           <div className="flex justify-between">
                             <span className="text-neutral-400">Created:</span>
-                            <span className="text-neutral-300">{new Date(previewAsset.created_at).toLocaleDateString()}</span>
+                            <span className="text-white">{new Date(previewAsset.created_at).toLocaleDateString()}</span>
                           </div>
                         )}
                       </div>
                     </div>
+                  ) : (
+                    /* 3D Asset-specific technical details */
+                    previewAsset.metadata && (
+                      <div>
+                        <h3 className="text-lg font-medium text-white mb-2">Technical Details</h3>
+                        <div className="space-y-1 text-sm">
+                          {(previewAsset.metadata.hierarchy?.render_engine || previewAsset.metadata.render_engine) && (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-400">Render Engine:</span>
+                              <span className="text-white">{previewAsset.metadata.hierarchy?.render_engine || previewAsset.metadata.render_engine}</span>
+                            </div>
+                          )}
+                          {previewAsset.artist && (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-400">Artist:</span>
+                              <span className="text-white">{previewAsset.artist}</span>
+                            </div>
+                          )}
+                          {previewAsset.metadata.houdini_version && (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-400">Houdini Version:</span>
+                              <span className="text-white">{previewAsset.metadata.houdini_version}</span>
+                            </div>
+                          )}
+                          {previewAsset.metadata.export_time && (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-400">Export Time:</span>
+                              <span className="text-white">{new Date(previewAsset.metadata.export_time).toLocaleString()}</span>
+                            </div>
+                          )}
+                          {previewAsset.created_at && (
+                            <div className="flex justify-between">
+                              <span className="text-neutral-400">Created:</span>
+                              <span className="text-white">{new Date(previewAsset.created_at).toLocaleDateString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
                   )}
 
                   {/* Action Buttons */}
                   <div className="space-y-3 pt-4">
                     {/* Main Action Buttons - Different for textures vs other assets */}
                     {(previewAsset.asset_type === 'Textures' || previewAsset.category === 'Textures') ? (
-                      /* Texture assets - Only Copy Folder Path */
-                      <button 
-                        onClick={async () => {
-                          try {
-                            console.log('Getting folder path for asset:', previewAsset.id);
-                            
-                            const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
-                              method: 'POST'
-                            });
-                            
-                            if (response.ok) {
-                              const result = await response.json();
-                              console.log('Folder path response:', result);
+                      /* Texture assets - Individual texture file copy buttons + Copy Folder Path */
+                      <>
+                        {/* Individual Texture Copy Buttons */}
+                        <TextureFileCopyButtons asset={previewAsset} />
+                        
+                        {/* Copy Folder Path */}
+                        <button 
+                          onClick={async () => {
+                            try {
+                              console.log('Getting folder path for asset:', previewAsset.id);
                               
-                              // Copy to clipboard
-                              try {
-                                await navigator.clipboard.writeText(result.folder_path);
+                              const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
+                                method: 'POST'
+                              });
+                              
+                              if (response.ok) {
+                                const result = await response.json();
+                                console.log('Folder path response:', result);
                                 
-                                // Show success message
-                                let message = `✅ Folder path copied to clipboard!\n\n`;
-                                message += `📁 Asset: ${result.asset_name}\n`;
-                                message += `📂 Path: ${result.folder_path}\n`;
-                                message += `📋 Status: ${result.folder_exists ? 'Folder exists' : 'Folder may not exist'}`;
-                                
-                                alert(message);
-                                console.log('📋 Folder path copied to clipboard:', result.folder_path);
-                                
-                              } catch (clipboardError) {
-                                console.log('Could not copy to clipboard:', clipboardError);
-                                alert(`❌ Could not copy to clipboard, but here's the path:\n\n${result.folder_path}`);
+                                // Copy to clipboard
+                                try {
+                                  await navigator.clipboard.writeText(result.folder_path);
+                                  
+                                  // Show success message
+                                  let message = `✅ Folder path copied to clipboard!\n\n`;
+                                  message += `📁 Asset: ${result.asset_name}\n`;
+                                  message += `📂 Path: ${result.folder_path}\n`;
+                                  message += `📋 Status: ${result.folder_exists ? 'Folder exists' : 'Folder may not exist'}`;
+                                  
+                                  alert(message);
+                                  console.log('📋 Folder path copied to clipboard:', result.folder_path);
+                                  
+                                } catch (clipboardError) {
+                                  console.log('Could not copy to clipboard:', clipboardError);
+                                  alert(`❌ Could not copy to clipboard, but here's the path:\n\n${result.folder_path}`);
+                                }
+                              } else {
+                                const error = await response.json();
+                                console.log('Failed to get folder path:', error);
+                                alert(`❌ Failed to get folder path: ${error.detail || 'Unknown error'}\n\nAsset ID: ${previewAsset.id}`);
                               }
-                            } else {
-                              const error = await response.json();
-                              console.log('Failed to get folder path:', error);
-                              alert(`❌ Failed to get folder path: ${error.detail || 'Unknown error'}\n\nAsset ID: ${previewAsset.id}`);
+                            } catch (error) {
+                              console.error('Error getting folder path:', error);
+                              alert('❌ Failed to get folder path. Please check console for details.');
                             }
-                          } catch (error) {
-                            console.error('Error getting folder path:', error);
-                            alert('❌ Failed to get folder path. Please check console for details.');
-                          }
-                        }}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
-                      >
-                        <Copy size={20} />
-                        Copy Folder Path
-                      </button>
+                          }}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                        >
+                          <Copy size={20} />
+                          Copy Folder Path
+                        </button>
+                      </>
                     ) : (
                       /* Non-texture assets - Show both buttons */
                       <>
@@ -2908,6 +3307,9 @@ const AssetLibrary = ({
                           formatAssetName={formatAssetName}
                           formatAssetNameJSX={formatAssetNameJSX}
                           openPreview={openPreview}
+                          onEditAsset={handleEditAsset}
+                          onDeleteAsset={handleDeleteAsset}
+                          onCopyAsset={copyAssetToClipboard}
                         />
                       );
                     })}

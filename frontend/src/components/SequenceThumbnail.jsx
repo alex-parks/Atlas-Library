@@ -9,7 +9,8 @@ const SequenceThumbnail = ({
   onClick = () => {},
   thumbnailFrame = null,  // Frame number to show when not hovering
   disableScrubbing = false,  // Disable mouse scrubbing for navigation
-  externalFrameIndex = null  // External control of frame index (for arrow navigation)
+  externalFrameIndex = null,  // External control of frame index (for arrow navigation)
+  hideZoomMessage = false  // Hide the "Scroll to zoom" message
 }) => {
   const [sequenceData, setSequenceData] = useState(null);
   const [currentFrame, setCurrentFrame] = useState(0);
@@ -346,7 +347,7 @@ const SequenceThumbnail = ({
       )}
       
       {/* Zoom instructions - show briefly when hovering */}
-      {isHovering && zoom === 1 && (
+      {isHovering && zoom === 1 && !hideZoomMessage && (
         <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded opacity-70">
           Scroll to zoom
         </div>

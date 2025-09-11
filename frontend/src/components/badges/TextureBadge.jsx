@@ -1,14 +1,15 @@
 // Texture Asset Badge Component
 // Specialized for uploaded Texture assets
 import React, { useState, useEffect } from 'react';
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Edit, Copy, Eye, Trash2 } from 'lucide-react';
 
-const TextureBadge = ({ asset, formatAssetNameJSX }) => {
+const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, onCopyAsset }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isClickedOpen, setIsClickedOpen] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imageList, setImageList] = useState([]);
   const [imageResolutions, setImageResolutions] = useState({});
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const handleBannerHover = () => {
     if (!isClickedOpen) {
@@ -101,7 +102,7 @@ const TextureBadge = ({ asset, formatAssetNameJSX }) => {
     if (uvTile) return 'UV Tile';
     if (seamless) return 'Seamless';
     
-    return 'Standard';
+    return null;
   };
 
   const getCreatedDate = () => {
@@ -116,7 +117,15 @@ const TextureBadge = ({ asset, formatAssetNameJSX }) => {
         if (response.ok) {
           const data = await response.json();
           console.log('🖼️ Texture images loaded for badge:', data);
-          setImageList(data.images || []);
+          
+          // Sort images by texture type priority
+          const sortedImages = (data.images || []).sort((a, b) => {
+            const abbrA = getTextureTypeAbbr(a.filename || '');
+            const abbrB = getTextureTypeAbbr(b.filename || '');
+            return TEXTURE_PRIORITY[abbrA] - TEXTURE_PRIORITY[abbrB];
+          });
+          
+          setImageList(sortedImages);
           setImageResolutions(data.resolutions || {});
         }
       } catch (error) {
@@ -128,6 +137,20 @@ const TextureBadge = ({ asset, formatAssetNameJSX }) => {
       loadImageList();
     }
   }, [asset.id, asset._key]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showDropdown && !event.target.closest('.texture-dropdown-menu')) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDropdown]);
 
   // Navigation functions
   const navigateImage = (direction) => {
@@ -161,13 +184,26 @@ const TextureBadge = ({ asset, formatAssetNameJSX }) => {
     return '?';
   };
 
-  // Get texture types from image list
+  // Define texture priority order
+  const TEXTURE_PRIORITY = {
+    'BC': 1, // Base Color
+    'M': 2,  // Metallic
+    'R': 3,  // Roughness
+    'N': 4,  // Normal
+    'O': 5,  // Opacity
+    'D': 6,  // Displacement
+    '?': 99  // Unknown
+  };
+
+  // Get texture types from image list in priority order
   const getTextureTypes = () => {
-    return imageList.map((img, index) => ({
-      abbr: getTextureTypeAbbr(img.filename || ''),
-      index: index,
-      filename: img.filename
-    }));
+    return imageList
+      .map((img, index) => ({
+        abbr: getTextureTypeAbbr(img.filename || ''),
+        index: index,
+        filename: img.filename
+      }))
+      .sort((a, b) => TEXTURE_PRIORITY[a.abbr] - TEXTURE_PRIORITY[b.abbr]);
   };
 
   return (
@@ -236,11 +272,79 @@ const TextureBadge = ({ asset, formatAssetNameJSX }) => {
           onMouseLeave={handleBannerLeave}
           onClick={handleBannerClick}
         >
-          <div className="flex items-center justify-center py-1 px-3">
+          <div className="flex items-center justify-between py-1 px-3">
             <div className="flex items-center gap-2 text-purple-400 hover:text-white transition-colors">
               <span className="text-lg">🖼️</span>
               <span className="text-xs font-medium">Texture Info</span>
               {isExpanded ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+            </div>
+            
+            {/* Three-dot menu button */}
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDropdown(!showDropdown);
+                }}
+                className="text-purple-400 hover:text-white p-1 rounded transition-colors opacity-0 group-hover:opacity-100"
+                title="Asset Actions"
+              >
+                <MoreVertical size={12} />
+              </button>
+              
+              {/* Dropdown menu */}
+              {showDropdown && (
+                <div className="absolute right-0 bottom-full mb-1 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg z-50 min-w-[140px] texture-dropdown-menu">
+                  <div className="py-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        onEditAsset?.(asset);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+                    >
+                      <Edit size={14} />
+                      Edit Texture
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        onPreviewAsset?.(asset);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+                    >
+                      <Eye size={14} />
+                      Preview
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        onCopyAsset?.(asset);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+                    >
+                      <Copy size={14} />
+                      Copy Info
+                    </button>
+                    <div className="border-t border-neutral-700 my-1"></div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        console.log('Delete texture:', asset.name);
+                        // Add delete functionality later
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-400 hover:bg-red-600/20 hover:text-red-300 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,12 +1,13 @@
 // Houdini Asset Card Component
 // Full card component for traditional Houdini 3D assets
-import React, { useState } from 'react';
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronUp, ChevronDown, MoreVertical, Edit, Trash2, Eye, Copy } from 'lucide-react';
 import SequenceThumbnail from '../SequenceThumbnail';
 
-const HoudiniAssetCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) => {
+const HoudiniAssetCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, onEditAsset, onDeleteAsset, onCopyAsset }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isClickedOpen, setIsClickedOpen] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const handleBannerHover = () => {
     if (!isClickedOpen) {
@@ -68,6 +69,20 @@ const HoudiniAssetCard = ({ asset, formatAssetName, formatAssetNameJSX, openPrev
     return asset.artist || 'Unknown';
   };
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showDropdown && !event.target.closest('.asset-dropdown-menu')) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDropdown]);
+
   return (
     <div className="group relative">
       <div className={`bg-neutral-800 rounded-lg overflow-hidden border transition-all duration-200 hover:shadow-lg relative ${
@@ -89,6 +104,7 @@ const HoudiniAssetCard = ({ asset, formatAssetName, formatAssetNameJSX, openPrev
               '🎨'
             }
             onClick={() => openPreview(asset)}
+            hideZoomMessage={true}
           />
           
           {/* Version Tag - Bottom Left (standard position for Houdini assets) */}
@@ -107,9 +123,67 @@ const HoudiniAssetCard = ({ asset, formatAssetName, formatAssetNameJSX, openPrev
             )}
           </div>
 
-          {/* Branded Badge - Top Right */}
+          {/* Three-dot menu button - Top Right (appears on hover) */}
+          <div className="absolute top-2 right-2">
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDropdown(!showDropdown);
+                }}
+                className="bg-black/60 hover:bg-black/80 text-white rounded-lg p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100"
+                title="Asset Actions"
+              >
+                <MoreVertical size={14} />
+              </button>
+              
+              {/* Dropdown menu */}
+              {showDropdown && (
+                <div className="absolute right-0 top-full mt-1 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg z-50 min-w-[160px] asset-dropdown-menu">
+                  <div className="py-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        onEditAsset?.(asset);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+                    >
+                      <Edit size={14} />
+                      Edit Asset
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        onCopyAsset?.(asset);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+                    >
+                      <Copy size={14} />
+                      Copy Info
+                    </button>
+                    <div className="border-t border-neutral-700 my-1"></div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        onDeleteAsset?.(asset);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-400 hover:bg-red-600/20 hover:text-red-300 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                      Move to Trashbin
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Branded Badge - Top Center (moved to avoid conflict with menu) */}
           {(asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded) && (
-            <div className="absolute top-2 right-2">
+            <div className="absolute top-2 left-1/2 transform -translate-x-1/2">
               <span className="px-2 py-1 text-xs rounded font-bold bg-yellow-500/20 text-yellow-300 backdrop-blur-sm">
                 ⚠ BRANDED
               </span>
@@ -124,7 +198,10 @@ const HoudiniAssetCard = ({ asset, formatAssetName, formatAssetNameJSX, openPrev
             isExpanded ? 'max-h-48 opacity-100' : 'max-h-0 opacity-0'
           }`}>
             <div className="p-3">
-              <h3 className="text-white font-semibold text-sm mb-2 truncate">{formatAssetNameJSX(asset)}</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-lg">🎨</span>
+                <h3 className="text-white font-semibold text-sm truncate">{formatAssetNameJSX(asset)}</h3>
+              </div>
               
               {/* Houdini Asset Specific Fields - 2x3 layout */}
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-neutral-500">
@@ -159,13 +236,14 @@ const HoudiniAssetCard = ({ asset, formatAssetName, formatAssetNameJSX, openPrev
           {/* Always visible tab at bottom */}
           <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <div 
-              className="bg-neutral-800/95 border border-neutral-700 rounded-t-lg shadow-lg cursor-pointer hover:bg-neutral-700/95 transition-all duration-200"
+              className="bg-blue-500/10 border border-blue-500/30 rounded-t-lg shadow-lg cursor-pointer hover:bg-blue-500/20 transition-all duration-200"
               onMouseEnter={handleBannerHover}
               onMouseLeave={handleBannerLeave}
               onClick={handleBannerClick}
             >
               <div className="flex items-center justify-center py-1 px-3">
-                <div className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors">
+                <div className="flex items-center gap-2 text-blue-400 hover:text-white transition-colors">
+                  <span className="text-lg">🎨</span>
                   <span className="text-xs font-medium">Asset Info</span>
                   {isExpanded ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
                 </div>
