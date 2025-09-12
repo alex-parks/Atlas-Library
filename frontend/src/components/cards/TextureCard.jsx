@@ -59,11 +59,11 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
       return asset.metadata.file_format.toUpperCase();
     }
     
-    // Check copied files for extensions
-    if (asset.paths?.copied_files && asset.paths.copied_files.length > 0) {
-      // Get all unique extensions from copied files
+    // Check thumbnail files for extensions
+    if (asset.paths?.thumbnails && asset.paths.thumbnails.length > 0) {
+      // Get all unique extensions from thumbnail files
       const extensions = new Set();
-      asset.paths.copied_files.forEach(file => {
+      asset.paths.thumbnails.forEach(file => {
         const extension = file.split('.').pop()?.toLowerCase();
         if (extension) {
           extensions.add(extension.toUpperCase());
@@ -225,14 +225,46 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
     return getResolution();
   };
 
-  // Map texture types to their abbreviations using metadata texture slots
-  const getTextureTypeAbbr = (filename) => {
-    // First check if we have texture slot metadata (more reliable)
+  // Map texture types to their abbreviations using ONLY upload metadata (NO filename parsing)
+  const getTextureTypeAbbr = (filename, imageObj = null) => {
+    console.log('🔍 TextureCard - Getting texture type for:', filename, 'imageObj:', imageObj);
+    
+    // Check if this is a Preview image first
+    if (imageObj?.is_preview || imageObj?.isPreview || filename === 'Preview.png') {
+      console.log('✅ TextureCard - Detected Preview image');
+      return 'P'; // Preview abbreviation
+    }
+    
+    // Check if this is a single texture (not a texture set)
+    const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
+    
+    if (!isTextureSet) {
+      // For single textures, use the uploaded subcategory (no filename parsing)
+      const subcategory = asset.metadata?.subcategory || asset.subcategory;
+      if (subcategory) {
+        const subcategoryLower = subcategory.toLowerCase();
+        if (subcategoryLower.includes('alpha')) return 'A';
+        if (subcategoryLower.includes('base') && subcategoryLower.includes('color')) return 'BC';
+        if (subcategoryLower.includes('albedo')) return 'BC';
+        if (subcategoryLower.includes('metallic')) return 'M';
+        if (subcategoryLower.includes('roughness')) return 'R';
+        if (subcategoryLower.includes('normal')) return 'N';
+        if (subcategoryLower.includes('opacity')) return 'O';
+        if (subcategoryLower.includes('displacement') || subcategoryLower.includes('height')) return 'D';
+      }
+      return 'T'; // Generic texture for single textures without clear subcategory
+    }
+    
+    // For texture sets, use texture slot metadata EXCLUSIVELY (no filename parsing)
     if (asset.metadata?.texture_set_info?.texture_slots) {
       const slots = asset.metadata.texture_set_info.texture_slots;
-      // Find which slot this filename corresponds to
+      console.log('🔍 TextureCard - Available texture slots:', slots);
+      console.log('🔍 TextureCard - Looking for filename:', filename);
+      
+      // Find which slot this filename corresponds to by original_filename match
       for (const [slotKey, slotInfo] of Object.entries(slots)) {
-        if (filename.includes(`_${slotInfo.position}_${slotInfo.type}_`)) {
+        console.log(`🔍 TextureCard - Checking slot ${slotKey}: ${slotInfo.original_filename} vs ${filename}`);
+        if (slotInfo.original_filename === filename) {
           // Map slot types to abbreviations
           const typeMap = {
             'BaseColor': 'BC',
@@ -242,41 +274,32 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
             'Opacity': 'O',
             'Displacement': 'D'
           };
-          return typeMap[slotInfo.type] || '?';
+          const result = typeMap[slotInfo.type] || 'T';
+          console.log(`✅ TextureCard - Found match! ${slotInfo.type} -> ${result}`);
+          return result;
         }
       }
+      console.log('❌ TextureCard - No matching slot found for filename');
+    } else {
+      console.log('❌ TextureCard - No texture_set_info.texture_slots found in asset metadata');
     }
     
-    const lower = filename.toLowerCase();
-    
-    // New format: AssetName_Position_Type_thumbnail.png
-    if (lower.includes('_0_basecolor')) return 'BC';
-    if (lower.includes('_1_metallic')) return 'M';
-    if (lower.includes('_2_roughness')) return 'R';
-    if (lower.includes('_3_normal')) return 'N';
-    if (lower.includes('_4_opacity')) return 'O';
-    if (lower.includes('_5_displacement')) return 'D';
-    
-    // Fallback to content-based detection for backward compatibility
-    if (lower.includes('displacement') || lower.includes('height') || lower.includes('disp')) return 'D';
-    if (lower.includes('base') && lower.includes('color')) return 'BC';
-    if (lower.includes('albedo')) return 'BC';
-    if (lower.includes('alpha')) return 'A';
-    if (lower.includes('metallic') || lower.includes('metalness')) return 'M';
-    if (lower.includes('roughness')) return 'R';
-    if (lower.includes('normal')) return 'N';
-    if (lower.includes('opacity')) return 'O';
-    return '?';
+    // If we get here, something is wrong with the metadata
+    console.warn(`⚠️ TextureCard - No texture slot found for filename: ${filename}`);
+    return 'T'; // Default to generic texture instead of '?'
   };
 
-  // Define texture priority order
+  // Define texture priority order (Preview first, then texture maps)
   const TEXTURE_PRIORITY = {
+    'P': 0,  // Preview (always first)
     'BC': 1, // Base Color
     'M': 2,  // Metallic
     'R': 3,  // Roughness
     'N': 4,  // Normal
     'O': 5,  // Opacity
     'D': 6,  // Displacement
+    'A': 7,  // Alpha (single textures)
+    'T': 8,  // Generic texture
     '?': 99  // Unknown
   };
 
@@ -284,9 +307,10 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
   const getTextureTypes = () => {
     // Since imageList is already sorted by priority, just map with current index
     return imageList.map((img, index) => ({
-      abbr: getTextureTypeAbbr(img.filename || ''),
+      abbr: getTextureTypeAbbr(img.filename || '', img),
       index: index,
-      filename: img.filename
+      filename: img.filename,
+      isPreview: img.is_preview || img.isPreview || false
     }));
   };
 
@@ -317,7 +341,7 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
                   className="w-full h-full object-cover cursor-pointer"
                   onClick={() => openPreview(asset)}
                   onError={(e) => {
-                    console.error(`Failed to load texture image ${currentImageIndex}`);
+                    console.error(`Failed to load texture image ${currentImageIndex}:`, imageList[currentImageIndex]?.path);
                     e.target.style.display = 'none';
                     e.target.nextSibling.style.display = 'flex';
                   }}

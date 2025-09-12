@@ -1,5 +1,5 @@
 // New Asset Library with Navigation Structure
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette, ChevronLeft, ChevronRight } from 'lucide-react';
 import SequenceThumbnail from './SequenceThumbnail';
 import HoudiniAssetBadge from './badges/HoudiniAssetBadge';
@@ -108,6 +108,13 @@ const AssetLibrary = ({
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('grid');
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Pagination/virtual scrolling state
+  const [displayedAssets, setDisplayedAssets] = useState([]);
+  const [filteredAssetsState, setFilteredAssetsState] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const ASSETS_PER_PAGE = 50;
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [filterTab, setFilterTab] = useState('3d-assets'); // '3d-assets', 'textures', 'materials', 'hdri'
   const [badgeSize, setBadgeSize] = useState(50); // Badge size slider (0-100, default 50 = medium)
@@ -227,6 +234,7 @@ const AssetLibrary = ({
     name: '',
     filePath: '',
     previewPath: '', // Preview JPEG/PNG for HDRIs
+    previewImagePath: '', // Preview image for texture badge display
     tags: [], // Upload tags array
     description: '',
     subcategory: 'Alpha', // Default for Textures
@@ -296,6 +304,12 @@ const AssetLibrary = ({
     // Check database status when navigation changes
     checkDatabaseStatus();
   }, [selectedDimension, selectedCategory, selectedSubcategory, currentView]);
+
+  // Update displayed assets when filtered assets change
+  useEffect(() => {
+    setCurrentPage(1);
+    updateDisplayedAssets(filteredAssetsState, 1);
+  }, [filteredAssetsState]);
 
   // Navigation functions
   const handleDimensionSelect = (dimension) => {
@@ -463,6 +477,8 @@ const AssetLibrary = ({
     if (tagFilters && tagFilters.length > 0) {
       tagFilters.forEach(tag => params.append('tags', tag));
     }
+    // Set limit to maximum to show all assets (default is 100)
+    params.set('limit', '1000');
     
     const url = `${settings.apiEndpoint}${params.toString() ? '?' + params.toString() : ''}`;
     
@@ -481,14 +497,28 @@ const AssetLibrary = ({
         
         
         setAssets(Array.isArray(assets) ? assets : []);
+        // Reset pagination when new assets are loaded
+        setCurrentPage(1);
         setLoading(false);
       })
       .catch(err => {
         console.error('Failed to load assets:', err);
         setLoading(false);
         setAssets([]);
+        setDisplayedAssets([]);
       });
   };
+
+  // Function to update displayed assets based on pagination
+  const updateDisplayedAssets = (allAssets, page = 1) => {
+    const startIndex = 0;
+    const endIndex = page * ASSETS_PER_PAGE;
+    const assetsToDisplay = allAssets.slice(startIndex, endIndex);
+    setDisplayedAssets(assetsToDisplay);
+  };
+
+  // Function to load more assets (for scroll loading) - will be defined after filteredAssets
+  let loadMoreAssets;
 
   const checkDatabaseStatus = () => {
     fetch('http://localhost:8000/health')
@@ -665,7 +695,9 @@ const AssetLibrary = ({
     );
   };
 
-  const filteredAssets = assets.filter(asset => {
+  // Use state for filtered assets to avoid circular dependency
+  useEffect(() => {
+    const filtered = assets.filter(asset => {
     // Note: Search and tag filtering is now handled server-side via API
     // Only client-side filtering for creator, variants, versions, branded, and navigation
     
@@ -759,13 +791,29 @@ const AssetLibrary = ({
     });
 
     return matchesCreator && matchesBrandedFilter && matchesVariantFilter && matchesVersionFilter && matchesNavigation && matchesActiveFilters;
-  });
+    });
+    
+    setFilteredAssetsState(filtered);
+  }, [assets, selectedFilters, currentView, selectedDimension, selectedCategory, selectedSubcategory, activeFilters]);
+
+  // Define loadMoreAssets function
+  loadMoreAssets = useCallback(() => {
+    if (isLoadingMore || displayedAssets.length >= filteredAssetsState.length) return;
+    
+    setIsLoadingMore(true);
+    setTimeout(() => {
+      const nextPage = currentPage + 1;
+      setCurrentPage(nextPage);
+      updateDisplayedAssets(filteredAssetsState, nextPage);
+      setIsLoadingMore(false);
+    }, 300); // Small delay to show loading state
+  }, [filteredAssetsState, isLoadingMore, displayedAssets.length, currentPage]);
 
   // Debug logging for filtering
   React.useEffect(() => {
     console.log('=== FILTERING DEBUG ===');
     console.log('Total assets:', assets.length);
-    console.log('Filtered assets:', filteredAssets.length);
+    console.log('Filtered assets:', filteredAssetsState.length);
     console.log('Current view:', currentView);
     console.log('Selected dimension:', selectedDimension);
     console.log('Selected category:', selectedCategory);
@@ -796,7 +844,7 @@ const AssetLibrary = ({
       }
     }
     console.log('=======================');
-  }, [assets, filteredAssets, currentView, selectedDimension, selectedCategory, selectedSubcategory, activeFilters, selectedFilters]);
+  }, [assets, filteredAssetsState, currentView, selectedDimension, selectedCategory, selectedSubcategory, activeFilters, selectedFilters]);
 
   const saveSettings = async () => {
     try {
@@ -959,6 +1007,8 @@ const AssetLibrary = ({
           }),
           // Texture uploads: Handle different subcategories
           ...(uploadData.assetType === 'Textures' && {
+            // Include preview image path for all textures if provided
+            ...(uploadData.previewImagePath && { preview_image_path: uploadData.previewImagePath }),
             // For Texture Sets: Send texture_set_paths, no file_path
             ...(uploadData.subcategory === 'Texture Sets' && { texture_set_paths: uploadData.textureSetPaths }),
             // For Alpha textures: Include alpha_subcategory and file_path
@@ -1000,6 +1050,7 @@ const AssetLibrary = ({
           name: '',
           filePath: '',
           previewPath: '',
+          previewImagePath: '', // Reset preview image path
           description: '',
           tags: [], // Reset tags
           subcategory: 'Alpha',
@@ -1138,6 +1189,23 @@ const AssetLibrary = ({
     };
   }, [activeDropdown]);
 
+  // Scroll detection for infinite loading
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const windowHeight = window.innerHeight;
+      const docHeight = document.documentElement.offsetHeight;
+      
+      // Load more when user is 200px from bottom
+      if (scrollTop + windowHeight >= docHeight - 200) {
+        loadMoreAssets();
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [loadMoreAssets]);
+
   const assetCategories = [...new Set(assets.map(asset => asset.category))];
   const creators = [...new Set(assets.map(asset => asset.artist).filter(Boolean))];
 
@@ -1154,14 +1222,17 @@ const AssetLibrary = ({
     const [isHovering, setIsHovering] = useState(false);
     const containerRef = useRef(null);
 
-    // Define texture priority order (same as TextureCard/TextureBadge)
+    // Define texture priority order (Preview first, then texture maps)
     const TEXTURE_PRIORITY = {
+      'P': 0,  // Preview (always first)
       'BC': 1, // Base Color
       'M': 2,  // Metallic
       'R': 3,  // Roughness
       'N': 4,  // Normal
       'O': 5,  // Opacity
       'D': 6,  // Displacement
+      'A': 7,  // Alpha (single textures)
+      'T': 8,  // Generic texture
       '?': 99  // Unknown
     };
 
@@ -1174,24 +1245,43 @@ const AssetLibrary = ({
             const data = await response.json();
             console.log('🖼️ Texture images loaded for preview:', data);
             
-            // Sort images by texture type priority (same as TextureCard/TextureBadge)
+            // Sort images by texture type priority (Preview will be added separately)
             const sortedImages = (data.images || []).sort((a, b) => {
-              const abbrA = getTextureTypeAbbr(a.filename || '');
-              const abbrB = getTextureTypeAbbr(b.filename || '');
+              const abbrA = getTextureTypeAbbr(a.filename || '', a);
+              const abbrB = getTextureTypeAbbr(b.filename || '', b);
               return TEXTURE_PRIORITY[abbrA] - TEXTURE_PRIORITY[abbrB];
             });
             
-            setImageList(sortedImages);
+            // Check if there's a Preview image in the asset paths
+            const hasPreviewImage = asset.paths?.preview_files && asset.paths.preview_files.length > 0;
+            
+            let finalImages = sortedImages;
+            if (hasPreviewImage) {
+              // Add Preview as the first image
+              const previewImage = {
+                filename: 'Preview.png',
+                path: asset.paths.preview_files[0], // First preview file
+                isPreview: true
+              };
+              finalImages = [previewImage, ...sortedImages];
+              console.log('🖼️ Added Preview image first in modal:', previewImage);
+            }
+            
+            setImageList(finalImages);
             setImageResolutions(data.resolutions || {});
+            // Reset image index when image list changes to prevent corruption
+            setCurrentImageIndex(0);
           } else {
             // For single textures or if API call fails, create a single image entry
             console.log('🖼️ Using fallback single texture display');
             setImageList([{ filename: asset.name, path: '' }]);
+            setCurrentImageIndex(0);
           }
         } catch (error) {
           console.log('🖼️ Using fallback single texture display:', error);
           // Create a single image entry for single textures
           setImageList([{ filename: asset.name, path: '' }]);
+          setCurrentImageIndex(0);
         }
       };
 
@@ -1200,21 +1290,25 @@ const AssetLibrary = ({
       }
     }, [asset.id, asset._key]);
 
-    // Navigation functions
+    // Navigation with bounds checking to prevent corruption
     const navigateImage = (direction) => {
       if (imageList.length <= 1) return;
       
       setCurrentImageIndex(prev => {
-        if (direction === 'left') {
-          return prev === 0 ? imageList.length - 1 : prev - 1;
-        } else {
-          return prev === imageList.length - 1 ? 0 : prev + 1;
-        }
+        const newIndex = direction === 'left' 
+          ? (prev === 0 ? imageList.length - 1 : prev - 1)
+          : (prev === imageList.length - 1 ? 0 : prev + 1);
+        
+        // Ensure index is within bounds
+        const safeIndex = Math.max(0, Math.min(newIndex, imageList.length - 1));
+        
+        // Reset zoom and pan when switching images
+        setZoom(1);
+        setZoomCenter({ x: 0.5, y: 0.5 });
+        setPanOffset({ x: 0, y: 0 });
+        
+        return safeIndex;
       });
-      // Reset zoom and pan when switching images
-      setZoom(1);
-      setZoomCenter({ x: 0.5, y: 0.5 });
-      setPanOffset({ x: 0, y: 0 });
     };
 
     // Handle scroll wheel for zoom (same as SequenceThumbnail)
@@ -1284,23 +1378,45 @@ const AssetLibrary = ({
       setIsDragging(false);
     };
 
-    // Map texture types to their abbreviations - USE UPLOAD METADATA NOT FILENAME
-    const getTextureTypeAbbr = (filename) => {
-      // For single textures, use the uploaded subcategory instead of parsing filename
-      const subcategory = asset.metadata?.subcategory || asset.subcategory;
-      if (subcategory) {
-        const subcategoryLower = subcategory.toLowerCase();
-        if (subcategoryLower.includes('alpha')) return 'A';
-        if (subcategoryLower.includes('base') && subcategoryLower.includes('color')) return 'BC';
-        if (subcategoryLower.includes('albedo')) return 'BC';
-        if (subcategoryLower.includes('metallic')) return 'M';
-        if (subcategoryLower.includes('roughness')) return 'R';
-        if (subcategoryLower.includes('normal')) return 'N';
-        if (subcategoryLower.includes('opacity')) return 'O';
-        if (subcategoryLower.includes('displacement') || subcategoryLower.includes('height')) return 'D';
+    // Get texture type abbreviation using upload metadata only
+    const getTextureTypeAbbr = (filename, imageObj = null) => {
+      // Preview image
+      if (imageObj?.is_preview || imageObj?.isPreview || filename === 'Preview.png') {
+        return 'P';
       }
       
-      // For texture sets or if no subcategory, return generic texture indicator
+      const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
+      
+      if (!isTextureSet) {
+        // Single texture - use subcategory
+        const subcategory = (asset.metadata?.subcategory || asset.subcategory)?.toLowerCase();
+        if (!subcategory) return 'T';
+        
+        if (subcategory.includes('alpha')) return 'A';
+        if (subcategory.includes('base') && subcategory.includes('color')) return 'BC';
+        if (subcategory.includes('albedo')) return 'BC';
+        if (subcategory.includes('metallic')) return 'M';
+        if (subcategory.includes('roughness')) return 'R';
+        if (subcategory.includes('normal')) return 'N';
+        if (subcategory.includes('opacity')) return 'O';
+        if (subcategory.includes('displacement') || subcategory.includes('height')) return 'D';
+        return 'T';
+      }
+      
+      // Texture set - use texture slot metadata
+      const slots = asset.metadata?.texture_set_info?.texture_slots;
+      if (!slots) return 'T';
+      
+      for (const [slotKey, slotInfo] of Object.entries(slots)) {
+        if (slotInfo.original_filename === filename) {
+          const typeMap = {
+            'BaseColor': 'BC', 'Metallic': 'M', 'Roughness': 'R',
+            'Normal': 'N', 'Opacity': 'O', 'Displacement': 'D'
+          };
+          return typeMap[slotInfo.type] || 'T';
+        }
+      }
+      
       return 'T';
     };
 
@@ -1308,9 +1424,10 @@ const AssetLibrary = ({
     const getTextureTypes = () => {
       return imageList
         .map((img, index) => ({
-          abbr: getTextureTypeAbbr(img.filename || ''),
+          abbr: getTextureTypeAbbr(img.filename || '', img),
           index: index,
-          filename: img.filename
+          filename: img.filename,
+          isPreview: img.isPreview || false
         }))
         .sort((a, b) => TEXTURE_PRIORITY[a.abbr] - TEXTURE_PRIORITY[b.abbr]);
     };
@@ -1565,12 +1682,12 @@ const AssetLibrary = ({
           console.log('🖼️ Checking asset paths for single texture files...');
           console.log('🖼️ Asset paths:', asset.paths);
           
-          // Check various possible locations for copied files
+          // Check various possible locations for texture files
           const possibleFilePaths = [
-            ...(asset.paths?.copied_files || []),
+            ...(asset.paths?.thumbnails || []),
+            ...(asset.paths?.preview_files || []),
             ...(asset.paths?.textures || []),
-            ...(asset.metadata?.textures?.files || []),
-            ...(asset.metadata?.copied_files || [])
+            ...(asset.metadata?.textures?.files || [])
           ];
           
           if (possibleFilePaths.length > 0) {
@@ -2504,6 +2621,7 @@ const AssetLibrary = ({
                         subcategory: 'Outdoor', // Default HDRI subcategory
                         filePath: '',
                         previewPath: '',
+                        previewImagePath: '', // Clear preview image path when switching to HDRI
                         description: '',
                         // Clear all texture-specific fields
                         alphaSubcategory: '',
@@ -2527,6 +2645,7 @@ const AssetLibrary = ({
                         textureType: 'seamless', // Default texture type
                         filePath: '',
                         description: '',
+                        previewImagePath: prev.previewImagePath || '', // Keep preview image path for textures
                         // Clear all HDRI-specific fields
                         previewPath: '',
                         // Initialize texture set paths
@@ -2687,6 +2806,26 @@ const AssetLibrary = ({
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
                 />
               </div>
+
+              {/* Preview Image - For Textures only */}
+              {uploadData.assetType === 'Textures' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Preview Image
+                  </label>
+                  <input
+                    type="text"
+                    value={uploadData.previewImagePath}
+                    onChange={(e) => setUploadData(prev => ({ ...prev, previewImagePath: e.target.value }))}
+                    placeholder="/net/general/your/path/preview.jpg"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-sm"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Optional preview image for texture badge display (supports: .jpg, .png, .tiff)<br/>
+                    Will be copied to Preview folder and displayed first in texture cards
+                  </p>
+                </div>
+              )}
 
               {/* Single File Path - For non-texture-set uploads */}
               {(uploadData.assetType === 'HDRI' || (uploadData.assetType === 'Textures' && uploadData.subcategory !== 'Texture Sets')) && (
@@ -3081,15 +3220,15 @@ const AssetLibrary = ({
                       <button 
                         onClick={async () => {
                           try {
-                            // Get the HDRI file path from the asset's copied_files (should be the .exr/.hdr file)
-                            const copiedFiles = previewAsset.paths?.copied_files || previewAsset.metadata?.paths?.copied_files || [];
-                            if (copiedFiles.length === 0) {
+                            // Get the HDRI file path from the asset's preview files (should be the .exr/.hdr file)
+                            const hdriFiles = previewAsset.paths?.preview_files || previewAsset.metadata?.paths?.preview_files || [];
+                            if (hdriFiles.length === 0) {
                               alert('❌ HDRI file path not found in asset data');
                               return;
                             }
                             
                             // Get the first (and should be only) HDRI file path
-                            let hdriPath = copiedFiles[0];
+                            let hdriPath = hdriFiles[0];
                             
                             // Convert from container path to network path if needed
                             if (hdriPath.startsWith('/app/assets/')) {
@@ -3461,11 +3600,11 @@ const AssetLibrary = ({
                               return previewAsset.metadata.file_format.toUpperCase();
                             }
                             
-                            // Check copied files for extensions
-                            if (previewAsset.paths?.copied_files && previewAsset.paths.copied_files.length > 0) {
-                              // Get all unique extensions from copied files
+                            // Check preview files for extensions
+                            if (previewAsset.paths?.preview_files && previewAsset.paths.preview_files.length > 0) {
+                              // Get all unique extensions from preview files
                               const extensions = new Set();
-                              previewAsset.paths.copied_files.forEach(file => {
+                              previewAsset.paths.preview_files.forEach(file => {
                                 const extension = file.split('.').pop()?.toLowerCase();
                                 if (extension) {
                                   extensions.add(extension.toUpperCase());
@@ -3835,7 +3974,7 @@ const AssetLibrary = ({
                 <div className="bg-gray-700 rounded-xl p-4 mb-6 border border-gray-600/30 shadow-lg">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-8 text-sm text-gray-300">
-                      <span className="font-medium text-gray-200">{filteredAssets.length} assets found</span>
+                      <span className="font-medium text-gray-200">{filteredAssetsState.length} assets found</span>
                       <span>Path: <span className="text-gray-400 font-mono text-xs">/net/library/atlaslib/{selectedDimension}/{selectedCategory}{selectedSubcategory ? `/${selectedSubcategory}` : ''}</span></span>
                       <span>Database: <span className="text-emerald-400 font-medium">{dbStatus.database_type || 'JSON'}</span></span>
                       {(selectedFilters.creator !== 'all' || selectedFilters.showVariants || selectedFilters.showVersions || !selectedFilters.showBranded) && (
@@ -3888,7 +4027,7 @@ const AssetLibrary = ({
 
                 {viewMode === 'grid' ? (
                   <div className={getGridClasses()}>
-                    {filteredAssets.map(asset => {
+                    {displayedAssets.map(asset => {
                       const CardComponent = getAssetCardComponent(asset);
                       return (
                         <CardComponent 
@@ -3913,7 +4052,7 @@ const AssetLibrary = ({
                       <div className="col-span-2">Size</div>
                       <div className="col-span-2">Actions</div>
                     </div>
-                    {filteredAssets.map(asset => (
+                    {displayedAssets.map(asset => (
                       <div key={asset.id} className={`grid grid-cols-12 gap-4 p-4 border-b transition-colors ${
                         asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded
                           ? 'border-yellow-600/30 bg-yellow-600/5 hover:bg-yellow-600/8'
@@ -3953,7 +4092,30 @@ const AssetLibrary = ({
                   </div>
                 )}
 
-                {filteredAssets.length === 0 && !loading && (
+                {/* Pagination info and load more indicator */}
+                {displayedAssets.length > 0 && (
+                  <div className="mt-6 flex flex-col items-center space-y-4">
+                    <div className="text-gray-400 text-sm">
+                      Showing {displayedAssets.length} of {filteredAssetsState.length} assets
+                    </div>
+                    {isLoadingMore && (
+                      <div className="flex items-center space-x-2 text-gray-400">
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Loading more assets...</span>
+                      </div>
+                    )}
+                    {displayedAssets.length < filteredAssetsState.length && !isLoadingMore && (
+                      <button
+                        onClick={loadMoreAssets}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                      >
+                        Load More Assets
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {filteredAssetsState.length === 0 && !loading && (
                   <div className="text-center py-12">
                     <div className="text-gray-400 text-lg mb-2">No assets found</div>
                     <div className="text-gray-500">
@@ -3966,12 +4128,12 @@ const AssetLibrary = ({
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm text-gray-400">
                     <div>
                       <span className="block">Total Files:</span>
-                      <span className="text-white font-medium">{filteredAssets.length}</span>
+                      <span className="text-white font-medium">{filteredAssetsState.length}</span>
                     </div>
                     <div>
                       <span className="block">Total Size:</span>
                       <span className="text-white font-medium">
-                        {Math.round(filteredAssets.reduce((sum, asset) => {
+                        {Math.round(filteredAssetsState.reduce((sum, asset) => {
                           const sizes = Object.values(asset.file_sizes || {});
                           return sum + sizes.reduce((total, size) => total + (typeof size === 'number' ? size : 0), 0);
                         }, 0) / 1024 / 1024)} MB

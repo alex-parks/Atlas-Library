@@ -1,5 +1,3 @@
-// Texture Asset Badge Component
-// Specialized for uploaded Texture assets
 import React, { useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Edit, Copy, Eye, Trash2 } from 'lucide-react';
 
@@ -8,105 +6,58 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
   const [isClickedOpen, setIsClickedOpen] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imageList, setImageList] = useState([]);
-  const [imageResolutions, setImageResolutions] = useState({});
   const [showDropdown, setShowDropdown] = useState(false);
 
-  const handleBannerHover = () => {
-    if (!isClickedOpen) {
-      setIsExpanded(true);
-    }
-  };
-
-  const handleBannerLeave = () => {
-    if (!isClickedOpen) {
-      setIsExpanded(false);
-    }
-  };
-
+  const handleBannerHover = () => !isClickedOpen && setIsExpanded(true);
+  const handleBannerLeave = () => !isClickedOpen && setIsExpanded(false);
   const handleBannerClick = () => {
-    if (isClickedOpen) {
-      setIsClickedOpen(false);
-      setIsExpanded(false);
-    } else {
-      setIsClickedOpen(true);
-      setIsExpanded(true);
-    }
+    setIsClickedOpen(!isClickedOpen);
+    setIsExpanded(!isClickedOpen);
   };
 
-  // Helper functions specific to Texture assets
-  const getResolution = () => {
-    return asset.metadata?.resolution || asset.metadata?.dimensions || 'Unknown';
-  };
-
+  // Helper functions
+  const getResolution = () => asset.metadata?.resolution || asset.metadata?.dimensions || 'Unknown';
+  
   const getFormat = () => {
-    // Check for format in metadata first
-    if (asset.metadata?.file_format) {
-      return asset.metadata.file_format.toUpperCase();
-    }
+    if (asset.metadata?.file_format) return asset.metadata.file_format.toUpperCase();
     
-    // Check copied files for extensions
-    if (asset.paths?.copied_files && asset.paths.copied_files.length > 0) {
-      // Get all unique extensions from copied files
-      const extensions = new Set();
-      asset.paths.copied_files.forEach(file => {
-        const extension = file.split('.').pop()?.toLowerCase();
-        if (extension) {
-          extensions.add(extension.toUpperCase());
-        }
-      });
+    if (asset.paths?.thumbnails?.length > 0) {
+      const extensions = new Set(
+        asset.paths.thumbnails
+          .map(file => file.split('.').pop()?.toUpperCase())
+          .filter(Boolean)
+      );
       
-      // If multiple different formats, return "Mixed"
-      if (extensions.size > 1) {
-        return 'Mixed';
-      }
-      
-      // If only one format, return it
-      if (extensions.size === 1) {
-        return Array.from(extensions)[0];
-      }
+      if (extensions.size > 1) return 'Mixed';
+      if (extensions.size === 1) return Array.from(extensions)[0];
     }
     
-    // Fallback to template file
-    if (asset.paths?.template_file) {
-      return asset.paths.template_file.split('.').pop()?.toUpperCase() || 'Unknown';
-    }
-    
-    return 'Unknown';
+    return asset.paths?.template_file?.split('.').pop()?.toUpperCase() || 'Unknown';
   };
 
   const getFileSize = () => {
     const totalBytes = asset.file_sizes?.estimated_total_size || 0;
     if (totalBytes === 0) return <span className="text-gray-500">Calc...</span>;
     
-    if (totalBytes < 1024 * 1024) {
-      return `${Math.round(totalBytes / 1024)} KB`;
-    } else if (totalBytes < 1024 * 1024 * 1024) {
-      return `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
-    } else {
-      return `${(totalBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-    }
+    const mb = 1024 * 1024;
+    const gb = mb * 1024;
+    
+    if (totalBytes < mb) return `${Math.round(totalBytes / 1024)} KB`;
+    if (totalBytes < gb) return `${(totalBytes / mb).toFixed(1)} MB`;
+    return `${(totalBytes / gb).toFixed(2)} GB`;
   };
 
   const getUVLayout = () => {
-    // Check the new texture_type field first
     const textureType = asset.texture_type || asset.metadata?.texture_type;
-    if (textureType) {
-      if (textureType === 'seamless') return 'Seamless';
-      if (textureType === 'uv_tile') return 'UV Tile';
-    }
+    if (textureType === 'seamless') return 'Seamless';
+    if (textureType === 'uv_tile') return 'UV Tile';
     
-    // Fallback to legacy seamless/uv_tile fields
     const seamless = asset.seamless || asset.metadata?.seamless || asset.metadata?.tiling;
     const uvTile = asset.uv_tile || asset.metadata?.uv_tile || asset.metadata?.uvtile;
     
     if (uvTile) return 'UV Tile';
     if (seamless) return 'Seamless';
-    
     return null;
-  };
-
-  const getCreatedDate = () => {
-    return asset.created_at ? new Date(asset.created_at).toLocaleDateString() : 'Unknown';
   };
 
   // Load image list for navigation
@@ -116,14 +67,14 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
         const response = await fetch(`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-images`);
         if (response.ok) {
           const data = await response.json();
-          console.log('🖼️ Texture images loaded for badge:', data);
-          
-          // Backend now returns images in correct position order (BC-M-R-N-O-D)
           setImageList(data.images || []);
-          setImageResolutions(data.resolutions || {});
+          // Reset image index when image list changes to prevent corruption
+          setCurrentImageIndex(0);
         }
       } catch (error) {
-        console.log('No additional texture images found for badge:', error);
+        console.log('No texture images found:', error);
+        setImageList([]);
+        setCurrentImageIndex(0);
       }
     };
 
@@ -134,107 +85,83 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
 
   // Close dropdown when clicking outside
   useEffect(() => {
+    if (!showDropdown) return;
+    
     const handleClickOutside = (event) => {
-      if (showDropdown && !event.target.closest('.texture-dropdown-menu')) {
+      if (!event.target.closest('.texture-dropdown-menu')) {
         setShowDropdown(false);
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showDropdown]);
 
-  // Navigation functions
+  // Navigation with bounds checking to prevent corruption
   const navigateImage = (direction) => {
     if (imageList.length <= 1) return;
     
     setCurrentImageIndex(prev => {
-      if (direction === 'left') {
-        return prev === 0 ? imageList.length - 1 : prev - 1;
-      } else {
-        return prev === imageList.length - 1 ? 0 : prev + 1;
-      }
+      const newIndex = direction === 'left' 
+        ? (prev === 0 ? imageList.length - 1 : prev - 1)
+        : (prev === imageList.length - 1 ? 0 : prev + 1);
+      
+      // Ensure index is within bounds
+      return Math.max(0, Math.min(newIndex, imageList.length - 1));
     });
   };
 
-  // Get current image resolution - always use actual resolution, not thumbnail
-  const getCurrentResolution = () => {
-    return getResolution();
-  };
-
-  // Map texture types to their abbreviations using metadata texture slots
-  const getTextureTypeAbbr = (filename) => {
-    // Check if this is a single texture (not a texture set)
+  // Get texture type abbreviation using upload metadata only
+  const getTextureTypeAbbr = (filename, imageObj = null) => {
+    // Preview image
+    if (imageObj?.is_preview || imageObj?.isPreview || filename === 'Preview.png') {
+      return 'P';
+    }
+    
     const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
     
     if (!isTextureSet) {
-      // For single textures, use the uploaded subcategory instead of parsing filename
-      const subcategory = asset.metadata?.subcategory || asset.subcategory;
-      if (subcategory) {
-        const subcategoryLower = subcategory.toLowerCase();
-        if (subcategoryLower.includes('alpha')) return 'A';
-        if (subcategoryLower.includes('base') && subcategoryLower.includes('color')) return 'BC';
-        if (subcategoryLower.includes('albedo')) return 'BC';
-        if (subcategoryLower.includes('metallic')) return 'M';
-        if (subcategoryLower.includes('roughness')) return 'R';
-        if (subcategoryLower.includes('normal')) return 'N';
-        if (subcategoryLower.includes('opacity')) return 'O';
-        if (subcategoryLower.includes('displacement') || subcategoryLower.includes('height')) return 'D';
-      }
-      return 'T'; // Generic texture for single textures without clear subcategory
+      // Single texture - use subcategory
+      const subcategory = (asset.metadata?.subcategory || asset.subcategory)?.toLowerCase();
+      if (!subcategory) return 'T';
+      
+      if (subcategory.includes('alpha')) return 'A';
+      if (subcategory.includes('base') && subcategory.includes('color')) return 'BC';
+      if (subcategory.includes('albedo')) return 'BC';
+      if (subcategory.includes('metallic')) return 'M';
+      if (subcategory.includes('roughness')) return 'R';
+      if (subcategory.includes('normal')) return 'N';
+      if (subcategory.includes('opacity')) return 'O';
+      if (subcategory.includes('displacement') || subcategory.includes('height')) return 'D';
+      return 'T';
     }
     
-    // For texture sets, check texture slot metadata (more reliable)
-    if (asset.metadata?.texture_set_info?.texture_slots) {
-      const slots = asset.metadata.texture_set_info.texture_slots;
-      // Find which slot this filename corresponds to
-      for (const [slotKey, slotInfo] of Object.entries(slots)) {
-        if (filename.includes(`_${slotInfo.position}_${slotInfo.type}_`)) {
-          // Map slot types to abbreviations
-          const typeMap = {
-            'BaseColor': 'BC',
-            'Metallic': 'M', 
-            'Roughness': 'R',
-            'Normal': 'N',
-            'Opacity': 'O',
-            'Displacement': 'D'
-          };
-          return typeMap[slotInfo.type] || '?';
-        }
+    // Texture set - use texture slot metadata
+    const slots = asset.metadata?.texture_set_info?.texture_slots;
+    if (!slots) return 'T';
+    
+    for (const [slotKey, slotInfo] of Object.entries(slots)) {
+      if (slotInfo.original_filename === filename) {
+        const typeMap = {
+          'BaseColor': 'BC', 'Metallic': 'M', 'Roughness': 'R',
+          'Normal': 'N', 'Opacity': 'O', 'Displacement': 'D'
+        };
+        return typeMap[slotInfo.type] || 'T';
       }
     }
     
-    const lower = filename.toLowerCase();
-    
-    // New format: AssetName_Position_Type_thumbnail.png (for texture sets)
-    if (lower.includes('_0_basecolor')) return 'BC';
-    if (lower.includes('_1_metallic')) return 'M';
-    if (lower.includes('_2_roughness')) return 'R';
-    if (lower.includes('_3_normal')) return 'N';
-    if (lower.includes('_4_opacity')) return 'O';
-    if (lower.includes('_5_displacement')) return 'D';
-    
-    // Legacy fallback for older texture sets only
-    if (lower.includes('displacement') || lower.includes('height') || lower.includes('disp')) return 'D';
-    if (lower.includes('base') && lower.includes('color')) return 'BC';
-    if (lower.includes('albedo')) return 'BC';
-    if (lower.includes('alpha')) return 'A';
-    if (lower.includes('metallic') || lower.includes('metalness')) return 'M';
-    if (lower.includes('roughness')) return 'R';
-    if (lower.includes('normal')) return 'N';
-    if (lower.includes('opacity')) return 'O';
-    return '?';
+    return 'T';
   };
 
-  // Get texture types in the correct display order (BC-M-R-N-O-D)
+  // Get texture types with safe index bounds checking
   const getTextureTypes = () => {
-    // Since the backend now returns images sorted by position, we can use them directly
+    if (!imageList || imageList.length === 0) return [];
+    
     return imageList.map((img, index) => ({
-      abbr: getTextureTypeAbbr(img.filename || ''),
-      index: index, // This is now the correct position index
-      filename: img.filename
+      abbr: getTextureTypeAbbr(img.filename || '', img),
+      index: index,
+      filename: img.filename,
+      isPreview: img.is_preview || img.isPreview || false
     }));
   };
 
@@ -250,7 +177,7 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
             <h3 className="text-white font-semibold text-sm truncate">{formatAssetNameJSX(asset)}</h3>
           </div>
           
-          {/* Texture Specific Fields - 2x2 layout with UV Layout */}
+          {/* Texture Info Grid */}
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
             <div>
               <span className="text-gray-400">Type:</span>
@@ -258,7 +185,7 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
             </div>
             <div>
               <span className="text-gray-400">Resolution:</span>
-              <div className="text-cyan-300 font-medium truncate">{getCurrentResolution()}</div>
+              <div className="text-cyan-300 font-medium truncate">{getResolution()}</div>
             </div>
             <div>
               <span className="text-gray-400">Format:</span>
@@ -268,31 +195,41 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
               <span className="text-gray-400">Size:</span>
               <div className="text-gray-300">{getFileSize()}</div>
             </div>
-            <div>
-              <span className="text-gray-400">UV Layout:</span>
-              <div className="text-blue-300 font-medium">{getUVLayout()}</div>
-            </div>
+            {getUVLayout() && (
+              <div className="col-span-2">
+                <span className="text-gray-400">UV Layout:</span>
+                <div className="text-blue-300 font-medium">{getUVLayout()}</div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Texture Type Indicators - Bottom Left */}
+      {/* Texture Type Indicators */}
       {imageList.length > 1 && (
         <div className="absolute -top-8 left-1 flex gap-1 items-center">
-          {getTextureTypes().map((textureType, idx) => (
-            <span
-              key={idx}
-              className={`
-                px-1.5 py-0.5 text-xs font-bold rounded transition-all duration-200
-                ${currentImageIndex === textureType.index 
-                  ? 'bg-purple-500 text-white' 
-                  : 'bg-black/40 text-gray-400 border border-gray-600/50'}
-              `}
-              title={textureType.filename}
-            >
-              {textureType.abbr}
-            </span>
-          ))}
+          {getTextureTypes().map((textureType, idx) => {
+            const isActive = currentImageIndex === textureType.index;
+            return (
+              <span
+                key={`${textureType.filename}-${idx}`}
+                className={`px-1.5 py-0.5 text-xs font-bold rounded transition-all duration-200 cursor-pointer ${
+                  isActive 
+                    ? 'bg-purple-500 text-white' 
+                    : 'bg-black/40 text-gray-400 border border-gray-600/50 hover:bg-gray-600/50'
+                }`}
+                title={textureType.filename}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (textureType.index >= 0 && textureType.index < imageList.length) {
+                    setCurrentImageIndex(textureType.index);
+                  }
+                }}
+              >
+                {textureType.abbr}
+              </span>
+            );
+          })}
         </div>
       )}
 

@@ -1372,66 +1372,111 @@ async def get_texture_images(asset_id: str):
         
         # Look for original texture files in the Assets subfolder (for copying)
         assets_folder = folder / "Assets"
+        preview_folder = folder / "Preview"
         images = []
         resolutions = {}
         
-        # First, get original files from copied_files in the database
-        copied_files = asset_data.get('paths', {}).get('copied_files', [])
-        
-        if copied_files:
-            logger.info(f"🖼️ Using copied_files from database: {len(copied_files)} files")
-            for i, file_path in enumerate(copied_files):
-                file_path_obj = Path(file_path)
+        # First, check if there's a preview image
+        preview_files = (asset_data.get('paths', {}).get('preview_files', []) or 
+                        asset_data.get('metadata', {}).get('paths', {}).get('preview_files', []))
+        if preview_files and len(preview_files) > 0:
+            # Add preview image as the first image (use container path directly)
+            preview_path = Path(preview_files[0])
+            if preview_path.exists():
+                # For the API response, convert to network path for external access
+                network_path = str(preview_path).replace('/app/assets/', '/net/library/atlaslib/')
                 images.append({
-                    "filename": file_path_obj.name,
-                    "path": str(file_path),  # Full path to original file in Assets folder
-                    "relative_path": f"Assets/{file_path_obj.name}",
-                    "is_original": True
+                    "filename": "Preview.png",
+                    "path": network_path,
+                    "relative_path": "Preview/Preview.png",
+                    "is_original": False,
+                    "is_preview": True
                 })
-                resolutions[i] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
+                resolutions[0] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
+                logger.info(f"🖼️ Added preview image: {preview_path}")
         
-        # Fallback: Scan Assets folder if no copied_files in database
-        elif assets_folder.exists():
-            logger.info(f"🖼️ Scanning Assets folder: {assets_folder}")
+        # Then, get thumbnail files from the database (NOT copied_files)
+        thumbnail_files = asset_data.get('paths', {}).get('thumbnails', [])
+        
+        if thumbnail_files:
+            logger.info(f"🖼️ Using thumbnails from database: {len(thumbnail_files)} files")
+            for i, file_path in enumerate(thumbnail_files):
+                file_path_obj = Path(file_path)
+                # Offset index by 1 if preview exists
+                res_index = i + 1 if (preview_files and len(preview_files) > 0) else i
+                
+                # Extract original filename from thumbnail name for texture slot mapping
+                thumbnail_name = file_path_obj.name
+                original_filename = thumbnail_name
+                
+                # For texture sets, map thumbnail to original using texture_set_info
+                if '_thumbnail' in thumbnail_name:
+                    texture_set_info = asset_data.get('metadata', {}).get('texture_set_info', {})
+                    texture_slots = texture_set_info.get('texture_slots', {})
+                    
+                    # Parse thumbnail name to extract position and type
+                    # Example: Stone_Wall_0_BaseColor_thumbnail.png -> position=0, type=BaseColor
+                    name_parts = thumbnail_name.replace('_thumbnail.png', '').split('_')
+                    
+                    # Find position and type in filename
+                    found_position = None
+                    found_type = None
+                    for i, part in enumerate(name_parts):
+                        if part.isdigit():
+                            found_position = part
+                            # Type should be next part after position
+                            if i + 1 < len(name_parts):
+                                found_type = name_parts[i + 1]
+                            break
+                    
+                    # Find matching texture slot using position
+                    if found_position is not None:
+                        for slot_key, slot_info in texture_slots.items():
+                            if str(slot_info.get('position', '')) == found_position:
+                                original_filename = slot_info.get('original_filename', thumbnail_name)
+                                break
+                
+                images.append({
+                    "filename": original_filename,
+                    "path": str(file_path),  # Full path to thumbnail file
+                    "relative_path": f"Thumbnail/{file_path_obj.name}",
+                    "is_original": False,  # These are thumbnails, not originals
+                    "is_thumbnail": True
+                })
+                resolutions[res_index] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
+        
+        # Fallback: Scan Thumbnail folder if no thumbnails in database
+        elif (folder / "Thumbnail").exists():
+            thumbnail_folder = folder / "Thumbnail"
+            logger.info(f"🖼️ Scanning Thumbnail folder: {thumbnail_folder}")
             image_extensions = {'.png', '.jpg', '.jpeg', '.tiff', '.tga', '.exr', '.tif'}
             
-            for file_path in assets_folder.iterdir():
+            for file_path in thumbnail_folder.iterdir():
                 if file_path.is_file() and file_path.suffix.lower() in image_extensions:
+                    # Extract original filename from thumbnail name
+                    original_filename = file_path.name.replace('_thumbnail', '') if '_thumbnail' in file_path.name else file_path.name
+                    
                     images.append({
-                        "filename": file_path.name,
-                        "path": str(file_path),  # Full path to original file in Assets folder
+                        "filename": original_filename,
+                        "path": str(file_path),  # Full path to thumbnail file
                         "relative_path": str(file_path.relative_to(folder)),
-                        "is_original": True
+                        "is_original": False,
+                        "is_thumbnail": True
                     })
                     # Try to get resolution from asset metadata
                     resolutions[len(images) - 1] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
         
-        # Last resort: Fall back to thumbnails (but mark them appropriately)
+        # If no images found, return empty result
         else:
-            thumbnail_folder = folder / "Thumbnail"
-            if thumbnail_folder.exists():
-                logger.warning(f"⚠️ Using thumbnail files as fallback for {asset_id}")
-                image_extensions = {'.png', '.jpg', '.jpeg', '.tiff', '.tga'}
-                
-                for file_path in thumbnail_folder.iterdir():
-                    if file_path.is_file() and file_path.suffix.lower() in image_extensions:
-                        # For thumbnails, try to find corresponding original file path
-                        original_name = file_path.name.replace('_thumbnail', '')
-                        original_path = assets_folder / original_name if assets_folder.exists() else None
-                        
-                        images.append({
-                            "filename": original_name,
-                            "path": str(original_path) if original_path and original_path.exists() else str(file_path),
-                            "relative_path": f"Assets/{original_name}" if original_path and original_path.exists() else str(file_path.relative_to(folder)),
-                            "is_original": original_path and original_path.exists()
-                        })
-                        resolutions[len(images) - 1] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
-            else:
-                logger.warning(f"⚠️ No Assets or Thumbnail folder found in {folder}")
-                return {"images": [], "resolutions": {}}
+            logger.warning(f"⚠️ No Preview or Thumbnail files found for {asset_id}")
+            return {"images": [], "resolutions": {}}
         
         # Sort images by position in filename (Position 0, 1, 2, etc.)
         def get_texture_position(image_info):
+            # Preview images always come first
+            if image_info.get('is_preview', False):
+                return -1  # Preview comes before all texture maps
+                
             filename = image_info['filename'].lower()
             # Check for position pattern: Name_Position_Type_
             parts = filename.split('_')
@@ -1480,7 +1525,7 @@ async def get_texture_images(asset_id: str):
 
 @router.get("/assets/{asset_id}/texture-image/{image_index}")
 async def get_texture_image_by_index(asset_id: str, image_index: int):
-    """Serve a specific texture image by index"""
+    """Serve a specific texture image by index - uses same ordering as texture-images endpoint"""
     
     # Get asset from database
     asset_queries = get_asset_queries()
@@ -1497,63 +1542,152 @@ async def get_texture_image_by_index(asset_id: str, image_index: int):
         if asset_type != 'Textures':
             raise HTTPException(status_code=404, detail="Not a texture asset")
         
-        # Get folder path
-        folder_path = asset_data.get('folder_path') or asset_data.get('paths', {}).get('folder_path')
-        if not folder_path:
-            raise HTTPException(status_code=404, detail="Asset folder not found")
-        
-        # Convert container mount path if needed
-        if folder_path.startswith('/app/assets/'):
-            folder_path = folder_path.replace('/app/assets/', '/net/library/atlaslib/')
-        
-        # Check if folder exists
-        from pathlib import Path
-        folder = Path(folder_path)
-        if not folder.exists():
-            # Try container mount as fallback
-            container_folder = Path(folder_path.replace('/net/library/atlaslib/', '/app/assets/'))
-            if container_folder.exists():
-                folder = container_folder
-            else:
-                raise HTTPException(status_code=404, detail="Asset folder not found on filesystem")
-        
-        # Look for thumbnail images in the Thumbnail subfolder
-        thumbnail_folder = folder / "Thumbnail"
-        if not thumbnail_folder.exists():
-            raise HTTPException(status_code=404, detail="No Thumbnail folder found")
-        
-        # Scan for thumbnail files (these are the 1024x1024 resized images)
-        image_extensions = {'.png', '.jpg', '.jpeg', '.tiff', '.tga'}
+        # Use same image gathering logic as get_texture_images endpoint
         images = []
         
-        for file_path in thumbnail_folder.iterdir():
-            if file_path.is_file() and file_path.suffix.lower() in image_extensions:
-                images.append(file_path)
+        # First, check if there's a preview image
+        preview_files = (asset_data.get('paths', {}).get('preview_files', []) or 
+                        asset_data.get('metadata', {}).get('paths', {}).get('preview_files', []))
+        if preview_files and len(preview_files) > 0:
+            # Add preview image as the first image (use container path directly)
+            preview_path = Path(preview_files[0])
+            if preview_path.exists():
+                images.append({
+                    "filename": "Preview.png", 
+                    "path": str(preview_path),
+                    "is_preview": True
+                })
         
-        # Sort images by filename
-        images.sort(key=lambda x: x.name)
+        # Then add texture images from thumbnails (NOT copied_files)
+        thumbnail_files = asset_data.get('paths', {}).get('thumbnails', [])
+        if thumbnail_files:
+            for file_path_str in thumbnail_files:
+                file_path = Path(file_path_str)
+                if file_path.exists():
+                    # Map thumbnail name back to original filename for frontend consistency
+                    thumbnail_name = file_path.name
+                    
+                    # Extract original filename using texture slot mapping
+                    original_filename = thumbnail_name
+                    if '_thumbnail' in thumbnail_name:
+                        texture_set_info = asset_data.get('metadata', {}).get('texture_set_info', {})
+                        texture_slots = texture_set_info.get('texture_slots', {})
+                        
+                        # Parse thumbnail name to extract position (Stone_Wall_0_BaseColor_thumbnail.png -> position=0)
+                        name_parts = thumbnail_name.replace('_thumbnail.png', '').split('_')
+                        found_position = None
+                        for part in name_parts:
+                            if part.isdigit():
+                                found_position = part
+                                break
+                        
+                        # Find matching texture slot using position
+                        if found_position is not None:
+                            for slot_key, slot_info in texture_slots.items():
+                                if str(slot_info.get('position', '')) == found_position:
+                                    original_filename = slot_info.get('original_filename', thumbnail_name)
+                                    break
+                    
+                    images.append({
+                        "filename": original_filename,
+                        "path": str(file_path),  # Path to thumbnail file
+                        "is_preview": False,
+                        "is_thumbnail": True
+                    })
+        
+        # Sort images by position in filename (same logic as texture-images endpoint)
+        def get_texture_position(image_info):
+            # Preview images always come first
+            if image_info.get('is_preview', False):
+                return -1  # Preview comes before all texture maps
+                
+            filename = image_info['filename'].lower()
+            # Check for position pattern: Name_Position_Type_
+            parts = filename.split('_')
+            for i, part in enumerate(parts):
+                if part.isdigit() and i > 0:  # Position should not be the first part
+                    # Check if next part matches texture type
+                    if i + 1 < len(parts):
+                        next_part = parts[i + 1]
+                        if any(tex_type in next_part for tex_type in ['basecolor', 'metallic', 'roughness', 'normal', 'opacity', 'displacement']):
+                            return int(part)
+            
+            # Fallback to texture type priority for files without position numbers
+            texture_priority = {
+                'basecolor': 0, 'albedo': 0, 'diffuse': 0,
+                'metallic': 1, 'metalness': 1, 'metal': 1,
+                'roughness': 2, 'rough': 2,
+                'normal': 3, 'bump': 3,
+                'opacity': 4, 'alpha': 4, 'transparency': 4,
+                'displacement': 5, 'height': 5, 'disp': 5
+            }
+            
+            for tex_type, position in texture_priority.items():
+                if tex_type in filename:
+                    return position
+            
+            # Unknown texture types go last
+            return 99
+        
+        images.sort(key=get_texture_position)
         
         # Check if image_index is valid
         if image_index < 0 or image_index >= len(images):
             raise HTTPException(status_code=404, detail=f"Image index {image_index} out of range (0-{len(images)-1})")
         
-        image_path = images[image_index]
+        selected_image = images[image_index]
+        image_path = Path(selected_image["path"])
         
-        # Serve the texture image directly (should be 1024x1024 from upload process)
-        content_type = "image/png"  # Default since we generate PNG thumbnails
-        if image_path.suffix.lower() in ['.jpg', '.jpeg']:
-            content_type = "image/jpeg"
-        elif image_path.suffix.lower() in ['.png']:
+        # Determine content type based on file extension
+        if image_path.suffix.lower() == '.png':
             content_type = "image/png"
-        elif image_path.suffix.lower() in ['.tiff', '.tga']:
-            content_type = "image/tiff"
+        elif image_path.suffix.lower() in ['.jpg', '.jpeg']:
+            content_type = "image/jpeg"
+        elif image_path.suffix.lower() == '.exr':
+            content_type = "image/x-exr"
+        else:
+            content_type = "image/png"  # Default
         
-        from fastapi.responses import FileResponse
-        return FileResponse(
-            path=str(image_path),
-            media_type=content_type,
-            filename=image_path.name
-        )
+        # Since we're now using thumbnail paths directly, just serve the file
+        if image_path.exists():
+            logger.info(f"🖼️ ✅ Serving image: {image_path}")
+            try:
+                import mimetypes
+                from fastapi.responses import FileResponse
+                
+                # Use FileResponse for better file serving
+                return FileResponse(
+                    path=str(image_path),
+                    media_type=content_type,
+                    filename=selected_image["filename"]
+                )
+            except Exception as e:
+                logger.error(f"❌ Error serving image file: {e}")
+                # Fallback to manual file reading
+                pass
+        
+        # Fallback: serve file manually if FileResponse fails
+        if image_path.exists():
+            try:
+                with open(image_path, "rb") as f:
+                    image_data = f.read()
+                
+                from fastapi.responses import Response
+                return Response(
+                    content=image_data,
+                    media_type=content_type,
+                    headers={
+                        "Cache-Control": "public, max-age=3600",
+                        "Content-Disposition": f'inline; filename="{selected_image["filename"]}"'
+                    }
+                )
+            except Exception as e:
+                logger.error(f"❌ Error reading image file: {e}")
+                raise HTTPException(status_code=500, detail=f"Error reading image file: {str(e)}")
+        else:
+            logger.error(f"❌ Image file not found: {image_path}")
+            raise HTTPException(status_code=404, detail=f"Image file not found: {selected_image['filename']}")
+        
         
     except HTTPException:
         raise
@@ -2324,6 +2458,7 @@ class UploadAssetRequest(BaseModel):
     name: str
     file_path: Optional[str] = None  # Optional for texture sets, required for single files
     preview_path: Optional[str] = None  # Optional preview JPEG/PNG for HDRIs
+    preview_image_path: Optional[str] = None  # Optional preview image for texture badge display
     description: Optional[str] = ""
     dimension: str = "3D"
     created_by: str = "web_uploader"
@@ -2469,12 +2604,15 @@ async def upload_asset(upload_request: UploadAssetRequest):
         # Create subfolders for Textures/HDRI structure
         asset_subfolder = asset_folder / "Asset"  # This holds the ACTUAL asset file
         thumbnail_folder = asset_folder / "Thumbnail"
+        preview_folder = asset_folder / "Preview"  # This holds the preview image for texture badge display
         asset_subfolder.mkdir(exist_ok=True)
         thumbnail_folder.mkdir(exist_ok=True)
+        preview_folder.mkdir(exist_ok=True)
         
         # Handle file copying and thumbnail generation based on asset type
         copied_files = []
         thumbnails_created = []
+        preview_files_created = []
         resolution_info = None
         
         if upload_request.asset_type == 'HDRI':
@@ -2583,6 +2721,31 @@ async def upload_asset(upload_request: UploadAssetRequest):
                 if await generate_texture_thumbnail(target_file, thumbnail_file):
                     thumbnails_created.append(str(thumbnail_file))
                     resolution_info = await extract_image_info(target_file)
+
+        # Handle Preview image for Textures (if provided)
+        if upload_request.asset_type == 'Textures' and upload_request.preview_image_path:
+            try:
+                preview_source = Path(upload_request.preview_image_path)
+                if preview_source.exists():
+                    # Generate resized preview image using same logic as thumbnails
+                    preview_file = preview_folder / "Preview.png"
+                    
+                    # Use the same thumbnail generation function for consistent sizing and EXR handling
+                    logger.info(f"🔧 Processing preview image: {preview_source}")
+                    if await generate_texture_thumbnail(preview_source, preview_file):
+                        preview_files_created.append(str(preview_file))
+                        logger.info(f"✅ Created resized preview image: {preview_source} -> {preview_file}")
+                    else:
+                        logger.warning(f"⚠️ Failed to generate preview thumbnail, trying fallback...")
+                        # Fallback to simple copy if thumbnail generation fails
+                        import shutil
+                        shutil.copy2(preview_source, preview_file)
+                        preview_files_created.append(str(preview_file))
+                        logger.warning(f"⚠️ Used original preview image: {preview_file}")
+                else:
+                    logger.warning(f"⚠️ Preview image source not found: {preview_source}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to process preview image: {e}")
         
         # Create metadata.json file
         metadata = {
@@ -2604,7 +2767,8 @@ async def upload_asset(upload_request: UploadAssetRequest):
                 "asset_folder": convert_to_network_path(str(asset_folder)),
                 "asset_subfolder": convert_to_network_path(str(asset_subfolder)),
                 "copied_files": copied_files,
-                "thumbnails": thumbnails_created
+                "thumbnails": thumbnails_created,
+                "preview_files": preview_files_created
             }
         }
         
