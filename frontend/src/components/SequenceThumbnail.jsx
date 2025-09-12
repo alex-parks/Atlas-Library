@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 const SequenceThumbnail = ({ 
   assetId, 
   assetName, 
+  asset = {},  // Full asset object for cache-busting
   fallbackIcon = '🎨',
   className = "w-full h-full object-cover",
   onClick = () => {},
@@ -69,7 +70,8 @@ const SequenceThumbnail = ({
         }
         
         // If sequence fails, try single thumbnail endpoint (for single images)
-        const singleResponse = await fetch(`http://localhost:8000/thumbnails/${assetId}`);
+        const cacheBuster = asset._image_updated ? `?_t=${asset._image_updated}` : '';
+        const singleResponse = await fetch(`http://localhost:8000/thumbnails/${assetId}${cacheBuster}`);
         
         if (singleResponse.ok) {
           // Create a mock sequence data for single thumbnail
@@ -77,13 +79,13 @@ const SequenceThumbnail = ({
             asset_id: assetId,
             frame_count: 1,
             frame_range: { start: 1, end: 1 },
-            base_url: `/thumbnails/${assetId}`,
+            base_url: `/thumbnails/${assetId}${cacheBuster}`,
             frames: [
               {
                 index: 0,
                 frame_number: 1,
                 filename: 'thumbnail.png',
-                url: `/thumbnails/${assetId}`
+                url: `/thumbnails/${assetId}${cacheBuster}`
               }
             ]
           });

@@ -148,30 +148,53 @@ async def test_thumbnail():
         return {"error": "File not found", "path": path, "exists": file.exists()}
 
 @app.get("/thumbnails/{asset_id}")
-async def get_thumbnail(asset_id: str):
-    logger.info(f"[THUMBNAIL] Requested for asset: {asset_id}")
+async def get_thumbnail(asset_id: str, request: Request, _t: str = None):
+    logger.info(f"[THUMBNAIL] Requested for asset: {asset_id}, cache-bust param: {_t}")
     try:
         asset = asset_queries.get_asset_with_dependencies(asset_id).get('asset')
         if not asset:
             logger.error(f"[ERROR] Asset not found: {asset_id}")
             raise HTTPException(status_code=404, detail=f"Asset not found: {asset_id}")
         
-        # Proceed directly to file-based thumbnail search
+        # For texture sets, prioritize Preview folder over Thumbnail folder
         thumbnail_paths = []
         if 'paths' in asset and asset['paths'].get('thumbnail'):
             thumbnail_paths.append(asset['paths']['thumbnail'])
         if asset.get('thumbnail_path'):
-            thumbnail_paths.append(asset['thumbnail_path'])
+            thumbnail_paths.append(asset['paths']['thumbnail_path'])
+        
+        # Check asset metadata for preview files first (for texture sets)
+        if 'paths' in asset and asset['paths'].get('preview_files'):
+            preview_files = asset['paths']['preview_files']
+            if isinstance(preview_files, list) and len(preview_files) > 0:
+                # Convert container path to network path for file access
+                for preview_path in preview_files:
+                    if preview_path.startswith('/app/assets/'):
+                        network_preview_path = preview_path.replace('/app/assets/', '/net/library/atlaslib/')
+                        thumbnail_paths.append(network_preview_path)
+                        logger.info(f"[THUMBNAIL] Added preview path: {network_preview_path}")
+        
         # Try to get the folder path from the asset data
         folder_path = asset.get('folder_path') or asset.get('paths', {}).get('folder_path')
         if folder_path:
-            # Convert network path to container path if needed
+            # Convert network path to container path if needed for path existence check
+            container_folder = folder_path
             if folder_path.startswith('/net/library/atlaslib/'):
                 container_folder = folder_path.replace('/net/library/atlaslib/', '/app/assets/')
                 logger.info(f"[THUMBNAIL] Converted path: {folder_path} -> {container_folder}")
-                folder_path = container_folder
             
-            # Look for thumbnail folder in the asset's folder
+            # For texture sets, check Preview folder first
+            if asset.get('category') == 'Texture Sets' or asset.get('asset_type') == 'Textures':
+                preview_folder = Path(folder_path) / "Preview"
+                logger.info(f"[THUMBNAIL] Looking for preview in: {preview_folder}")
+                if preview_folder.exists() and preview_folder.is_dir():
+                    logger.info(f"[THUMBNAIL] Found preview folder: {preview_folder}")
+                    for ext in ['.png', '.jpg', '.jpeg', '.exr', '.tiff', '.tif']:
+                        for img_file in preview_folder.glob(f"*{ext}"):
+                            logger.info(f"[THUMBNAIL] Found preview file: {img_file}")
+                            thumbnail_paths.append(str(img_file))
+            
+            # Fallback to thumbnail folder
             thumbnail_folder = Path(folder_path) / "Thumbnail"
             logger.info(f"[THUMBNAIL] Looking for thumbnails in: {thumbnail_folder}")
             if thumbnail_folder.exists() and thumbnail_folder.is_dir():
@@ -183,6 +206,26 @@ async def get_thumbnail(asset_id: str):
         for thumbnail_path in thumbnail_paths:
             if thumbnail_path and Path(thumbnail_path).exists():
                 logger.info(f"[OK] Serving thumbnail: {thumbnail_path}")
+                
+                # Get file stats for cache control
+                file_path = Path(thumbnail_path)
+                file_stats = file_path.stat()
+                file_mtime = int(file_stats.st_mtime)
+                file_size = file_stats.st_size
+                
+                # Create ETag from file modification time, size, and cache-bust parameter
+                cache_bust = _t if _t else ""
+                etag = f'"{file_mtime}-{file_size}-{cache_bust}"'
+                
+                # Check if client has cached version (If-None-Match)
+                if_none_match = request.headers.get('If-None-Match')
+                if if_none_match and if_none_match == etag:
+                    logger.info(f"[CACHE] Returning 304 Not Modified for {asset_id}")
+                    from fastapi.responses import Response
+                    return Response(status_code=304, headers={
+                        "ETag": etag,
+                        "Cache-Control": "public, max-age=60" if "Preview" in str(thumbnail_path) else "public, max-age=3600"
+                    })
                 
                 # Determine media type based on file extension
                 file_ext = Path(thumbnail_path).suffix.lower()
@@ -196,10 +239,29 @@ async def get_thumbnail(asset_id: str):
                 elif file_ext in ['.tiff', '.tif']:
                     media_type = "image/tiff"
                 
+                # Use shorter cache time for preview images to allow updates
+                # But still include ETag for proper cache validation
+                # If timestamp parameter is present, use very short cache to force refresh
+                if _t:
+                    cache_control = "public, max-age=1"  # Force refresh when timestamp is used
+                    logger.info(f"[CACHE] Using cache-bust mode for asset {asset_id}")
+                else:
+                    cache_control = "public, max-age=30" if "Preview" in str(thumbnail_path) else "public, max-age=3600"
+                
+                # Prepare headers with cache control
+                headers = {
+                    "Cache-Control": cache_control,
+                    "ETag": etag,
+                    "Last-Modified": file_stats.st_mtime
+                }
+                
+                # Log cache info
+                logger.info(f"[CACHE] Serving {asset_id} with ETag: {etag}, Cache-Control: {cache_control}")
+                
                 return FileResponse(
                     path=str(thumbnail_path),
                     media_type=media_type,
-                    headers={"Cache-Control": "public, max-age=3600"}
+                    headers=headers
                 )
         logger.error(f"[ERROR] No thumbnail found for asset: {asset_id}")
         logger.debug(f"[DEBUG] Tried paths: {thumbnail_paths}")
@@ -417,10 +479,13 @@ async def get_thumbnail_sequence_frame(asset_id: str, frame_number: int):
         elif file_ext in ['.tiff', '.tif']:
             media_type = "image/tiff"
         
+        # Use shorter cache time for preview images to allow updates
+        cache_control = "public, max-age=60" if "Preview" in str(frame_path) else "public, max-age=3600"
+        
         return FileResponse(
             path=str(frame_path),
             media_type=media_type,
-            headers={"Cache-Control": "public, max-age=3600"}
+            headers={"Cache-Control": cache_control}
         )
         
     except HTTPException:

@@ -29,6 +29,8 @@ const TextureEditAsset = ({
   });
   
   const [newTagInput, setNewTagInput] = useState('');
+  const [previewFilePath, setPreviewFilePath] = useState('');
+  const [uploadingPreview, setUploadingPreview] = useState(false);
   const [saving, setSaving] = useState(false);
 
   if (!isOpen || !asset) return null;
@@ -61,6 +63,112 @@ const TextureEditAsset = ({
       ...editFormData,
       tags: editFormData.tags.filter(tag => tag !== tagToRemove)
     });
+  };
+
+  const handleUploadPreview = async () => {
+    if (!previewFilePath.trim()) {
+      alert('❌ Please enter a file path for the preview image');
+      return;
+    }
+
+    // Basic file path validation
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.exr'];
+    const hasValidExtension = allowedExtensions.some(ext => 
+      previewFilePath.toLowerCase().endsWith(ext)
+    );
+    
+    if (!hasValidExtension) {
+      alert('❌ Please enter a valid image file path (JPG, PNG, TIFF, or EXR)');
+      return;
+    }
+
+    setUploadingPreview(true);
+    try {
+      const response = await fetch(`${apiEndpoint}/${asset.id}/update-preview-from-path`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file_path: previewFilePath
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert('✅ Preview image updated successfully!');
+        setPreviewFilePath('');
+        
+        // Force image refresh by adding cache-busting parameter
+        const cacheBuster = Date.now();
+        
+        // Optionally call onSave to refresh the asset data
+        if (onSave) {
+          // Trigger a refresh of the asset data
+          const refreshResponse = await fetch(`${apiEndpoint}/${asset.id}`);
+          if (refreshResponse.ok) {
+            const refreshedAsset = await refreshResponse.json();
+            // Add cache-busting parameter to force image reload
+            refreshedAsset._image_updated = cacheBuster;
+            onSave(refreshedAsset);
+          }
+        }
+        
+        // Also dispatch a global event for other components to refresh this asset's images
+        window.dispatchEvent(new CustomEvent('assetPreviewUpdated', {
+          detail: { assetId: asset.id, timestamp: cacheBuster }
+        }));
+        
+        // Force reload of preview image in browser - multiple strategies
+        
+        // 1. Update all images containing the asset ID
+        const previewImages = document.querySelectorAll(`img[src*="${asset.id}"]`);
+        previewImages.forEach(img => {
+          const currentSrc = img.src;
+          const separator = currentSrc.includes('?') ? '&' : '?';
+          img.src = `${currentSrc}${separator}_t=${cacheBuster}`;
+        });
+        
+        // 2. Force refresh thumbnail endpoint specifically
+        const thumbnailImages = document.querySelectorAll(`img[src*="thumbnails/${asset.id}"]`);
+        thumbnailImages.forEach(img => {
+          const baseUrl = img.src.split('?')[0]; // Remove existing params
+          img.src = `${baseUrl}?_t=${cacheBuster}`;
+        });
+        
+        // 3. Force refresh any cached images via a more aggressive approach
+        setTimeout(() => {
+          // Trigger a second refresh after a small delay to catch any lazy-loaded images
+          const allAssetImages = document.querySelectorAll(`img[src*="${asset.id}"]`);
+          allAssetImages.forEach(img => {
+            img.style.opacity = '0.5';
+            const originalSrc = img.src;
+            img.src = '';
+            setTimeout(() => {
+              img.src = originalSrc.includes('?') 
+                ? originalSrc.replace(/[?&]_t=\d+/, '') + `?_t=${cacheBuster}`
+                : `${originalSrc}?_t=${cacheBuster}`;
+              img.style.opacity = '1';
+            }, 100);
+          });
+        }, 500);
+        
+        // 4. Nuclear option: Force page refresh if the modal will be closed
+        setTimeout(() => {
+          // As a last resort, suggest browser refresh to user
+          console.log(`🔄 Preview image updated for asset ${asset.id} at ${new Date().toLocaleTimeString()}`);
+          console.log('If you don\'t see the updated image, try refreshing the browser page.');
+        }, 1000);
+      } else {
+        const errorData = await response.json();
+        alert(`❌ Failed to update preview image: ${errorData.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error uploading preview image:', error);
+      alert(`❌ Error uploading preview image: ${error.message}`);
+    } finally {
+      setUploadingPreview(false);
+    }
   };
 
   const handleSave = async () => {
@@ -201,6 +309,56 @@ const TextureEditAsset = ({
               />
               <p className="text-xs text-neutral-400 mt-1">Press Enter to add tags. Click the X on existing tags to remove them.</p>
             </div>
+
+            {/* Preview Image Update - Only show for Texture Sets */}
+            {asset.asset_type === 'Textures' && asset.category === 'Texture Sets' && (
+              <div className="border-t border-neutral-700 pt-4">
+                <label className="block text-sm font-medium text-neutral-300 mb-2">
+                  Update Preview Image
+                </label>
+                <p className="text-xs text-neutral-400 mb-3">
+                  Enter the file path to a new preview image for this texture set. Supported formats: JPG, PNG, TIFF, EXR
+                </p>
+                
+                <div className="space-y-3">
+                  {/* File Path Input */}
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={previewFilePath}
+                      onChange={(e) => setPreviewFilePath(e.target.value)}
+                      className="w-full bg-neutral-700 border border-neutral-600 rounded-lg px-4 py-2 text-white placeholder-neutral-400 focus:outline-none focus:border-green-400 focus:bg-neutral-600 transition-all"
+                      placeholder="/path/to/preview/image.jpg"
+                    />
+                    <p className="text-xs text-neutral-500">
+                      Enter the full path to the image file you want to use as preview
+                    </p>
+                  </div>
+                  
+                  {/* Upload Button */}
+                  {previewFilePath.trim() && (
+                    <button
+                      type="button"
+                      onClick={handleUploadPreview}
+                      disabled={uploadingPreview}
+                      className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white py-2 px-4 rounded-lg flex items-center gap-2 transition-colors disabled:cursor-not-allowed"
+                    >
+                      {uploadingPreview ? (
+                        <>
+                          <RefreshCw size={16} className="animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw size={16} />
+                          Update Preview Image
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="flex gap-3 pt-4">

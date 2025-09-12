@@ -1,5 +1,5 @@
 # backend/api/assets.py - Fixed ArangoDB integration
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, File, UploadFile
 from typing import List, Optional
 from pydantic import BaseModel
 from pathlib import Path
@@ -8,6 +8,8 @@ import os
 import sys
 import logging
 import hashlib
+import shutil
+import tempfile
 from backend.core.config_manager import config as atlas_config
 
 # Setup logging for this module
@@ -2957,3 +2959,281 @@ async def upload_asset(upload_request: UploadAssetRequest):
         import traceback
         logger.error(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@router.post("/assets/{asset_id}/update-preview")
+async def update_asset_preview_image(
+    asset_id: str, 
+    file: UploadFile = File(...)
+):
+    """Update or create preview image for a texture set asset"""
+    try:
+        # Get asset queries instance
+        asset_queries = get_asset_queries()
+        if not asset_queries:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Get asset data from database
+        asset_result = asset_queries.get_asset_with_dependencies(asset_id)
+        asset_data = asset_result.get('asset') if asset_result else None
+        if not asset_data:
+            raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
+        
+        # Verify this is a texture set asset
+        if asset_data.get('asset_type') != 'Textures' or asset_data.get('category') != 'Texture Sets':
+            raise HTTPException(status_code=400, detail="Preview image update is only available for Texture Sets")
+        
+        # Validate file type
+        allowed_extensions = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.exr'}
+        file_extension = Path(file.filename).suffix.lower()
+        if file_extension not in allowed_extensions:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}")
+        
+        # Get asset folder path
+        asset_folder_path = asset_data.get('paths', {}).get('asset_folder')
+        if not asset_folder_path:
+            raise HTTPException(status_code=404, detail="Asset folder path not found")
+        
+        # Convert to container path (backend runs in container)
+        container_path = asset_folder_path.replace('/net/library/atlaslib', '/app/assets')
+        asset_folder = Path(container_path)
+        
+        if not asset_folder.exists():
+            raise HTTPException(status_code=404, detail=f"Asset folder not found: {asset_folder}")
+        
+        # Create Preview folder if it doesn't exist
+        preview_folder = asset_folder / "Preview"
+        preview_folder.mkdir(exist_ok=True)
+        logger.info(f"📁 Preview folder ready: {preview_folder}")
+        
+        # Create temporary file for processing
+        with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as temp_file:
+            # Save uploaded file to temporary location
+            shutil.copyfileobj(file.file, temp_file)
+            temp_path = Path(temp_file.name)
+            logger.info(f"📄 Saved uploaded file to temp: {temp_path}")
+        
+        try:
+            # Define target preview file path
+            preview_file = preview_folder / "Preview.png"
+            
+            # Process the uploaded image using the same logic as asset upload
+            logger.info(f"🔧 Processing preview image: {temp_path} -> {preview_file}")
+            success = await generate_texture_thumbnail(temp_path, preview_file)
+            
+            if success:
+                logger.info(f"✅ Successfully created preview image: {preview_file}")
+                
+                # Update database with preview file path
+                try:
+                    # Convert back to network path for database storage
+                    network_preview_path = str(preview_file).replace('/app/assets/', '/net/library/atlaslib/')
+                    
+                    # Get existing preview files or initialize empty list
+                    preview_files = asset_data.get('paths', {}).get('preview_files', [])
+                    
+                    # Update or add the preview file path
+                    if network_preview_path not in preview_files:
+                        preview_files = [network_preview_path]  # Replace with single preview file
+                    
+                    # Update the asset document paths
+                    update_data = {
+                        'paths.preview_files': preview_files
+                    }
+                    
+                    # Update in database using AQL
+                    aql_query = """
+                        FOR doc IN Atlas_Library
+                        FILTER doc._key == @asset_id
+                        UPDATE doc WITH @updates IN Atlas_Library
+                        RETURN NEW
+                    """
+                    bind_vars = {'asset_id': asset_id, 'updates': update_data}
+                    
+                    cursor = asset_queries.db.aql.execute(aql_query, bind_vars=bind_vars)
+                    result_list = list(cursor)
+                    
+                    if result_list:
+                        logger.info(f"✅ Updated database with preview file path: {network_preview_path}")
+                    else:
+                        logger.warning(f"⚠️ Failed to update database with preview file path")
+                    
+                except Exception as db_error:
+                    logger.error(f"❌ Failed to update database: {db_error}")
+                    # Don't fail the entire operation if DB update fails, preview file is still created
+                
+                return {
+                    "success": True,
+                    "message": "Preview image updated successfully",
+                    "asset_id": asset_id,
+                    "preview_path": str(preview_file)
+                }
+            else:
+                # If processing failed, try fallback to simple copy
+                logger.warning(f"⚠️ Preview processing failed, trying fallback copy...")
+                try:
+                    shutil.copy2(temp_path, preview_file)
+                    logger.info(f"✅ Used original preview image as fallback: {preview_file}")
+                    
+                    return {
+                        "success": True,
+                        "message": "Preview image updated successfully (original copy)",
+                        "asset_id": asset_id,
+                        "preview_path": str(preview_file)
+                    }
+                except Exception as copy_error:
+                    logger.error(f"❌ Fallback copy failed: {copy_error}")
+                    raise HTTPException(status_code=500, detail=f"Failed to save preview image: {str(copy_error)}")
+                
+        finally:
+            # Clean up temporary file
+            try:
+                temp_path.unlink()
+                logger.info(f"🧹 Cleaned up temporary file: {temp_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"⚠️ Failed to cleanup temp file: {cleanup_error}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Preview update failed: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Preview update failed: {str(e)}")
+
+
+@router.post("/assets/{asset_id}/update-preview-from-path")
+async def update_asset_preview_image_from_path(
+    asset_id: str, 
+    request: dict
+):
+    """Update or create preview image for a texture set asset from a file path"""
+    try:
+        # Get asset queries instance
+        asset_queries = get_asset_queries()
+        if not asset_queries:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        # Get asset data from database
+        asset_result = asset_queries.get_asset_with_dependencies(asset_id)
+        asset_data = asset_result.get('asset') if asset_result else None
+        if not asset_data:
+            raise HTTPException(status_code=404, detail=f"Asset {asset_id} not found")
+        
+        # Verify this is a texture set asset
+        if asset_data.get('asset_type') != 'Textures' or asset_data.get('category') != 'Texture Sets':
+            raise HTTPException(status_code=400, detail="Preview image update is only available for Texture Sets")
+        
+        # Get file path from request
+        file_path = request.get('file_path')
+        if not file_path:
+            raise HTTPException(status_code=400, detail="file_path is required")
+        
+        # Validate file type
+        allowed_extensions = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.exr'}
+        file_extension = Path(file_path).suffix.lower()
+        if file_extension not in allowed_extensions:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}")
+        
+        # Check if source file exists
+        source_path = Path(file_path)
+        if not source_path.exists():
+            raise HTTPException(status_code=404, detail=f"Source file not found: {file_path}")
+        
+        # Get asset folder path
+        asset_folder_path = asset_data.get('paths', {}).get('asset_folder')
+        if not asset_folder_path:
+            raise HTTPException(status_code=404, detail="Asset folder path not found")
+        
+        # Convert to container path (backend runs in container)
+        container_path = asset_folder_path.replace('/net/library/atlaslib', '/app/assets')
+        asset_folder = Path(container_path)
+        
+        if not asset_folder.exists():
+            raise HTTPException(status_code=404, detail=f"Asset folder not found: {asset_folder}")
+        
+        # Create Preview folder if it doesn't exist
+        preview_folder = asset_folder / "Preview"
+        preview_folder.mkdir(exist_ok=True)
+        logger.info(f"📁 Preview folder ready: {preview_folder}")
+        
+        # Define target preview file path
+        preview_file = preview_folder / "Preview.png"
+        
+        # Process the source image using the same logic as asset upload
+        logger.info(f"🔧 Processing preview image: {source_path} -> {preview_file}")
+        success = await generate_texture_thumbnail(source_path, preview_file)
+        
+        if success:
+            logger.info(f"✅ Successfully created preview image: {preview_file}")
+            
+            # Update database with preview file path
+            try:
+                # Convert back to network path for database storage
+                network_preview_path = str(preview_file).replace('/app/assets/', '/net/library/atlaslib/')
+                
+                # Get existing preview files or initialize empty list
+                preview_files = asset_data.get('paths', {}).get('preview_files', [])
+                
+                # Update or add the preview file path
+                if network_preview_path not in preview_files:
+                    preview_files = [network_preview_path]  # Replace with single preview file
+                
+                # Update the asset document paths
+                update_data = {
+                    'paths.preview_files': preview_files
+                }
+                
+                # Update in database using AQL
+                aql_query = """
+                    FOR doc IN Atlas_Library
+                    FILTER doc._key == @asset_id
+                    UPDATE doc WITH @updates IN Atlas_Library
+                    RETURN NEW
+                """
+                bind_vars = {'asset_id': asset_id, 'updates': update_data}
+                
+                cursor = asset_queries.db.aql.execute(aql_query, bind_vars=bind_vars)
+                result_list = list(cursor)
+                
+                if result_list:
+                    logger.info(f"✅ Updated database with preview file path: {network_preview_path}")
+                else:
+                    logger.warning(f"⚠️ Failed to update database with preview file path")
+                
+            except Exception as db_error:
+                logger.error(f"❌ Failed to update database: {db_error}")
+                # Don't fail the entire operation if DB update fails, preview file is still created
+            
+            return {
+                "success": True,
+                "message": "Preview image updated successfully from file path",
+                "asset_id": asset_id,
+                "preview_path": str(preview_file),
+                "source_path": file_path
+            }
+        else:
+            # If processing failed, try fallback to simple copy
+            logger.warning(f"⚠️ Preview processing failed, trying fallback copy...")
+            try:
+                shutil.copy2(source_path, preview_file)
+                logger.info(f"✅ Used original preview image as fallback: {preview_file}")
+                
+                return {
+                    "success": True,
+                    "message": "Preview image updated successfully (original copy)",
+                    "asset_id": asset_id,
+                    "preview_path": str(preview_file),
+                    "source_path": file_path
+                }
+            except Exception as copy_error:
+                logger.error(f"❌ Fallback copy failed: {copy_error}")
+                raise HTTPException(status_code=500, detail=f"Failed to save preview image: {str(copy_error)}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Preview update from path failed: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Preview update from path failed: {str(e)}")

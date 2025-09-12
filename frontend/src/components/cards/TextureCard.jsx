@@ -359,7 +359,7 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
             // Direct image with proper aspect ratio for single textures
             <div className="w-full h-full relative">
               <img
-                src={`http://localhost:8000/thumbnails/${asset.id || asset._key}`}
+                src={`http://localhost:8000/thumbnails/${asset.id || asset._key}${asset._image_updated ? `?_t=${asset._image_updated}` : ''}`}
                 alt={formatAssetName(asset)}
                 className="w-full h-full object-cover cursor-pointer"
                 style={{

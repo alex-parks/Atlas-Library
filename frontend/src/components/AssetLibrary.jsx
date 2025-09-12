@@ -1803,19 +1803,42 @@ const AssetLibrary = ({
     const copyTextureFilePath = async (textureType, texture) => {
       try {
         let fullTexturePath;
+        let actualFilename = texture.filename;
 
-        // PRIORITY 1: Use texture path directly (should now be correct network path from backend)
-        if (texture.path) {
-          fullTexturePath = texture.path;
-          console.log(`📋 Using texture path: ${fullTexturePath}`);
+        // PRIORITY 1: Find the actual asset file from copied_files based on texture type matching
+        if (asset.paths?.copied_files && asset.paths.copied_files.length > 0) {
+          console.log(`🔍 Looking for ${textureType} in copied_files:`, asset.paths.copied_files);
+          
+          // Get the type keywords for matching
+          const typeKeywords = textureTypeMap[textureType]?.keywords || [];
+          
+          // Try to find matching file in copied_files
+          const matchingFile = asset.paths.copied_files.find(filePath => {
+            const filename = filePath.split('/').pop().toLowerCase();
+            // Remove common texture suffixes to get base name for comparison
+            const baseFilename = filename.replace(/\.(jpg|jpeg|png|tiff|tif|exr)$/i, '').toLowerCase();
+            
+            // Check if any of the type keywords are in the filename
+            return typeKeywords.some(keyword => baseFilename.includes(keyword.toLowerCase()));
+          });
+          
+          if (matchingFile) {
+            fullTexturePath = matchingFile;
+            actualFilename = matchingFile.split('/').pop();
+            console.log(`📋 Found matching copied file: ${fullTexturePath}`);
+          } else {
+            console.log(`⚠️ No matching copied file found for ${textureType}, trying fallback...`);
+          }
         }
-        // PRIORITY 2: Use the asset's folder_path + Assets + filename (network library path)
-        else if (asset.paths?.folder_path) {
+
+        // PRIORITY 2: Fallback to constructed path using folder_path + Assets + filename
+        if (!fullTexturePath && asset.paths?.folder_path) {
           fullTexturePath = `${asset.paths.folder_path}/Assets/${texture.filename}`;
           console.log(`📋 Constructed path from folder_path: ${fullTexturePath}`);
         } 
-        // PRIORITY 3: Fallback construction for texture assets
-        else {
+        
+        // PRIORITY 3: Final fallback construction for texture assets
+        if (!fullTexturePath) {
           const assetId = asset.id || asset._key;
           const subcategory = asset.metadata?.subcategory || asset.subcategory || 'TextureSet';
           fullTexturePath = `/net/library/atlaslib/3D/Textures/${subcategory}/${assetId}/Assets/${texture.filename}`;
@@ -1825,7 +1848,7 @@ const AssetLibrary = ({
         await navigator.clipboard.writeText(fullTexturePath);
         
         // Show success message
-        const message = `✅ ${textureTypeMap[textureType].name} path copied!\n\n📄 File: ${texture.filename}\n📂 Path: ${fullTexturePath}`;
+        const message = `✅ ${textureTypeMap[textureType].name} path copied!\n\n📄 File: ${actualFilename}\n📂 Path: ${fullTexturePath}`;
         alert(message);
         console.log(`📋 ${textureType} texture path copied:`, fullTexturePath);
 
@@ -2578,7 +2601,16 @@ const AssetLibrary = ({
           }}
           asset={editingTextureAsset}
           onSave={(updatedAsset) => {
-            // Reload assets to show changes
+            // Update the asset in our current list to maintain cache-busting data
+            setAssets(prevAssets => 
+              prevAssets.map(asset => 
+                (asset.id === updatedAsset.id || asset._key === updatedAsset._key)
+                  ? { ...asset, ...updatedAsset }
+                  : asset
+              )
+            );
+            
+            // Also reload assets to get any other changes
             loadAssets();
           }}
           apiEndpoint={settings.apiEndpoint}
@@ -3397,47 +3429,22 @@ const AssetLibrary = ({
                       <button 
                         onClick={async () => {
                           try {
-                            console.log('Getting template path for asset:', previewAsset.id);
+                            // Copy asset ID directly to clipboard
+                            await navigator.clipboard.writeText(previewAsset.id);
                             
-                            const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/copy-template-path`, {
-                              method: 'POST'
-                            });
+                            // Show success message
+                            alert(`✅ Asset ID copied to clipboard!\n\nAsset ID: ${previewAsset.id}`);
+                            console.log('📋 Asset ID copied to clipboard:', previewAsset.id);
                             
-                            if (response.ok) {
-                              const result = await response.json();
-                              console.log('Template path response:', result);
-                              
-                              // Copy to clipboard
-                              try {
-                                await navigator.clipboard.writeText(result.template_path);
-                                
-                                // Show success message
-                                let message = `✅ Template path copied to clipboard!\n\n`;
-                                message += `🎨 Asset: ${result.asset_name}\n`;
-                                message += `📄 Template: ${result.template_path}\n`;
-                                message += `📋 Status: ${result.template_exists ? 'Template exists' : 'Template may not exist'}`;
-                                
-                                alert(message);
-                                console.log('📋 Template path copied to clipboard:', result.template_path);
-                                
-                              } catch (clipboardError) {
-                                console.log('Could not copy to clipboard:', clipboardError);
-                                alert(`❌ Could not copy to clipboard, but here's the path:\n\n${result.template_path}`);
-                              }
-                            } else {
-                              const error = await response.json();
-                              console.log('Failed to get template path:', error);
-                              alert(`❌ Failed to get template path: ${error.detail || 'Unknown error'}\n\nAsset ID: ${previewAsset.id}`);
-                            }
-                          } catch (error) {
-                            console.error('Error getting template path:', error);
-                            alert('❌ Failed to get template path. Please check console for details.');
+                          } catch (clipboardError) {
+                            console.log('Could not copy to clipboard:', clipboardError);
+                            alert(`❌ Could not copy to clipboard, but here's the Asset ID:\n\n${previewAsset.id}`);
                           }
                         }}
                         className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
                       >
                         <Copy size={20} />
-                        Copy Template Path
+                        Copy Asset ID
                       </button>
                       
                       <button 
