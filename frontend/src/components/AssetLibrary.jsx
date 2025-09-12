@@ -214,6 +214,7 @@ const AssetLibrary = ({
   const [editingAsset, setEditingAsset] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [newTagInput, setNewTagInput] = useState('');
+  const [newUploadTagInput, setNewUploadTagInput] = useState('');
 
   // Texture edit modal state
   const [showTextureEditModal, setShowTextureEditModal] = useState(false);
@@ -226,6 +227,7 @@ const AssetLibrary = ({
     name: '',
     filePath: '',
     previewPath: '', // Preview JPEG/PNG for HDRIs
+    tags: [], // Upload tags array
     description: '',
     subcategory: 'Alpha', // Default for Textures
     alphaSubcategory: 'General', // For Alpha textures
@@ -602,6 +604,30 @@ const AssetLibrary = ({
     });
   };
 
+  // Upload modal tag management functions
+  const handleAddUploadTag = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Prevent form submission
+      if (newUploadTagInput.trim()) {
+        const newTag = newUploadTagInput.trim().toLowerCase();
+        if (!uploadData.tags.includes(newTag)) {
+          setUploadData({
+            ...uploadData,
+            tags: [...uploadData.tags, newTag]
+          });
+        }
+        setNewUploadTagInput('');
+      }
+    }
+  };
+
+  const removeUploadTag = (tagToRemove) => {
+    setUploadData({
+      ...uploadData,
+      tags: uploadData.tags.filter(tag => tag !== tagToRemove)
+    });
+  };
+
   // Format asset name to show "{Original Name} - {Variant Name}" for variants
   const formatAssetName = (asset) => {
     // Check if this is a variant (variant_id is not "AA" - the original)
@@ -975,6 +1001,7 @@ const AssetLibrary = ({
           filePath: '',
           previewPath: '',
           description: '',
+          tags: [], // Reset tags
           subcategory: 'Alpha',
           alphaSubcategory: 'General',
           textureType: 'seamless',
@@ -988,6 +1015,7 @@ const AssetLibrary = ({
           }
         });
         setShowUploadModal(false);
+        setNewUploadTagInput(''); // Reset upload tag input
         
         // Refresh asset list
         loadAssets();
@@ -1256,18 +1284,24 @@ const AssetLibrary = ({
       setIsDragging(false);
     };
 
-    // Map texture types to their abbreviations (same as badge/card)
+    // Map texture types to their abbreviations - USE UPLOAD METADATA NOT FILENAME
     const getTextureTypeAbbr = (filename) => {
-      const lower = filename.toLowerCase();
-      if (lower.includes('base') && lower.includes('color')) return 'BC';
-      if (lower.includes('albedo')) return 'BC';
-      if (lower.includes('alpha')) return 'A';
-      if (lower.includes('metallic') || lower.includes('metalness')) return 'M';
-      if (lower.includes('roughness')) return 'R';
-      if (lower.includes('normal')) return 'N';
-      if (lower.includes('opacity')) return 'O';
-      if (lower.includes('displacement') || lower.includes('height')) return 'D';
-      return '?';
+      // For single textures, use the uploaded subcategory instead of parsing filename
+      const subcategory = asset.metadata?.subcategory || asset.subcategory;
+      if (subcategory) {
+        const subcategoryLower = subcategory.toLowerCase();
+        if (subcategoryLower.includes('alpha')) return 'A';
+        if (subcategoryLower.includes('base') && subcategoryLower.includes('color')) return 'BC';
+        if (subcategoryLower.includes('albedo')) return 'BC';
+        if (subcategoryLower.includes('metallic')) return 'M';
+        if (subcategoryLower.includes('roughness')) return 'R';
+        if (subcategoryLower.includes('normal')) return 'N';
+        if (subcategoryLower.includes('opacity')) return 'O';
+        if (subcategoryLower.includes('displacement') || subcategoryLower.includes('height')) return 'D';
+      }
+      
+      // For texture sets or if no subcategory, return generic texture indicator
+      return 'T';
     };
 
     // Get texture types from image list in priority order
@@ -1643,17 +1677,9 @@ const AssetLibrary = ({
         }
       }
 
-      // Fallback to filename detection for older assets or edge cases
-      const fallbackTexture = availableTextures.find(texture => {
-        const filename = texture.filename.toLowerCase();
-        return typeInfo.keywords.some(keyword => filename.includes(keyword));
-      });
-      
-      if (fallbackTexture) {
-        console.log(`🔄 Fallback filename match: ${fallbackTexture.filename} -> ${type}`);
-      }
-      
-      return fallbackTexture;
+      // No fallback filename parsing - rely only on upload metadata/subcategory
+      console.log(`❌ No texture found for type: ${type} (relying only on upload metadata)`);
+      return null;
     };
 
     // Copy texture file path to clipboard
@@ -1822,10 +1848,10 @@ const AssetLibrary = ({
                 <>
                   {/* Backdrop to block interaction with assets behind */}
                   <div 
-                    className="fixed inset-0 z-40" 
+                    className="fixed inset-0 z-[55]" 
                     onClick={() => setShowFilterMenu(false)}
                   ></div>
-                  <div className="absolute right-0 top-14 bg-gray-800 border border-gray-600/30 rounded-xl shadow-2xl z-50 w-80 pointer-events-auto backdrop-blur-lg">
+                  <div className="absolute right-0 top-14 bg-gray-800 border border-gray-600/30 rounded-xl shadow-2xl z-[60] w-96 pointer-events-auto backdrop-blur-lg">
                     <div className="p-5">
                       <div className="flex items-center justify-between mb-5">
                         <h3 className="text-gray-200 font-semibold text-lg">Filters</h3>
@@ -1838,10 +1864,10 @@ const AssetLibrary = ({
                       </div>
 
                       {/* Filter Tabs */}
-                      <div className="flex border-b border-gray-600/30 mb-5">
+                      <div className="flex flex-wrap border-b border-gray-600/30 mb-5 -mx-1">
                         <button
                           onClick={() => setFilterTab('3d-assets')}
-                          className={`px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
+                          className={`flex-1 min-w-0 mx-1 px-2 py-2.5 text-xs font-medium transition-all duration-200 rounded-t-lg ${
                             filterTab === '3d-assets' 
                               ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/10' 
                               : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
@@ -1851,7 +1877,7 @@ const AssetLibrary = ({
                         </button>
                         <button
                           onClick={() => setFilterTab('textures')}
-                          className={`px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
+                          className={`flex-1 min-w-0 mx-1 px-2 py-2.5 text-xs font-medium transition-all duration-200 rounded-t-lg ${
                             filterTab === 'textures' 
                               ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/10' 
                               : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
@@ -1861,7 +1887,7 @@ const AssetLibrary = ({
                         </button>
                         <button
                           onClick={() => setFilterTab('materials')}
-                          className={`px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
+                          className={`flex-1 min-w-0 mx-1 px-2 py-2.5 text-xs font-medium transition-all duration-200 rounded-t-lg ${
                             filterTab === 'materials' 
                               ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/10' 
                               : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
@@ -1871,7 +1897,7 @@ const AssetLibrary = ({
                         </button>
                         <button
                           onClick={() => setFilterTab('hdri')}
-                          className={`px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
+                          className={`flex-1 min-w-0 mx-1 px-2 py-2.5 text-xs font-medium transition-all duration-200 rounded-t-lg ${
                             filterTab === 'hdri' 
                               ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-400/10' 
                               : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
@@ -2449,7 +2475,10 @@ const AssetLibrary = ({
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <h2 className="text-xl font-semibold text-white">Upload Asset</h2>
               <button
-                onClick={() => setShowUploadModal(false)}
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setNewUploadTagInput('');
+                }}
                 className="text-gray-400 hover:text-white transition-colors"
               >
                 <X size={24} />
@@ -2470,6 +2499,7 @@ const AssetLibrary = ({
                     if (newAssetType === 'HDRI') {
                       setUploadData(prev => ({
                         name: prev.name, // Keep name
+                        tags: prev.tags, // Keep tags
                         assetType: 'HDRI',
                         subcategory: 'Outdoor', // Default HDRI subcategory
                         filePath: '',
@@ -2490,6 +2520,7 @@ const AssetLibrary = ({
                     } else if (newAssetType === 'Textures') {
                       setUploadData(prev => ({
                         name: prev.name, // Keep name
+                        tags: prev.tags, // Keep tags
                         assetType: 'Textures',
                         subcategory: 'Alpha', // Default texture subcategory
                         alphaSubcategory: 'General', // Default alpha subcategory
@@ -2534,6 +2565,7 @@ const AssetLibrary = ({
                           subcategory: 'Alpha',
                           alphaSubcategory: 'General', // Default alpha subcategory
                           filePath: prev.filePath || '', // Keep existing file path
+                          tags: prev.tags || [], // Keep existing tags
                           // Clear texture set paths
                           textureSetPaths: {
                             baseColor: '',
@@ -2550,6 +2582,7 @@ const AssetLibrary = ({
                           subcategory: 'Texture Sets',
                           alphaSubcategory: '', // Clear alpha subcategory
                           filePath: '', // Clear single file path for texture sets
+                          tags: prev.tags || [], // Keep existing tags
                           textureSetPaths: {
                             baseColor: prev.textureSetPaths?.baseColor || '',
                             metallic: prev.textureSetPaths?.metallic || '',
@@ -2564,6 +2597,7 @@ const AssetLibrary = ({
                         setUploadData(prev => ({
                           ...prev,
                           subcategory: newSubcategory,
+                          tags: prev.tags || [], // Keep existing tags
                           alphaSubcategory: '', // Clear alpha subcategory
                           filePath: prev.filePath || '', // Keep existing file path
                           // Clear texture set paths
@@ -2850,10 +2884,51 @@ const AssetLibrary = ({
                 </div>
               )}
 
+              {/* Tags Section */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Tags
+                </label>
+                
+                {/* Current Tags as Bubbles */}
+                {uploadData.tags && uploadData.tags.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 mb-3 p-3 bg-gray-700/50 border border-gray-600 rounded-lg">
+                    <span className="text-xs text-gray-400 font-medium">Current Tags:</span>
+                    {uploadData.tags.map((tag, index) => (
+                      <div key={`${tag}-${index}`} className="flex items-center gap-1 bg-green-600/20 border border-green-500/60 rounded-full px-3 py-1 text-sm backdrop-blur-sm">
+                        <span className="text-green-200 font-medium">{tag}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeUploadTag(tag)}
+                          className="text-green-300 hover:text-white transition-colors p-0.5 rounded-full hover:bg-green-500/20"
+                          title={`Remove "${tag}" tag`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Add New Tag Input */}
+                <input
+                  type="text"
+                  value={newUploadTagInput}
+                  onChange={(e) => setNewUploadTagInput(e.target.value)}
+                  onKeyDown={handleAddUploadTag}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-green-400 focus:bg-gray-600 transition-all"
+                  placeholder="Type a tag and press Enter to add..."
+                />
+                <p className="text-xs text-gray-400 mt-1">Press Enter to add tags. Click the X on existing tags to remove them.</p>
+              </div>
+
               {/* Buttons */}
               <div className="flex gap-3 pt-4">
                 <button
-                  onClick={() => setShowUploadModal(false)}
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setNewUploadTagInput('');
+                  }}
                   className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
                 >
                   Cancel

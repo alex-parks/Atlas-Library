@@ -166,7 +166,27 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
 
   // Map texture types to their abbreviations using metadata texture slots
   const getTextureTypeAbbr = (filename) => {
-    // First check if we have texture slot metadata (more reliable)
+    // Check if this is a single texture (not a texture set)
+    const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
+    
+    if (!isTextureSet) {
+      // For single textures, use the uploaded subcategory instead of parsing filename
+      const subcategory = asset.metadata?.subcategory || asset.subcategory;
+      if (subcategory) {
+        const subcategoryLower = subcategory.toLowerCase();
+        if (subcategoryLower.includes('alpha')) return 'A';
+        if (subcategoryLower.includes('base') && subcategoryLower.includes('color')) return 'BC';
+        if (subcategoryLower.includes('albedo')) return 'BC';
+        if (subcategoryLower.includes('metallic')) return 'M';
+        if (subcategoryLower.includes('roughness')) return 'R';
+        if (subcategoryLower.includes('normal')) return 'N';
+        if (subcategoryLower.includes('opacity')) return 'O';
+        if (subcategoryLower.includes('displacement') || subcategoryLower.includes('height')) return 'D';
+      }
+      return 'T'; // Generic texture for single textures without clear subcategory
+    }
+    
+    // For texture sets, check texture slot metadata (more reliable)
     if (asset.metadata?.texture_set_info?.texture_slots) {
       const slots = asset.metadata.texture_set_info.texture_slots;
       // Find which slot this filename corresponds to
@@ -188,7 +208,7 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
     
     const lower = filename.toLowerCase();
     
-    // New format: AssetName_Position_Type_thumbnail.png
+    // New format: AssetName_Position_Type_thumbnail.png (for texture sets)
     if (lower.includes('_0_basecolor')) return 'BC';
     if (lower.includes('_1_metallic')) return 'M';
     if (lower.includes('_2_roughness')) return 'R';
@@ -196,7 +216,7 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
     if (lower.includes('_4_opacity')) return 'O';
     if (lower.includes('_5_displacement')) return 'D';
     
-    // Fallback to content-based detection for backward compatibility
+    // Legacy fallback for older texture sets only
     if (lower.includes('displacement') || lower.includes('height') || lower.includes('disp')) return 'D';
     if (lower.includes('base') && lower.includes('color')) return 'BC';
     if (lower.includes('albedo')) return 'BC';
