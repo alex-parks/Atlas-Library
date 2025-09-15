@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette, ChevronLeft, ChevronRight } from 'lucide-react';
 import SequenceThumbnail from './SequenceThumbnail';
+import TextureSetSequence from './TextureSetSequence';
 import HoudiniAssetBadge from './badges/HoudiniAssetBadge';
 import TextureBadge from './badges/TextureBadge';
 import HDRIBadge from './badges/HDRIBadge';
@@ -311,6 +312,10 @@ const AssetLibrary = ({
     updateDisplayedAssets(filteredAssetsState, 1);
   }, [filteredAssetsState]);
 
+  // Clean event listener for preview image updates (multi-user safe)
+  // Removed complex preview update system to fix duplicate key issues
+  // Now each TextureCard handles its own cache-busting independently
+
   // Navigation functions
   const handleDimensionSelect = (dimension) => {
     setSelectedDimension(dimension);
@@ -490,12 +495,8 @@ const AssetLibrary = ({
         return res.json();
       })
       .then(data => {
-        console.log('Loaded assets from API:', data);
         // API returns {items: [...], total: n, limit: n, offset: n}
         const assets = data.items || [];
-        console.log(`Number of assets loaded: ${assets.length} ${tagFilters ? `(filtered by tags: ${tagFilters.join(', ')})` : ''}`);
-        
-        
         setAssets(Array.isArray(assets) ? assets : []);
         // Reset pagination when new assets are loaded
         setCurrentPage(1);
@@ -809,42 +810,7 @@ const AssetLibrary = ({
     }, 300); // Small delay to show loading state
   }, [filteredAssetsState, isLoadingMore, displayedAssets.length, currentPage]);
 
-  // Debug logging for filtering
-  React.useEffect(() => {
-    console.log('=== FILTERING DEBUG ===');
-    console.log('Total assets:', assets.length);
-    console.log('Filtered assets:', filteredAssetsState.length);
-    console.log('Current view:', currentView);
-    console.log('Selected dimension:', selectedDimension);
-    console.log('Selected category:', selectedCategory);
-    console.log('Selected subcategory:', selectedSubcategory);
-    console.log('Active filters:', activeFilters);
-    console.log('Selected filters:', selectedFilters);
-    console.log('Show Variants filter:', selectedFilters.showVariants, '(true = show all variants, false = hide non-AA)');
-    console.log('Show Versions filter:', selectedFilters.showVersions, '(true = show all versions, false = show only latest)');
-    
-    if (assets.length > 0) {
-      console.log('Sample asset structure:', assets[0]);
-      
-      // Show some examples of variant_id and asset ID structures
-      const sampleAssets = assets.slice(0, 10);
-      console.log('Sample asset IDs and variants:');
-      sampleAssets.forEach(asset => {
-        const assetId = asset.id || asset._key || '';
-        const variantId = asset.metadata?.variant_id || asset.variant_id || 
-                         (asset.metadata?.hierarchy?.variant_id) || 
-                         (asset.id && asset.id.length === 16 ? asset.id.substring(11, 13) : 'AA');
-        const derivedVariantId = asset.id && asset.id.length === 16 ? asset.id.substring(11, 13) : 'AA';
-        console.log(`  ID: ${assetId}, variant_id: ${variantId}, derived: ${derivedVariantId}, name: ${formatAssetName(asset)}`);
-      });
-      
-      // Show filtering results for a few assets
-      if (selectedFilters.noVariants === false || selectedFilters.noVersions === false) {
-        console.log('Filter is OFF - should show all assets');
-      }
-    }
-    console.log('=======================');
-  }, [assets, filteredAssetsState, currentView, selectedDimension, selectedCategory, selectedSubcategory, activeFilters, selectedFilters]);
+  // Removed debug logging for performance
 
   const saveSettings = async () => {
     try {
@@ -1209,448 +1175,36 @@ const AssetLibrary = ({
   const assetCategories = [...new Set(assets.map(asset => asset.category))];
   const creators = [...new Set(assets.map(asset => asset.artist).filter(Boolean))];
 
-  // Texture Preview Image Component with Navigation and Zoom
-  const TexturePreviewImage = ({ asset }) => {
-    const [currentImageIndex, setCurrentImageIndex] = useState(0);
-    const [imageList, setImageList] = useState([]);
-    const [imageResolutions, setImageResolutions] = useState({});
-    const [zoom, setZoom] = useState(1);
-    const [zoomCenter, setZoomCenter] = useState({ x: 0.5, y: 0.5 });
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-    const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-    const [isHovering, setIsHovering] = useState(false);
-    const containerRef = useRef(null);
+  // Simple Texture Modal Preview Component (delegates to backend for ordering)
+  const TextureModalPreview = ({ asset }) => {
+    const [currentFrameIndex, setCurrentFrameIndex] = useState(null);
+    const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
 
-    // Define texture priority order (Preview first, then texture maps)
-    const TEXTURE_PRIORITY = {
-      'P': 0,  // Preview (always first)
-      'BC': 1, // Base Color
-      'M': 2,  // Metallic
-      'R': 3,  // Roughness
-      'N': 4,  // Normal
-      'O': 5,  // Opacity
-      'D': 6,  // Displacement
-      'A': 7,  // Alpha (single textures)
-      'T': 8,  // Generic texture
-      '?': 99  // Unknown
-    };
+    // For texture sets, use the new TextureSetSequence component
+    if (isTextureSet) {
+      return (
+        <TextureSetSequence
+          assetId={asset.id || asset._key}
+          assetName={formatAssetName(asset)}
+          asset={asset}
+          fallbackIcon="🖼️"
+          className="w-full h-full object-contain"
+          externalFrameIndex={currentFrameIndex}
+          hideZoomMessage={false}
+        />
+      );
+    }
 
-    // Load image list for navigation (for all textures, not just texture sets)
-    useEffect(() => {
-      const loadImageList = async () => {
-        try {
-          const response = await fetch(`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-images`);
-          if (response.ok) {
-            const data = await response.json();
-            console.log('🖼️ Texture images loaded for preview:', data);
-            
-            // Sort images by texture type priority (Preview will be added separately)
-            const sortedImages = (data.images || []).sort((a, b) => {
-              const abbrA = getTextureTypeAbbr(a.filename || '', a);
-              const abbrB = getTextureTypeAbbr(b.filename || '', b);
-              return TEXTURE_PRIORITY[abbrA] - TEXTURE_PRIORITY[abbrB];
-            });
-            
-            // Check if there's a Preview image in the asset paths
-            const hasPreviewImage = asset.paths?.preview_files && asset.paths.preview_files.length > 0;
-            
-            let finalImages = sortedImages;
-            if (hasPreviewImage) {
-              // Add Preview as the first image
-              const previewImage = {
-                filename: 'Preview.png',
-                path: asset.paths.preview_files[0], // First preview file
-                isPreview: true
-              };
-              finalImages = [previewImage, ...sortedImages];
-              console.log('🖼️ Added Preview image first in modal:', previewImage);
-            }
-            
-            setImageList(finalImages);
-            setImageResolutions(data.resolutions || {});
-            // Reset image index when image list changes to prevent corruption
-            setCurrentImageIndex(0);
-          } else {
-            // For single textures or if API call fails, create a single image entry
-            console.log('🖼️ Using fallback single texture display');
-            setImageList([{ filename: asset.name, path: '' }]);
-            setCurrentImageIndex(0);
-          }
-        } catch (error) {
-          console.log('🖼️ Using fallback single texture display:', error);
-          // Create a single image entry for single textures
-          setImageList([{ filename: asset.name, path: '' }]);
-          setCurrentImageIndex(0);
-        }
-      };
-
-      if (asset.id || asset._key) {
-        loadImageList();
-      }
-    }, [asset.id, asset._key]);
-
-    // Navigation with bounds checking to prevent corruption
-    const navigateImage = (direction) => {
-      if (imageList.length <= 1) return;
-      
-      setCurrentImageIndex(prev => {
-        const newIndex = direction === 'left' 
-          ? (prev === 0 ? imageList.length - 1 : prev - 1)
-          : (prev === imageList.length - 1 ? 0 : prev + 1);
-        
-        // Ensure index is within bounds
-        const safeIndex = Math.max(0, Math.min(newIndex, imageList.length - 1));
-        
-        // Reset zoom and pan when switching images
-        setZoom(1);
-        setZoomCenter({ x: 0.5, y: 0.5 });
-        setPanOffset({ x: 0, y: 0 });
-        
-        return safeIndex;
-      });
-    };
-
-    // Handle scroll wheel for zoom (same as SequenceThumbnail)
-    const handleWheel = (e) => {
-      e.preventDefault();
-      
-      if (!containerRef.current) return;
-      
-      const rect = containerRef.current.getBoundingClientRect();
-      const mouseX = (e.clientX - rect.left) / rect.width;
-      const mouseY = (e.clientY - rect.top) / rect.height;
-      
-      // Zoom sensitivity
-      const zoomSensitivity = 0.1;
-      const deltaY = e.deltaY;
-      const zoomDelta = deltaY > 0 ? -zoomSensitivity : zoomSensitivity;
-      
-      setZoom(prevZoom => {
-        const newZoom = Math.max(1, Math.min(5, prevZoom + zoomDelta));
-        
-        // Update zoom center to mouse position when zooming in from 1x
-        if (prevZoom === 1 && newZoom > 1) {
-          setZoomCenter({ x: mouseX, y: mouseY });
-          setPanOffset({ x: 0, y: 0 }); // Reset pan when starting to zoom
-        }
-        
-        return newZoom;
-      });
-    };
-
-    // Handle mouse movement for panning (same as SequenceThumbnail)
-    const handleMouseMove = (e) => {
-      if (isDragging && zoom > 1) {
-        // Handle panning when zoomed in
-        const deltaX = e.clientX - dragStart.x;
-        const deltaY = e.clientY - dragStart.y;
-        
-        setPanOffset(prevOffset => ({
-          x: prevOffset.x + deltaX / zoom,
-          y: prevOffset.y + deltaY / zoom
-        }));
-        
-        setDragStart({ x: e.clientX, y: e.clientY });
-        return;
-      }
-    };
-
-    // Handle mouse down for panning
-    const handleMouseDown = (e) => {
-      if (zoom > 1) {
-        setIsDragging(true);
-        setDragStart({ x: e.clientX, y: e.clientY });
-        e.preventDefault(); // Prevent text selection
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    const handleMouseEnter = () => {
-      setIsHovering(true);
-    };
-
-    const handleMouseLeave = () => {
-      setIsHovering(false);
-      setIsDragging(false);
-    };
-
-    // Get texture type abbreviation using upload metadata only
-    const getTextureTypeAbbr = (filename, imageObj = null) => {
-      // Preview image
-      if (imageObj?.is_preview || imageObj?.isPreview || filename === 'Preview.png') {
-        return 'P';
-      }
-      
-      const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
-      
-      if (!isTextureSet) {
-        // Single texture - use subcategory
-        const subcategory = (asset.metadata?.subcategory || asset.subcategory)?.toLowerCase();
-        if (!subcategory) return 'T';
-        
-        if (subcategory.includes('alpha')) return 'A';
-        if (subcategory.includes('base') && subcategory.includes('color')) return 'BC';
-        if (subcategory.includes('albedo')) return 'BC';
-        if (subcategory.includes('metallic')) return 'M';
-        if (subcategory.includes('roughness')) return 'R';
-        if (subcategory.includes('normal')) return 'N';
-        if (subcategory.includes('opacity')) return 'O';
-        if (subcategory.includes('displacement') || subcategory.includes('height')) return 'D';
-        return 'T';
-      }
-      
-      // Texture set - use texture slot metadata
-      const slots = asset.metadata?.texture_set_info?.texture_slots;
-      if (!slots) return 'T';
-      
-      for (const [slotKey, slotInfo] of Object.entries(slots)) {
-        if (slotInfo.original_filename === filename) {
-          const typeMap = {
-            'BaseColor': 'BC', 'Metallic': 'M', 'Roughness': 'R',
-            'Normal': 'N', 'Opacity': 'O', 'Displacement': 'D'
-          };
-          return typeMap[slotInfo.type] || 'T';
-        }
-      }
-      
-      return 'T';
-    };
-
-    // Get texture types from image list in priority order
-    const getTextureTypes = () => {
-      return imageList
-        .map((img, index) => ({
-          abbr: getTextureTypeAbbr(img.filename || '', img),
-          index: index,
-          filename: img.filename,
-          isPreview: img.isPreview || false
-        }))
-        .sort((a, b) => TEXTURE_PRIORITY[a.abbr] - TEXTURE_PRIORITY[b.abbr]);
-    };
-
-    // Helper functions for texture preview tags (same as TextureCard/TextureBadge)
-    const getResolution = () => {
-      return asset.metadata?.resolution || asset.metadata?.dimensions || 'Unknown';
-    };
-
-    const getCategoryBadge = () => {
-      const category = (asset.metadata?.subcategory || asset.subcategory || 'texture').toLowerCase();
-      if (category.includes('alpha')) {
-        return { text: 'Alpha', color: 'bg-white/90 text-black' };
-      } else if (category.includes('texture set') || category.includes('textureset')) {
-        return { text: 'Texture Set', color: 'bg-gray-500/90 text-white' };
-      } else if (category.includes('general')) {
-        return { text: 'General', color: 'bg-gray-500/90 text-white' };
-      } else if (category.includes('displacement')) {
-        return { text: 'Displacement', color: 'bg-gray-500/90 text-white' };
-      } else if (category.includes('normal')) {
-        return { text: 'Normal', color: 'bg-gray-500/90 text-white' };
-      } else if (category.includes('base') && category.includes('color')) {
-        return { text: 'Base Color', color: 'bg-gray-500/90 text-white' };
-      } else if (category.includes('metallic')) {
-        return { text: 'Metallic', color: 'bg-gray-500/90 text-white' };
-      } else if (category.includes('roughness')) {
-        return { text: 'Roughness', color: 'bg-gray-500/90 text-white' };
-      }
-      return { text: (asset.metadata?.subcategory || asset.subcategory || 'Texture'), color: 'bg-gray-500/90 text-white' };
-    };
-
-    const getTextureType = () => {
-      // Check the new texture_type field first
-      const textureType = asset.texture_type || asset.metadata?.texture_type;
-      if (textureType) {
-        if (textureType === 'seamless') return 'Seamless';
-        if (textureType === 'uv_tile') return 'UV Tile';
-      }
-      
-      // Fallback to legacy seamless/uv_tile fields
-      const seamless = asset.seamless || asset.metadata?.seamless || asset.metadata?.tiling;
-      const uvTile = asset.uv_tile || asset.metadata?.uv_tile || asset.metadata?.uvtile;
-      
-      if (uvTile) return 'UV Tile';
-      if (seamless) return 'Seamless';
-      return null;
-    };
-
-    // Calculate transform style for zoom and pan (same as SequenceThumbnail)
-    const getImageTransform = () => {
-      if (zoom === 1) return {};
-      
-      const centerX = zoomCenter.x * 100;
-      const centerY = zoomCenter.y * 100;
-      const offsetX = panOffset.x;
-      const offsetY = panOffset.y;
-      
-      return {
-        transform: `scale(${zoom}) translate(${offsetX}px, ${offsetY}px)`,
-        transformOrigin: `${centerX}% ${centerY}%`,
-        transition: isDragging ? 'none' : 'transform 0.1s ease-out'
-      };
-    };
-
+    // For non-texture sets, use the simple SequenceThumbnail
     return (
-      <div 
-        ref={containerRef}
-        className={`w-full h-full relative overflow-hidden group ${zoom > 1 ? 'cursor-grab' : 'cursor-pointer'} ${isDragging ? 'cursor-grabbing' : ''}`}
-        onMouseMove={handleMouseMove}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onWheel={handleWheel}
-        style={{ userSelect: 'none' }} // Prevent text selection when dragging
-      >
-        {imageList.length > 0 ? (
-          imageList[currentImageIndex] ? (
-            <img
-              src={`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-image/${currentImageIndex}`}
-              alt={`${formatAssetName(asset)} - Image ${currentImageIndex + 1}`}
-              className="w-full h-full object-contain"
-              style={getImageTransform()}
-              onError={(e) => {
-                console.error(`Failed to load texture image ${currentImageIndex}`);
-                // Fallback to SequenceThumbnail for single textures
-                e.target.style.display = 'none';
-                e.target.nextSibling.style.display = 'flex';
-              }}
-              draggable={false}
-            />
-          ) : (
-            // Use SequenceThumbnail as fallback for single textures
-            <SequenceThumbnail
-              assetId={asset.id || asset._key}
-              assetName={formatAssetName(asset)}
-              thumbnailFrame={asset.thumbnail_frame}
-              fallbackIcon="🖼️"
-              disableScrubbing={true}
-              className="w-full h-full object-contain"
-              style={getImageTransform()}
-            />
-          )
-        ) : (
-          // Fallback for when no images are loaded
-          <SequenceThumbnail
-            assetId={asset.id || asset._key}
-            assetName={formatAssetName(asset)}
-            thumbnailFrame={asset.thumbnail_frame}
-            fallbackIcon="🖼️"
-            disableScrubbing={true}
-            className="w-full h-full object-cover"
-            style={getImageTransform()}
-          />
-        )}
-
-        {/* Fallback icon */}
-        <div 
-          className="text-gray-500 text-6xl flex items-center justify-center w-full h-full absolute inset-0"
-          style={{ display: 'none' }}
-        >
-          🖼️
-        </div>
-
-        {/* Navigation Arrows - Only visible on hover and when there are multiple images */}
-        {imageList.length > 1 && (
-          <>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                navigateImage('left');
-              }}
-              className="absolute left-4 top-1/2 transform -trangray-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10"
-            >
-              <ChevronLeft size={24} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                navigateImage('right');
-              }}
-              className="absolute right-4 top-1/2 transform -trangray-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100 z-10"
-            >
-              <ChevronRight size={24} />
-            </button>
-          </>
-        )}
-
-        {/* Texture Type Indicators - Bottom Left (only for multiple images) */}
-        {imageList.length > 1 && (
-          <div className="absolute bottom-4 left-4 flex gap-2 items-center z-10">
-            {getTextureTypes().map((textureType, idx) => (
-              <span
-                key={idx}
-                className={`
-                  px-2 py-1 text-sm font-bold rounded transition-all duration-200 cursor-pointer
-                  ${currentImageIndex === textureType.index 
-                    ? 'bg-purple-500 text-white scale-110' 
-                    : 'bg-black/40 text-gray-400 border border-gray-600/50 hover:bg-black/60'}
-                `}
-                title={textureType.filename}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCurrentImageIndex(textureType.index);
-                }}
-              >
-                {textureType.abbr}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Zoom indicator and navigation info - show when hovering */}
-        {isHovering && (
-          <div className="absolute top-2 left-2 space-y-1">
-            {/* Texture navigation indicator - only show for multiple images */}
-            {imageList.length > 1 && (
-              <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded">
-                Image {currentImageIndex + 1} of {imageList.length}
-              </div>
-            )}
-            
-            {/* Zoom indicator - only show when zoomed */}
-            {zoom > 1 && (
-              <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded">
-                Zoom: {zoom.toFixed(1)}x
-              </div>
-            )}
-          </div>
-        )}
-        
-        {/* Resolution Tag - Top Right */}
-        <div className="absolute top-2 right-2 z-10">
-          {getResolution() !== 'Unknown' && (
-            <span className="px-2 py-1 text-xs rounded font-medium bg-cyan-500/80 text-white backdrop-blur-sm">
-              {getResolution()}
-            </span>
-          )}
-        </div>
-
-        {/* Category Badge - Top Left */}
-        <div className="absolute top-2 left-2 z-10">
-          <span className={`px-2 py-1 text-xs rounded font-medium backdrop-blur-sm ${getCategoryBadge().color}`}>
-            {getCategoryBadge().text}
-          </span>
-        </div>
-
-        {/* Texture Type Tag - Bottom Right (Seamless/UV Tile) */}
-        {getTextureType() && (
-          <div className="absolute bottom-2 right-2 z-10">
-            <span className="px-2 py-1 text-xs rounded font-medium bg-orange-500/80 text-white backdrop-blur-sm">
-              {getTextureType()}
-            </span>
-          </div>
-        )}
-
-        {/* Zoom instructions - show briefly when hovering and not zoomed */}
-        {isHovering && zoom === 1 && !getResolution() && (
-          <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded opacity-70 z-10">
-            Scroll to zoom
-          </div>
-        )}
-      </div>
+      <SequenceThumbnail
+        assetId={asset.id || asset._key}
+        assetName={formatAssetName(asset)}
+        thumbnailFrame={asset.thumbnail_frame}
+        fallbackIcon="🖼️"
+        disableScrubbing={false}
+        className="w-full h-full object-contain"
+      />
     );
   };
 
@@ -1668,7 +1222,7 @@ const AssetLibrary = ({
           const response = await fetch(`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-images`);
           if (response.ok) {
             const data = await response.json();
-            console.log('🖼️ Available texture files from endpoint:', data);
+            // Available texture files loaded from endpoint
             if (data.images && data.images.length > 0) {
               textureFiles = data.images;
             }
@@ -1679,8 +1233,7 @@ const AssetLibrary = ({
         
         // If no texture files found from endpoint, check asset paths for single textures
         if (textureFiles.length === 0) {
-          console.log('🖼️ Checking asset paths for single texture files...');
-          console.log('🖼️ Asset paths:', asset.paths);
+          // Checking asset paths for single texture files
           
           // Check various possible locations for texture files
           const possibleFilePaths = [
@@ -1698,12 +1251,12 @@ const AssetLibrary = ({
                 path: typeof filePath === 'string' ? filePath : filename 
               };
             });
-            console.log('🖼️ Found texture files from paths:', textureFiles);
+            // Found texture files from paths
           }
           
           // If still no files, check if this is a single texture by examining the asset name and category
           if (textureFiles.length === 0 && asset.asset_type === 'Textures') {
-            console.log('🖼️ Single texture detected, using asset name as filename');
+            // Single texture detected, using asset name as filename
             // For single textures, use the asset name as the filename
             const assetName = asset.name || 'texture';
             textureFiles = [{ 
@@ -1713,7 +1266,7 @@ const AssetLibrary = ({
           }
         }
         
-        console.log('🖼️ Final available texture files:', textureFiles);
+        // Final texture files array ready
         setAvailableTextures(textureFiles);
       };
 
@@ -1759,7 +1312,7 @@ const AssetLibrary = ({
                                  subcategoryToTypeMap[asset.alpha_subcategory];
         
         if (assetTextureType === type && availableTextures.length > 0) {
-          console.log(`🎯 Single texture match: ${subcategory} -> ${type}`);
+          // Single texture match found
           return availableTextures[0]; // Return the single texture file
         }
       } else {
@@ -1786,7 +1339,7 @@ const AssetLibrary = ({
                 texture.filename === pathFilename || texture.path.includes(pathFilename)
               );
               if (matchingTexture) {
-                console.log(`🎯 Texture set match: ${key} -> ${type}`);
+                // Texture set match found
                 return matchingTexture;
               }
             }
@@ -1795,7 +1348,7 @@ const AssetLibrary = ({
       }
 
       // No fallback filename parsing - rely only on upload metadata/subcategory
-      console.log(`❌ No texture found for type: ${type} (relying only on upload metadata)`);
+      // No texture found for this type
       return null;
     };
 
@@ -3526,7 +3079,7 @@ const AssetLibrary = ({
                   {/* Large Preview Image with Interactive Sequence - Texture specific or regular */}
                   <div className="aspect-square bg-gray-700 rounded-lg overflow-hidden relative">
                     {(previewAsset.asset_type === 'Textures' || previewAsset.category === 'Textures') ? (
-                      <TexturePreviewImage asset={previewAsset} />
+                      <TextureModalPreview key={`modal-${previewAsset.id || previewAsset._key}`} asset={previewAsset} />
                     ) : (
                       <SequenceThumbnail
                         assetId={previewAsset.id || previewAsset._key}
@@ -4034,11 +3587,15 @@ const AssetLibrary = ({
 
                 {viewMode === 'grid' ? (
                   <div className={getGridClasses()}>
-                    {displayedAssets.map(asset => {
+                    {displayedAssets.map((asset, index) => {
+                      // Debug duplicate keys
+                      if ((asset.id || asset._key) === '5480C2A7D0') {
+                        console.log(`🔍 GRID RENDER: Asset 5480C2A7D0 at index ${index}`);
+                      }
                       const CardComponent = getAssetCardComponent(asset);
                       return (
                         <CardComponent 
-                          key={asset.id} 
+                          key={`grid-${asset.id || asset._key}`} 
                           asset={asset} 
                           formatAssetName={formatAssetName}
                           formatAssetNameJSX={formatAssetNameJSX}
@@ -4059,8 +3616,13 @@ const AssetLibrary = ({
                       <div className="col-span-2">Size</div>
                       <div className="col-span-2">Actions</div>
                     </div>
-                    {displayedAssets.map(asset => (
-                      <div key={asset.id} className={`grid grid-cols-12 gap-4 p-4 border-b transition-colors ${
+                    {displayedAssets.map((asset, index) => {
+                      // Debug duplicate keys
+                      if ((asset.id || asset._key) === '5480C2A7D0') {
+                        console.log(`🔍 LIST RENDER: Asset 5480C2A7D0 at index ${index}`);
+                      }
+                      return (
+                        <div key={`list-${asset.id || asset._key}`} className={`grid grid-cols-12 gap-4 p-4 border-b transition-colors ${
                         asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded
                           ? 'border-yellow-600/30 bg-yellow-600/5 hover:bg-yellow-600/8'
                           : 'border-gray-700 hover:bg-gray-750'
@@ -4095,7 +3657,8 @@ const AssetLibrary = ({
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

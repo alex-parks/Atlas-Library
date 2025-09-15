@@ -1,16 +1,215 @@
 // Texture Asset Card Component
 // Full card component for uploaded Texture assets
 import React, { useState, useEffect } from 'react';
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, MoreVertical, Edit, Eye, Copy, Trash2 } from 'lucide-react';
+import { ChevronUp, ChevronDown, MoreVertical, Edit, Eye, Copy, Trash2, RefreshCw } from 'lucide-react';
 import SequenceThumbnail from '../SequenceThumbnail';
+import TextureSetSequence from '../TextureSetSequence';
+
+// Texture Type Badges Component - Shows all available texture types for texture sets
+const TextureTypeBadges = ({ asset, onRefresh, currentFrameType, onBadgeClick }) => {
+  const [hasPreview, setHasPreview] = useState(false);
+  const [availableTextures, setAvailableTextures] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const assetId = asset.id || asset._key;
+  const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
+
+  // Check for preview image and available textures for texture sets
+  const checkTextureTypes = async () => {
+    if (!isTextureSet) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const textureResponse = await fetch(`http://localhost:8000/api/v1/assets/${assetId}/texture-images`);
+      
+      if (textureResponse.ok) {
+        const textureData = await textureResponse.json();
+        
+        // Check if there's a preview image
+        const hasPreviewImg = textureData.images?.some(img => 
+          img.is_preview || 
+          img.filename?.toLowerCase().includes('preview') ||
+          img.path?.toLowerCase().includes('preview')
+        ) || false;
+        
+        setHasPreview(hasPreviewImg);
+        
+        // Find available texture types using the same logic as TextureSetSequence
+        if (textureData.images && textureData.images.length > 0) {
+          const foundTextures = [];
+          
+          // Define the order and mapping (same as TextureSetSequence)
+          const textureOrder = ['BC', 'R', 'M', 'N', 'O', 'D'];
+          const textureTypeMap = {
+            'BC': ['basecolor', 'albedo', 'diffuse', 'base_color', 'color'],
+            'R': ['roughness', 'rough'],
+            'M': ['metallic', 'metalness', 'metal'],
+            'N': ['normal', 'bump', 'nrm'],
+            'O': ['opacity', 'alpha', 'transparency'],
+            'D': ['displacement', 'height', 'disp']
+          };
+          
+          // Find matching textures (exclude preview images)
+          for (const textureType of textureOrder) {
+            const keywords = textureTypeMap[textureType] || [];
+            
+            const matchingTextureIndex = textureData.images?.findIndex(img => {
+              // Skip preview images for texture type detection
+              if (img.is_preview || 
+                  img.filename?.toLowerCase().includes('preview') ||
+                  img.path?.toLowerCase().includes('preview')) {
+                return false;
+              }
+              
+              const filename = img.filename.toLowerCase();
+              return keywords.some(keyword => filename.includes(keyword));
+            });
+            
+            if (matchingTextureIndex !== -1 && matchingTextureIndex !== undefined) {
+              foundTextures.push(textureType);
+            }
+          }
+          
+          setAvailableTextures(foundTextures);
+        } else {
+          setAvailableTextures([]);
+        }
+      } else {
+        setHasPreview(false);
+        setAvailableTextures([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch texture types for asset', assetId, ':', error);
+      setHasPreview(false);
+      setAvailableTextures([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial check and when asset changes
+  useEffect(() => {
+    if (assetId) {
+      checkTextureTypes();
+    }
+  }, [assetId, isTextureSet]);
+
+  // Only show badges for texture sets
+  if (!isTextureSet || loading) {
+    return null;
+  }
+
+  // If no textures found, don't show anything
+  if (!hasPreview && availableTextures.length === 0) {
+    return null;
+  }
+
+  // Function to get badge styling based on whether it's currently active
+  const getBadgeStyle = (badgeType) => {
+    const isActive = currentFrameType === badgeType;
+    if (badgeType === 'preview') {
+      return isActive 
+        ? "px-1.5 py-0.5 text-xs font-bold rounded bg-purple-500 text-white border border-purple-500" 
+        : "px-1.5 py-0.5 text-xs font-bold rounded bg-transparent text-white border border-purple-400";
+    } else {
+      return isActive 
+        ? "px-1.5 py-0.5 text-xs font-bold rounded bg-blue-500 text-white border border-blue-500" 
+        : "px-1.5 py-0.5 text-xs font-bold rounded bg-transparent text-white border border-blue-400";
+    }
+  };
+
+  return (
+    <div className="absolute bottom-2 left-2 flex gap-1 z-20 group/badges">
+      {/* Preview badge */}
+      {hasPreview && (
+        <span 
+          className={`cursor-pointer transition-all duration-200 ${getBadgeStyle('preview')}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onBadgeClick?.('preview');
+          }}
+          title="Preview Image"
+        >
+          P
+        </span>
+      )}
+      
+      {/* Available texture badges */}
+      {availableTextures.map((textureType) => (
+        <span 
+          key={textureType}
+          className={`cursor-pointer transition-all duration-200 ${getBadgeStyle(textureType)}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onBadgeClick?.(textureType);
+          }}
+          title={`${textureType} Texture`}
+        >
+          {textureType}
+        </span>
+      ))}
+      
+      {/* Refresh button - shows on hover */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onRefresh?.();
+          checkTextureTypes(); // Re-check texture types
+        }}
+        className="opacity-0 group-hover/badges:opacity-100 group-hover:opacity-100 transition-opacity duration-200 px-1.5 py-0.5 text-xs rounded bg-gray-600 hover:bg-gray-500 text-white"
+        title="Refresh texture data"
+      >
+        <RefreshCw size={10} />
+      </button>
+    </div>
+  );
+};
+
+// Smart texture image display component
+const TextureImage = ({ asset, refreshKey, formatAssetName, openPreview, onFrameChange, externalFrameIndex }) => {
+  const assetId = asset.id || asset._key;
+  const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
+  
+  // For texture sets, use the new TextureSetSequence component
+  if (isTextureSet) {
+    return (
+      <TextureSetSequence
+        assetId={assetId}
+        assetName={formatAssetName(asset)}
+        asset={asset}
+        fallbackIcon="🖼️"
+        className="w-full h-full object-cover"
+        onClick={() => openPreview(asset)}
+        hideZoomMessage={true}
+        onFrameChange={onFrameChange}
+        externalFrameIndex={externalFrameIndex}
+      />
+    );
+  }
+  
+  // For non-texture sets, show regular thumbnail
+  return (
+    <img
+      src={`http://localhost:8000/thumbnails/${assetId}?_t=${refreshKey || Date.now()}`}
+      alt={formatAssetName(asset)}
+      className="w-full h-full object-cover cursor-pointer"
+      onClick={() => openPreview(asset)}
+    />
+  );
+};
 
 const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, onEditAsset, onCopyAsset }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isClickedOpen, setIsClickedOpen] = useState(false);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [imageList, setImageList] = useState([]);
-  const [imageResolutions, setImageResolutions] = useState({});
   const [showDropdown, setShowDropdown] = useState(false);
+  
+  // State for texture sequence navigation
+  const [currentFrameType, setCurrentFrameType] = useState(null);
+  const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
+  const [sequenceMapping, setSequenceMapping] = useState([]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -157,16 +356,6 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
 
   // Get texture type (Seamless or UV Tile)
   const getTextureType = () => {
-    // Debug logging
-    console.log('🔍 Checking texture type for asset:', asset.id, {
-      texture_type: asset.texture_type,
-      metadata_texture_type: asset.metadata?.texture_type,
-      seamless: asset.seamless,
-      metadata_seamless: asset.metadata?.seamless,
-      uv_tile: asset.uv_tile,
-      metadata_uv_tile: asset.metadata?.uv_tile,
-      full_asset: asset
-    });
     
     // Check the new texture_type field first
     const textureType = asset.texture_type || asset.metadata?.texture_type;
@@ -184,134 +373,54 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
     return null;
   };
 
-  // Load image list for navigation
-  useEffect(() => {
-    const loadImageList = async () => {
-      try {
-        const response = await fetch(`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-images`);
-        if (response.ok) {
-          const data = await response.json();
-          console.log('🖼️ Texture images loaded:', data);
-          
-          // Images are now naturally sorted alphabetically by priority prefix
-          setImageList(data.images || []);
-          setImageResolutions(data.resolutions || {});
-        }
-      } catch (error) {
-        console.log('No additional texture images found:', error);
-      }
-    };
+  // Simple preview state - no complex event listeners
+  const [refreshKey, setRefreshKey] = useState(0);
+  
+  // Simple force refresh function
+  const handleForceRefresh = () => {
+    setRefreshKey(Date.now());
+  };
 
-    if (asset.id || asset._key) {
-      loadImageList();
-    }
-  }, [asset.id, asset._key]);
-
-  // Navigation functions
-  const navigateImage = (direction) => {
-    if (imageList.length <= 1) return;
-    
-    setCurrentImageIndex(prev => {
-      if (direction === 'left') {
-        return prev === 0 ? imageList.length - 1 : prev - 1;
+  // Handle frame changes from TextureSetSequence
+  const handleFrameChange = (frameData) => {
+    if (frameData && frameData.type) {
+      if (frameData.type === 'preview') {
+        setCurrentFrameType('preview');
+      } else if (frameData.textureType) {
+        setCurrentFrameType(frameData.textureType);
       } else {
-        return prev === imageList.length - 1 ? 0 : prev + 1;
+        setCurrentFrameType(null);
       }
-    });
+    }
+  };
+
+  // Handle badge clicks to navigate to specific texture type
+  const handleBadgeClick = (textureType) => {
+    // Find the frame index for this texture type
+    if (sequenceMapping.length > 0) {
+      const targetFrame = sequenceMapping.findIndex(frame => {
+        if (textureType === 'preview') {
+          return frame.type === 'preview';
+        } else {
+          return frame.textureType === textureType;
+        }
+      });
+      
+      if (targetFrame !== -1) {
+        setCurrentFrameIndex(targetFrame);
+      }
+    }
+  };
+  
+  // Simple function to check if this texture set has a preview
+  const hasPreview = () => {
+    const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
+    return isTextureSet; // For now, assume all texture sets can have previews - we'll check when rendering
   };
 
   // Get current image resolution - always use actual resolution, not thumbnail
   const getCurrentResolution = () => {
     return getResolution();
-  };
-
-  // Map texture types to their abbreviations using ONLY upload metadata (NO filename parsing)
-  const getTextureTypeAbbr = (filename, imageObj = null) => {
-    console.log('🔍 TextureCard - Getting texture type for:', filename, 'imageObj:', imageObj);
-    
-    // Check if this is a Preview image first
-    if (imageObj?.is_preview || imageObj?.isPreview || filename === 'Preview.png') {
-      console.log('✅ TextureCard - Detected Preview image');
-      return 'P'; // Preview abbreviation
-    }
-    
-    // Check if this is a single texture (not a texture set)
-    const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
-    
-    if (!isTextureSet) {
-      // For single textures, use the uploaded subcategory (no filename parsing)
-      const subcategory = asset.metadata?.subcategory || asset.subcategory;
-      if (subcategory) {
-        const subcategoryLower = subcategory.toLowerCase();
-        if (subcategoryLower.includes('alpha')) return 'A';
-        if (subcategoryLower.includes('base') && subcategoryLower.includes('color')) return 'BC';
-        if (subcategoryLower.includes('albedo')) return 'BC';
-        if (subcategoryLower.includes('metallic')) return 'M';
-        if (subcategoryLower.includes('roughness')) return 'R';
-        if (subcategoryLower.includes('normal')) return 'N';
-        if (subcategoryLower.includes('opacity')) return 'O';
-        if (subcategoryLower.includes('displacement') || subcategoryLower.includes('height')) return 'D';
-      }
-      return 'T'; // Generic texture for single textures without clear subcategory
-    }
-    
-    // For texture sets, use texture slot metadata EXCLUSIVELY (no filename parsing)
-    if (asset.metadata?.texture_set_info?.texture_slots) {
-      const slots = asset.metadata.texture_set_info.texture_slots;
-      console.log('🔍 TextureCard - Available texture slots:', slots);
-      console.log('🔍 TextureCard - Looking for filename:', filename);
-      
-      // Find which slot this filename corresponds to by original_filename match
-      for (const [slotKey, slotInfo] of Object.entries(slots)) {
-        console.log(`🔍 TextureCard - Checking slot ${slotKey}: ${slotInfo.original_filename} vs ${filename}`);
-        if (slotInfo.original_filename === filename) {
-          // Map slot types to abbreviations
-          const typeMap = {
-            'BaseColor': 'BC',
-            'Metallic': 'M', 
-            'Roughness': 'R',
-            'Normal': 'N',
-            'Opacity': 'O',
-            'Displacement': 'D'
-          };
-          const result = typeMap[slotInfo.type] || 'T';
-          console.log(`✅ TextureCard - Found match! ${slotInfo.type} -> ${result}`);
-          return result;
-        }
-      }
-      console.log('❌ TextureCard - No matching slot found for filename');
-    } else {
-      console.log('❌ TextureCard - No texture_set_info.texture_slots found in asset metadata');
-    }
-    
-    // If we get here, something is wrong with the metadata
-    console.warn(`⚠️ TextureCard - No texture slot found for filename: ${filename}`);
-    return 'T'; // Default to generic texture instead of '?'
-  };
-
-  // Define texture priority order (Preview first, then texture maps)
-  const TEXTURE_PRIORITY = {
-    'P': 0,  // Preview (always first)
-    'BC': 1, // Base Color
-    'M': 2,  // Metallic
-    'R': 3,  // Roughness
-    'N': 4,  // Normal
-    'O': 5,  // Opacity
-    'D': 6,  // Displacement
-    'A': 7,  // Alpha (single textures)
-    'T': 8,  // Generic texture
-    '?': 99  // Unknown
-  };
-
-  // Get texture types from image list in priority order
-  const getTextureTypes = () => {
-    // Since imageList is already sorted by priority, just map with current index
-    return imageList.map((img, index) => ({
-      abbr: getTextureTypeAbbr(img.filename || '', img),
-      index: index,
-      filename: img.filename,
-      isPreview: img.is_preview || img.isPreview || false
-    }));
   };
 
   // No longer needed - removing version display
@@ -331,56 +440,15 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
           : 'border-purple-500/30 hover:border-purple-400 hover:shadow-purple-500/10'
       }`}>
         <div className="aspect-square bg-gray-700 relative overflow-hidden">
-          {imageList.length > 1 ? (
-            // Custom image display for texture navigation
-            <div className="w-full h-full relative">
-              {imageList[currentImageIndex] ? (
-                <img
-                  src={`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-image/${currentImageIndex}`}
-                  alt={`${formatAssetName(asset)} - Image ${currentImageIndex + 1}`}
-                  className="w-full h-full object-cover cursor-pointer"
-                  onClick={() => openPreview(asset)}
-                  onError={(e) => {
-                    console.error(`Failed to load texture image ${currentImageIndex}:`, imageList[currentImageIndex]?.path);
-                    e.target.style.display = 'none';
-                    e.target.nextSibling.style.display = 'flex';
-                  }}
-                />
-              ) : null}
-              {/* Fallback icon */}
-              <div 
-                className="text-gray-500 text-3xl flex items-center justify-center w-full h-full absolute inset-0"
-                style={{ display: 'none' }}
-              >
-                🖼️
-              </div>
-            </div>
-          ) : (
-            // Direct image with proper aspect ratio for single textures
-            <div className="w-full h-full relative">
-              <img
-                src={`http://localhost:8000/thumbnails/${asset.id || asset._key}${asset._image_updated ? `?_t=${asset._image_updated}` : ''}`}
-                alt={formatAssetName(asset)}
-                className="w-full h-full object-cover cursor-pointer"
-                style={{
-                  objectFit: 'cover',
-                  objectPosition: 'center'
-                }}
-                onClick={() => openPreview(asset)}
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-              {/* Fallback icon */}
-              <div 
-                className="text-gray-500 text-3xl flex items-center justify-center w-full h-full absolute inset-0"
-                style={{ display: 'none' }}
-              >
-                🖼️
-              </div>
-            </div>
-          )}
+          {/* Smart texture display with sequence support */}
+          <TextureImage 
+            asset={asset} 
+            refreshKey={refreshKey}
+            formatAssetName={formatAssetName}
+            openPreview={openPreview}
+            onFrameChange={handleFrameChange}
+            externalFrameIndex={currentFrameIndex}
+          />
           
           {/* Category Badge - Top Left */}
           <div className="absolute top-2 left-2">
@@ -466,50 +534,13 @@ const TextureCard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, 
             </div>
           )}
 
-          {/* Navigation Arrows - Only visible on hover for Texture Sets with multiple images */}
-          {imageList.length > 1 && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigateImage('left');
-                }}
-                className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-1 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigateImage('right');
-                }}
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-1 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100"
-              >
-                <ChevronRight size={16} />
-              </button>
-              
-            </>
-          )}
-
-          {/* Texture Type Indicators - Bottom Left */}
-          {imageList.length > 1 && (
-            <div className="absolute bottom-2 left-2 flex gap-1 items-center">
-              {getTextureTypes().map((textureType, idx) => (
-                <span
-                  key={idx}
-                  className={`
-                    px-1.5 py-0.5 text-xs font-bold rounded transition-all duration-200
-                    ${currentImageIndex === textureType.index 
-                      ? 'bg-purple-500 text-white' 
-                      : 'bg-black/40 text-gray-400 border border-gray-600/50'}
-                  `}
-                  title={textureType.filename}
-                >
-                  {textureType.abbr}
-                </span>
-              ))}
-            </div>
-          )}
+          {/* Texture Type Badges - Bottom Left (for texture sets) */}
+          <TextureTypeBadges 
+            asset={asset} 
+            onRefresh={handleForceRefresh}
+            currentFrameType={currentFrameType}
+            onBadgeClick={handleBadgeClick}
+          />
 
           {/* Branded Badge - Middle Right */}
           {(asset.branded || asset.metadata?.branded || asset.metadata?.export_metadata?.branded) && (

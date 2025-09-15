@@ -66,6 +66,8 @@ const TextureEditAsset = ({
   };
 
   const handleUploadPreview = async () => {
+    console.log('🚀 PREVIEW UPLOAD: Starting upload process...');
+    
     if (!previewFilePath.trim()) {
       alert('❌ Please enter a file path for the preview image');
       return;
@@ -99,66 +101,25 @@ const TextureEditAsset = ({
         alert('✅ Preview image updated successfully!');
         setPreviewFilePath('');
         
-        // Force image refresh by adding cache-busting parameter
+        // Clean cache-busting with surgical update
         const cacheBuster = Date.now();
         
-        // Optionally call onSave to refresh the asset data
+        // Dispatch clean event for multi-user safe updates
+        window.dispatchEvent(new CustomEvent('assetPreviewUpdated', {
+          detail: { assetId: asset.id, timestamp: cacheBuster }
+        }));
+        
+        // Update asset data if callback provided
         if (onSave) {
-          // Trigger a refresh of the asset data
           const refreshResponse = await fetch(`${apiEndpoint}/${asset.id}`);
           if (refreshResponse.ok) {
             const refreshedAsset = await refreshResponse.json();
-            // Add cache-busting parameter to force image reload
             refreshedAsset._image_updated = cacheBuster;
             onSave(refreshedAsset);
           }
         }
         
-        // Also dispatch a global event for other components to refresh this asset's images
-        window.dispatchEvent(new CustomEvent('assetPreviewUpdated', {
-          detail: { assetId: asset.id, timestamp: cacheBuster }
-        }));
-        
-        // Force reload of preview image in browser - multiple strategies
-        
-        // 1. Update all images containing the asset ID
-        const previewImages = document.querySelectorAll(`img[src*="${asset.id}"]`);
-        previewImages.forEach(img => {
-          const currentSrc = img.src;
-          const separator = currentSrc.includes('?') ? '&' : '?';
-          img.src = `${currentSrc}${separator}_t=${cacheBuster}`;
-        });
-        
-        // 2. Force refresh thumbnail endpoint specifically
-        const thumbnailImages = document.querySelectorAll(`img[src*="thumbnails/${asset.id}"]`);
-        thumbnailImages.forEach(img => {
-          const baseUrl = img.src.split('?')[0]; // Remove existing params
-          img.src = `${baseUrl}?_t=${cacheBuster}`;
-        });
-        
-        // 3. Force refresh any cached images via a more aggressive approach
-        setTimeout(() => {
-          // Trigger a second refresh after a small delay to catch any lazy-loaded images
-          const allAssetImages = document.querySelectorAll(`img[src*="${asset.id}"]`);
-          allAssetImages.forEach(img => {
-            img.style.opacity = '0.5';
-            const originalSrc = img.src;
-            img.src = '';
-            setTimeout(() => {
-              img.src = originalSrc.includes('?') 
-                ? originalSrc.replace(/[?&]_t=\d+/, '') + `?_t=${cacheBuster}`
-                : `${originalSrc}?_t=${cacheBuster}`;
-              img.style.opacity = '1';
-            }, 100);
-          });
-        }, 500);
-        
-        // 4. Nuclear option: Force page refresh if the modal will be closed
-        setTimeout(() => {
-          // As a last resort, suggest browser refresh to user
-          console.log(`🔄 Preview image updated for asset ${asset.id} at ${new Date().toLocaleTimeString()}`);
-          console.log('If you don\'t see the updated image, try refreshing the browser page.');
-        }, 1000);
+        console.log(`✅ PREVIEW UPLOAD: Completed for asset ${asset.id} with timestamp ${cacheBuster}`);
       } else {
         const errorData = await response.json();
         alert(`❌ Failed to update preview image: ${errorData.detail || 'Unknown error'}`);

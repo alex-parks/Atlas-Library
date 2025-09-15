@@ -1381,6 +1381,8 @@ async def get_texture_images(asset_id: str):
         # First, check if there's a preview image
         preview_files = (asset_data.get('paths', {}).get('preview_files', []) or 
                         asset_data.get('metadata', {}).get('paths', {}).get('preview_files', []))
+        
+        preview_found = False
         if preview_files and len(preview_files) > 0:
             # Add preview image as the first image (use container path directly)
             preview_path = Path(preview_files[0])
@@ -1395,7 +1397,27 @@ async def get_texture_images(asset_id: str):
                     "is_preview": True
                 })
                 resolutions[0] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
-                logger.info(f"🖼️ Added preview image: {preview_path}")
+                logger.info(f"🖼️ Added preview image from database: {preview_path}")
+                preview_found = True
+        
+        # Fallback: Scan Preview folder directly if not found in database
+        if not preview_found and (folder / "Preview").exists():
+            preview_folder = folder / "Preview"
+            for file_path in preview_folder.iterdir():
+                if file_path.is_file() and file_path.name.lower() == 'preview.png':
+                    # Convert to network path for external access
+                    network_path = str(file_path).replace('/app/assets/', '/net/library/atlaslib/')
+                    images.append({
+                        "filename": "Preview.png",
+                        "path": network_path,
+                        "relative_path": "Preview/Preview.png",
+                        "is_original": False,
+                        "is_preview": True
+                    })
+                    resolutions[0] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
+                    logger.info(f"🖼️ Added preview image from filesystem scan: {file_path}")
+                    preview_found = True
+                    break
         
         # Then, get thumbnail files from the database (NOT copied_files)
         thumbnail_files = asset_data.get('paths', {}).get('thumbnails', [])
@@ -1404,8 +1426,8 @@ async def get_texture_images(asset_id: str):
             logger.info(f"🖼️ Using thumbnails from database: {len(thumbnail_files)} files")
             for i, file_path in enumerate(thumbnail_files):
                 file_path_obj = Path(file_path)
-                # Offset index by 1 if preview exists
-                res_index = i + 1 if (preview_files and len(preview_files) > 0) else i
+                # Offset index by 1 if preview was actually found and added
+                res_index = i + 1 if preview_found else i
                 
                 # Extract original filename from thumbnail name for texture slot mapping
                 thumbnail_name = file_path_obj.name
@@ -1509,6 +1531,11 @@ async def get_texture_images(asset_id: str):
             
         images.sort(key=get_texture_position)
         
+        # Debug logging to verify order
+        for i, img in enumerate(images):
+            is_preview = img.get('is_preview', False)
+            logger.info(f"📸 Image {i}: {img.get('filename')} (preview: {is_preview})")
+        
         logger.info(f"📸 Found {len(images)} texture images for asset {asset_id}")
         
         return {
@@ -1547,9 +1574,31 @@ async def get_texture_image_by_index(asset_id: str, image_index: int):
         # Use same image gathering logic as get_texture_images endpoint
         images = []
         
+        # Get folder path for fallback scanning
+        folder_path = asset_data.get('folder_path') or asset_data.get('paths', {}).get('folder_path')
+        if not folder_path:
+            raise HTTPException(status_code=404, detail="Asset folder path not found")
+            
+        # Convert container mount path if needed
+        if folder_path.startswith('/app/assets/'):
+            folder_path = folder_path.replace('/app/assets/', '/net/library/atlaslib/')
+            
+        # Check if folder exists
+        from pathlib import Path
+        folder = Path(folder_path)
+        if not folder.exists():
+            # Try container mount as fallback
+            container_folder = Path(folder_path.replace('/net/library/atlaslib/', '/app/assets/'))
+            if container_folder.exists():
+                folder = container_folder
+            else:
+                raise HTTPException(status_code=404, detail="Asset folder not found")
+        
         # First, check if there's a preview image
         preview_files = (asset_data.get('paths', {}).get('preview_files', []) or 
                         asset_data.get('metadata', {}).get('paths', {}).get('preview_files', []))
+        
+        preview_found = False
         if preview_files and len(preview_files) > 0:
             # Add preview image as the first image (use container path directly)
             preview_path = Path(preview_files[0])
@@ -1559,6 +1608,20 @@ async def get_texture_image_by_index(asset_id: str, image_index: int):
                     "path": str(preview_path),
                     "is_preview": True
                 })
+                preview_found = True
+                
+        # Fallback: Scan Preview folder directly if not found in database
+        if not preview_found and (folder / "Preview").exists():
+            preview_folder = folder / "Preview"
+            for file_path in preview_folder.iterdir():
+                if file_path.is_file() and file_path.name.lower() == 'preview.png':
+                    images.append({
+                        "filename": "Preview.png",
+                        "path": str(file_path),  # Use actual file path for serving
+                        "is_preview": True
+                    })
+                    preview_found = True
+                    break
         
         # Then add texture images from thumbnails (NOT copied_files)
         thumbnail_files = asset_data.get('paths', {}).get('thumbnails', [])
@@ -1661,7 +1724,12 @@ async def get_texture_image_by_index(asset_id: str, image_index: int):
                 return FileResponse(
                     path=str(image_path),
                     media_type=content_type,
-                    filename=selected_image["filename"]
+                    filename=selected_image["filename"],
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "GET",
+                        "Access-Control-Allow-Headers": "*"
+                    }
                 )
             except Exception as e:
                 logger.error(f"❌ Error serving image file: {e}")
@@ -3017,9 +3085,59 @@ async def update_asset_preview_image(
             # Define target preview file path
             preview_file = preview_folder / "Preview.png"
             
-            # Process the uploaded image using the same logic as asset upload
+            # Process the uploaded image using simplified robust approach
             logger.info(f"🔧 Processing preview image: {temp_path} -> {preview_file}")
-            success = await generate_texture_thumbnail(temp_path, preview_file)
+            
+            # Use the same simplified approach we fixed earlier
+            success = False
+            try:
+                # Simple approach: Use PIL for reliable image processing
+                from PIL import Image
+                import shutil
+                
+                # For non-image files or if PIL fails, just copy the file
+                if temp_path.suffix.lower() in {'.jpg', '.jpeg', '.png'}:
+                    try:
+                        # Open, convert to RGB if needed, and save as PNG
+                        with Image.open(temp_path) as img:
+                            # Convert to RGB if necessary (handles RGBA, etc.)
+                            if img.mode in ('RGBA', 'LA', 'P'):
+                                # Create white background for transparency
+                                rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                                if img.mode == 'RGBA':
+                                    rgb_img.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
+                                else:
+                                    rgb_img.paste(img)
+                                img = rgb_img
+                            elif img.mode != 'RGB':
+                                img = img.convert('RGB')
+                            
+                            # Resize if too large (max 2048x2048 for preview)
+                            max_size = 2048
+                            if img.width > max_size or img.height > max_size:
+                                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                                logger.info(f"📏 Resized preview to: {img.size}")
+                            
+                            # Save as PNG with good quality
+                            img.save(preview_file, 'PNG', optimize=True, quality=95)
+                            success = True
+                            logger.info(f"✅ PIL processing successful: {preview_file}")
+                            
+                    except Exception as pil_error:
+                        logger.warning(f"⚠️ PIL processing failed: {pil_error}")
+                        # Fallback to direct copy
+                        shutil.copy2(temp_path, preview_file)
+                        success = True
+                        logger.info(f"✅ Used direct copy as fallback: {preview_file}")
+                else:
+                    # For TIFF, TIF, EXR - just copy directly (let browser handle)
+                    shutil.copy2(temp_path, preview_file)
+                    success = True
+                    logger.info(f"✅ Direct copy for {temp_path.suffix}: {preview_file}")
+                    
+            except Exception as process_error:
+                logger.error(f"❌ Preview processing failed: {process_error}")
+                success = False
             
             if success:
                 logger.info(f"✅ Successfully created preview image: {preview_file}")
@@ -3135,10 +3253,15 @@ async def update_asset_preview_image_from_path(
         if file_extension not in allowed_extensions:
             raise HTTPException(status_code=400, detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}")
         
-        # Check if source file exists
-        source_path = Path(file_path)
+        # Convert source path to container path if needed (network path to container mount)
+        container_source_path = file_path
+        if file_path.startswith('/net/library/atlaslib'):
+            container_source_path = file_path.replace('/net/library/atlaslib', '/app/assets')
+        
+        # Check if source file exists (using container path)
+        source_path = Path(container_source_path)
         if not source_path.exists():
-            raise HTTPException(status_code=404, detail=f"Source file not found: {file_path}")
+            raise HTTPException(status_code=404, detail=f"Source file not found: {file_path} (searched at {container_source_path})")
         
         # Get asset folder path
         asset_folder_path = asset_data.get('paths', {}).get('asset_folder')
@@ -3160,11 +3283,60 @@ async def update_asset_preview_image_from_path(
         # Define target preview file path
         preview_file = preview_folder / "Preview.png"
         
-        # Process the source image using the same logic as asset upload
+        # Simplified and more robust preview image processing
         logger.info(f"🔧 Processing preview image: {source_path} -> {preview_file}")
-        success = await generate_texture_thumbnail(source_path, preview_file)
         
-        if success:
+        success = False
+        try:
+            # Simple approach: Use PIL for reliable image processing
+            from PIL import Image
+            import shutil
+            
+            # For non-image files or if PIL fails, just copy the file
+            if source_path.suffix.lower() in {'.jpg', '.jpeg', '.png'}:
+                try:
+                    # Open, convert to RGB if needed, and save as PNG
+                    with Image.open(source_path) as img:
+                        # Convert to RGB if necessary (handles RGBA, etc.)
+                        if img.mode in ('RGBA', 'LA', 'P'):
+                            # Create white background for transparency
+                            rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                            if img.mode == 'RGBA':
+                                rgb_img.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
+                            else:
+                                rgb_img.paste(img)
+                            img = rgb_img
+                        elif img.mode != 'RGB':
+                            img = img.convert('RGB')
+                        
+                        # Resize if too large (max 2048x2048 for preview)
+                        max_size = 2048
+                        if img.width > max_size or img.height > max_size:
+                            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                            logger.info(f"📏 Resized preview to: {img.size}")
+                        
+                        # Save as PNG with good quality
+                        img.save(preview_file, 'PNG', optimize=True, quality=95)
+                        success = True
+                        logger.info(f"✅ PIL processing successful: {preview_file}")
+                        
+                except Exception as pil_error:
+                    logger.warning(f"⚠️ PIL processing failed: {pil_error}")
+                    # Fallback to direct copy
+                    shutil.copy2(source_path, preview_file)
+                    success = True
+                    logger.info(f"✅ Used direct copy as fallback: {preview_file}")
+            else:
+                # For TIFF, TIF, EXR - just copy directly (let browser handle)
+                shutil.copy2(source_path, preview_file)
+                success = True
+                logger.info(f"✅ Direct copy for {source_path.suffix}: {preview_file}")
+                
+        except Exception as process_error:
+            logger.error(f"❌ Preview processing failed: {process_error}")
+            success = False
+        
+        if success and preview_file.exists():
             logger.info(f"✅ Successfully created preview image: {preview_file}")
             
             # Update database with preview file path
@@ -3172,16 +3344,9 @@ async def update_asset_preview_image_from_path(
                 # Convert back to network path for database storage
                 network_preview_path = str(preview_file).replace('/app/assets/', '/net/library/atlaslib/')
                 
-                # Get existing preview files or initialize empty list
-                preview_files = asset_data.get('paths', {}).get('preview_files', [])
-                
-                # Update or add the preview file path
-                if network_preview_path not in preview_files:
-                    preview_files = [network_preview_path]  # Replace with single preview file
-                
-                # Update the asset document paths
+                # Update the asset document paths - always replace preview files list
                 update_data = {
-                    'paths.preview_files': preview_files
+                    'paths.preview_files': [network_preview_path]
                 }
                 
                 # Update in database using AQL

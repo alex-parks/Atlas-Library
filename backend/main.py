@@ -211,7 +211,12 @@ async def get_thumbnail(asset_id: str, _t: str = None):
                 return FileResponse(
                     path=str(thumbnail_path),
                     media_type=media_type,
-                    headers={"Cache-Control": cache_control}
+                    headers={
+                        "Cache-Control": cache_control,
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "GET",
+                        "Access-Control-Allow-Headers": "*"
+                    }
                 )
         
         logger.error(f"[ERROR] No thumbnail found for asset: {asset_id}")
@@ -587,4 +592,5 @@ async def save_config():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Enable hot reloading for development
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True, reload_dirs=["./backend"])
