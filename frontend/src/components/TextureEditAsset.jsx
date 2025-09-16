@@ -101,25 +101,7 @@ const TextureEditAsset = ({
         alert('✅ Preview image updated successfully!');
         setPreviewFilePath('');
         
-        // Clean cache-busting with surgical update
-        const cacheBuster = Date.now();
-        
-        // Dispatch clean event for multi-user safe updates
-        window.dispatchEvent(new CustomEvent('assetPreviewUpdated', {
-          detail: { assetId: asset.id, timestamp: cacheBuster }
-        }));
-        
-        // Update asset data if callback provided
-        if (onSave) {
-          const refreshResponse = await fetch(`${apiEndpoint}/${asset.id}`);
-          if (refreshResponse.ok) {
-            const refreshedAsset = await refreshResponse.json();
-            refreshedAsset._image_updated = cacheBuster;
-            onSave(refreshedAsset);
-          }
-        }
-        
-        console.log(`✅ PREVIEW UPLOAD: Completed for asset ${asset.id} with timestamp ${cacheBuster}`);
+        console.log(`✅ PREVIEW UPLOAD: Completed for asset ${asset.id}`);
       } else {
         const errorData = await response.json();
         alert(`❌ Failed to update preview image: ${errorData.detail || 'Unknown error'}`);

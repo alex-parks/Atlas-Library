@@ -3292,22 +3292,38 @@ async def update_asset_preview_image_from_path(
             from PIL import Image
             import shutil
             
-            # For non-image files or if PIL fails, just copy the file
-            if source_path.suffix.lower() in {'.jpg', '.jpeg', '.png'}:
+            # Handle different image formats with alpha channel preservation
+            if source_path.suffix.lower() in {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.exr'}:
                 try:
-                    # Open, convert to RGB if needed, and save as PNG
+                    # Load image with PIL (supports most formats including basic EXR)
                     with Image.open(source_path) as img:
-                        # Convert to RGB if necessary (handles RGBA, etc.)
-                        if img.mode in ('RGBA', 'LA', 'P'):
-                            # Create white background for transparency
-                            rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-                            if img.mode == 'RGBA':
-                                rgb_img.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
+                        logger.info(f"📷 Original image: {img.mode}, size: {img.size}")
+                        
+                        # Preserve alpha channels for formats that support them
+                        if img.mode in ('RGBA', 'LA'):
+                            # Keep alpha channel - PNG supports transparency
+                            if img.mode == 'LA':
+                                img = img.convert('RGBA')
+                            target_mode = 'RGBA'
+                            logger.info(f"✅ Preserving alpha channel (mode: {img.mode})")
+                            
+                        elif img.mode == 'P':
+                            # Check if palette has transparency
+                            if 'transparency' in img.info:
+                                img = img.convert('RGBA')
+                                target_mode = 'RGBA'
+                                logger.info(f"✅ Converted palette with transparency to RGBA")
                             else:
-                                rgb_img.paste(img)
-                            img = rgb_img
-                        elif img.mode != 'RGB':
-                            img = img.convert('RGB')
+                                img = img.convert('RGB')
+                                target_mode = 'RGB'
+                                logger.info(f"✅ Converted palette without transparency to RGB")
+                                
+                        else:
+                            # Convert other modes to RGB
+                            if img.mode != 'RGB':
+                                img = img.convert('RGB')
+                            target_mode = 'RGB'
+                            logger.info(f"✅ Converted to RGB (original mode: {img.mode})")
                         
                         # Resize if too large (max 2048x2048 for preview)
                         max_size = 2048
@@ -3315,19 +3331,37 @@ async def update_asset_preview_image_from_path(
                             img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
                             logger.info(f"📏 Resized preview to: {img.size}")
                         
-                        # Save as PNG with good quality
-                        img.save(preview_file, 'PNG', optimize=True, quality=95)
+                        # Save as PNG with appropriate settings for alpha preservation
+                        save_kwargs = {}
+                        if target_mode == 'RGBA':
+                            # PNG with alpha channel
+                            save_kwargs = {
+                                'format': 'PNG',
+                                'optimize': True,
+                                'compress_level': 6  # Good balance of size/quality for RGBA
+                            }
+                            logger.info(f"💾 Saving PNG with alpha channel")
+                        else:
+                            # PNG without alpha channel
+                            save_kwargs = {
+                                'format': 'PNG', 
+                                'optimize': True,
+                                'compress_level': 6
+                            }
+                            logger.info(f"💾 Saving PNG without alpha channel")
+                        
+                        img.save(preview_file, **save_kwargs)
                         success = True
-                        logger.info(f"✅ PIL processing successful: {preview_file}")
+                        logger.info(f"✅ Image processing successful: {preview_file} (mode: {target_mode})")
                         
                 except Exception as pil_error:
                     logger.warning(f"⚠️ PIL processing failed: {pil_error}")
-                    # Fallback to direct copy
+                    # Fallback to direct copy for unsupported formats
                     shutil.copy2(source_path, preview_file)
                     success = True
                     logger.info(f"✅ Used direct copy as fallback: {preview_file}")
             else:
-                # For TIFF, TIF, EXR - just copy directly (let browser handle)
+                # For unsupported formats - direct copy
                 shutil.copy2(source_path, preview_file)
                 success = True
                 logger.info(f"✅ Direct copy for {source_path.suffix}: {preview_file}")
