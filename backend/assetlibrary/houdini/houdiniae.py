@@ -64,7 +64,7 @@ class TemplateAssetExporter:
         sanitized = sanitized.strip('_')
         return sanitized
     
-    def __init__(self, asset_name, subcategory="Props", description="", tags=None, asset_type=None, render_engine=None, metadata=None, action="create_new", parent_asset_id=None, variant_name=None, thumbnail_action="automatic", thumbnail_file_path=""):
+    def __init__(self, asset_name, subcategory="Props", description="", tags=None, asset_type=None, render_engine=None, metadata=None, action="create_new", parent_asset_id=None, variant_name=None, thumbnail_action="automatic", thumbnail_file_path="", export_no_references=False):
         # Store the raw input for variants (will be overridden for variants)
         self.raw_input_name = asset_name
         self.subcategory = subcategory  
@@ -77,6 +77,7 @@ class TemplateAssetExporter:
         self.parent_asset_id = parent_asset_id
         self.thumbnail_action = thumbnail_action  # automatic, choose, disable
         self.thumbnail_file_path = thumbnail_file_path  # path to custom thumbnail file
+        self.export_no_references = export_no_references  # skip copying geometry and texture files
         
         # Handle variant name - determine based on action
         if action == "create_new":
@@ -576,7 +577,8 @@ class TemplateAssetExporter:
                 "parent_asset_id": self.parent_asset_id,
                 "branded": False,
                 "thumbnail_action": self.thumbnail_action,
-                "thumbnail_file_path": self.thumbnail_file_path if self.thumbnail_action == "choose" else None
+                "thumbnail_file_path": self.thumbnail_file_path if self.thumbnail_action == "choose" else None,
+                "export_no_references": self.export_no_references
             }
             
             # Get Houdini version if available
@@ -1424,31 +1426,43 @@ class TemplateAssetExporter:
             self.thumbnail_folder.mkdir(exist_ok=True)
             print(f"   📁 Created thumbnail folder: {self.thumbnail_folder}")
             
-            # PRE-SCAN: Detect BGEO and VDB sequences with original paths (before any remapping)
-            print(f"   🎬 PRE-SCANNING FOR BGEO SEQUENCES WITH ORIGINAL PATHS...")
-            bgeo_sequences = self.detect_bgeo_sequences_early(parent_node)
-            
-            print(f"   💨 PRE-SCANNING FOR VDB SEQUENCES WITH ORIGINAL PATHS...")
-            vdb_sequences = self.detect_vdb_sequences_early(parent_node)
-            
-            # Process materials and copy textures FIRST
-            texture_info = self.process_materials_and_textures(parent_node, nodes_to_export)
-            
-            # Process geometry files and copy them (now with BGEO and VDB sequence info)
-            geometry_info = self.process_geometry_files(parent_node, nodes_to_export, bgeo_sequences, vdb_sequences)
-            
-            # 🎯 DETECT SMART FRAME RANGE based on sequences
-            framein, frameout = self.detect_frame_range(bgeo_sequences, vdb_sequences)
-            print(f"   🎯 Smart frame range detected: {framein}-{frameout}")
-            
-            # Store frame range for HDA configuration and metadata
-            self.framein = framein
-            self.frameout = frameout
-            
-            # 🆕 REMAP ALL FILE PATHS FROM JOB LOCATIONS TO LIBRARY LOCATIONS
-            print(f"   🔄 Remapping file paths before export...")
-            path_mappings = self.remap_paths_before_export(parent_node, nodes_to_export, texture_info, geometry_info)
-            print(f"   ✅ Path remapping complete: {len(path_mappings)} paths updated")
+            # Check if we should skip file processing
+            if self.export_no_references:
+                print(f"   📁 EXPORT WITH NO REFERENCES MODE - Skipping file processing...")
+                bgeo_sequences = []
+                vdb_sequences = []
+                texture_info = []
+                geometry_info = []
+                path_mappings = {}
+                self.framein = 1
+                self.frameout = 240
+                print(f"   ✅ Using default frame range: 1-240")
+            else:
+                # PRE-SCAN: Detect BGEO and VDB sequences with original paths (before any remapping)
+                print(f"   🎬 PRE-SCANNING FOR BGEO SEQUENCES WITH ORIGINAL PATHS...")
+                bgeo_sequences = self.detect_bgeo_sequences_early(parent_node)
+                
+                print(f"   💨 PRE-SCANNING FOR VDB SEQUENCES WITH ORIGINAL PATHS...")
+                vdb_sequences = self.detect_vdb_sequences_early(parent_node)
+                
+                # Process materials and copy textures FIRST
+                texture_info = self.process_materials_and_textures(parent_node, nodes_to_export)
+                
+                # Process geometry files and copy them (now with BGEO and VDB sequence info)
+                geometry_info = self.process_geometry_files(parent_node, nodes_to_export, bgeo_sequences, vdb_sequences)
+                
+                # 🎯 DETECT SMART FRAME RANGE based on sequences
+                framein, frameout = self.detect_frame_range(bgeo_sequences, vdb_sequences)
+                print(f"   🎯 Smart frame range detected: {framein}-{frameout}")
+                
+                # Store frame range for HDA configuration and metadata
+                self.framein = framein
+                self.frameout = frameout
+                
+                # 🆕 REMAP ALL FILE PATHS FROM JOB LOCATIONS TO LIBRARY LOCATIONS
+                print(f"   🔄 Remapping file paths before export...")
+                path_mappings = self.remap_paths_before_export(parent_node, nodes_to_export, texture_info, geometry_info)
+                print(f"   ✅ Path remapping complete: {len(path_mappings)} paths updated")
             
             # Export template with render engine suffix in root folder
             render_engine_lower = self.render_engine.lower()

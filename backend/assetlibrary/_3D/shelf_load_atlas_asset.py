@@ -150,6 +150,20 @@ def build_asset_folder_path(asset_data):
         print(f"   ❌ Error building asset path: {e}")
         return None
 
+def sanitize_node_name(name):
+    """Sanitize asset name for use as Houdini node name"""
+    import re
+    # Replace spaces and special characters with underscores
+    sanitized = re.sub(r'[^\w]', '_', name)
+    # Remove multiple consecutive underscores
+    sanitized = re.sub(r'_+', '_', sanitized)
+    # Remove leading/trailing underscores
+    sanitized = sanitized.strip('_')
+    # Ensure it doesn't start with a number
+    if sanitized and sanitized[0].isdigit():
+        sanitized = f"asset_{sanitized}"
+    return sanitized if sanitized else "atlas_asset"
+
 def load_template_file(template_path, target_network_path, asset_name):
     """Load the template file into the specified network and wrap in named subnet"""
     try:
@@ -183,7 +197,10 @@ def load_template_file(template_path, target_network_path, asset_name):
             return False
         
         # Create a subnet to contain the asset first
-        subnet = target_network.createNode("subnet", asset_name)
+        # Sanitize the asset name for use as node name
+        sanitized_name = sanitize_node_name(asset_name)
+        print(f"   🔧 Sanitized node name: '{asset_name}' → '{sanitized_name}'")
+        subnet = target_network.createNode("subnet", sanitized_name)
         print(f"   📦 Created subnet: {subnet.name()}")
         
         # Load the template directly into the subnet

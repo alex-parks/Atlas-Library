@@ -320,6 +320,11 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         branded_checkbox.setHelp("Check if this asset is branded by a specific brand/company")
         advanced_folder.addParmTemplate(branded_checkbox)
         
+        # Export With No References checkbox inside Advanced folder
+        no_references_checkbox = hou.ToggleParmTemplate("export_no_references", "Export With No References", default_value=False)
+        no_references_checkbox.setHelp("Export only the template file without copying any geometry or texture references.\nIdeal for FX setups with large simulation files that don't need to be stored in the library.")
+        advanced_folder.addParmTemplate(no_references_checkbox)
+        
         atlas_tab.addParmTemplate(advanced_folder)
         print(f"   ➕ Added Advanced section with Branded checkbox (Create New only)")
         
@@ -484,7 +489,7 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         required_params = [
             "action", 
             # Create New Asset parameters
-            "asset_name", "asset_type", "subcategory_assets", "subcategory_fx", "subcategory_materials", "subcategory_hdas", "render_engine", "tags", "thumbnail_action", "thumbnail_file", "branded", "export_atlas_asset",
+            "asset_name", "asset_type", "subcategory_assets", "subcategory_fx", "subcategory_materials", "subcategory_hdas", "render_engine", "tags", "thumbnail_action", "thumbnail_file", "branded", "export_no_references", "export_atlas_asset",
             # Version Up Asset parameters  
             "version_parent_asset_id", "thumbnail_action_version", "thumbnail_file_version", "create_new_version",
             # Variant Asset parameters
@@ -955,7 +960,8 @@ try:
         action="version_up",
         parent_asset_id=asset_base_id,  # Pass 13-character asset base ID
         thumbnail_action=thumbnail_action,  # Use thumbnail parameters from UI
-        thumbnail_file_path=thumbnail_file_path
+        thumbnail_file_path=thumbnail_file_path,
+        export_no_references=False  # Version up always processes files normally
     )
     
     print(f"✅ Created exporter with ID: {exporter.asset_id}")
@@ -1300,7 +1306,8 @@ try:
         parent_asset_id=variant_parent_id,
         variant_name=variant_name,
         thumbnail_action=thumbnail_action,  # Use thumbnail parameters from UI
-        thumbnail_file_path=thumbnail_file_path
+        thumbnail_file_path=thumbnail_file_path,
+        export_no_references=False  # Variants always process files normally
     )
     
     print(f"✅ Created variant exporter with ID: {exporter.asset_id}")
@@ -1495,6 +1502,9 @@ try:
         # Get branded checkbox value
         branded = bool(subnet.parm("branded").eval()) if subnet.parm("branded") else False
         
+        # Get export with no references checkbox value
+        export_no_references = bool(subnet.parm("export_no_references").eval()) if subnet.parm("export_no_references") else False
+        
         # Get thumbnail parameters
         thumbnail_action_idx = int(subnet.parm("thumbnail_action").eval()) if subnet.parm("thumbnail_action") else 0
         thumbnail_actions = ["automatic", "choose", "disable"]
@@ -1599,6 +1609,7 @@ try:
         print(f"   📋 Subcategory: {subcategory}")
         print(f"   🎨 Render Engine: {render_engine}")
         print(f"   🏷️ Tags: {tags_list}")
+        print(f"   📁 Export No References: {export_no_references}")
         if parent_asset_id:
             print(f"   🔗 Parent Asset ID: {parent_asset_id}")
         
@@ -1618,7 +1629,8 @@ try:
             "tags": extended_tags,
             "action": action,
             "parent_asset_id": parent_asset_id,
-            "branded": branded if action == "create_new" else False
+            "branded": branded if action == "create_new" else False,
+            "export_no_references": export_no_references if action == "create_new" else False
         }
 
         # Create TemplateAssetExporter with new parameters
@@ -1632,7 +1644,8 @@ try:
             action=action,
             parent_asset_id=parent_asset_id,
             thumbnail_action=thumbnail_action,
-            thumbnail_file_path=thumbnail_file_path
+            thumbnail_file_path=thumbnail_file_path,
+            export_no_references=export_no_references
         )
         
         print(f"✅ Created exporter with ID: {exporter.asset_id}")
@@ -1700,7 +1713,9 @@ try:
                     traceback.print_exc()
                     # Don't fail the export if API fails - just log it
                 
-                success_msg = f"""✅ ATLAS ASSET EXPORT SUCCESSFUL!
+                # Build success message
+                if export_no_references:
+                    success_msg = f\"\"\"✅ ATLAS ASSET EXPORT SUCCESSFUL!
                 
 🎯 Action: {action.replace('_', ' ').title()}
 🏷️ Asset: {asset_name}
@@ -1709,7 +1724,18 @@ try:
 📍 Location: {exporter.asset_folder}
 
 🎯 The asset is now in the Atlas library!
-🗄️ Added to Atlas Library via REST API"""
+🚫 No References Mode: Only template exported (textures/geometry skipped)\"\"\"
+                else:
+                    success_msg = f\"\"\"✅ ATLAS ASSET EXPORT SUCCESSFUL!
+                
+🎯 Action: {action.replace('_', ' ').title()}
+🏷️ Asset: {asset_name}
+🆔 Asset ID: {exporter.asset_id} (Base: {exporter.base_uid}, Version: {exporter.version:03d})
+📂 Category: Assets/{subcategory}/
+📍 Location: {exporter.asset_folder}
+
+🎯 The asset is now in the Atlas library!
+🗄️ Added to Atlas Library via REST API\"\"\"
                 
                 hou.ui.displayMessage(success_msg, title="🎉 Atlas Export Complete")
                 print("🎉 EXPORT SUCCESS!")
