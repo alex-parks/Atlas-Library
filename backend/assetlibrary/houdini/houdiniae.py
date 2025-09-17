@@ -2627,16 +2627,16 @@ class TemplateAssetExporter:
                     'file': seq_file,
                     'filename': os.path.basename(seq_file),
                     'original_path': seq_file,  # Use the ACTUAL file path, not the pattern
-                    'file_type': f'bgeo/{node.name()}',  # Use the NODE NAME as folder name
+                    'file_type': f'bgeo/{sequence_base_name}',  # Use the FILENAME PREFIX as folder name (like VDB)
                     'extension': Path(seq_file).suffix.lower(),
                     'is_sequence': True,
                     'sequence_pattern': parm_value,
-                    'sequence_base_name': node.name(),  # Use node name as base name
+                    'sequence_base_name': sequence_base_name,  # Use filename prefix as base name (like VDB)
                     'sequence_total': len(sequence_files)
                 })
             
             # Add a special entry for the sequence pattern mapping (for path remapping)
-            library_pattern_path = f"Geometry/bgeo/{node.name()}/{os.path.basename(parm_value)}"
+            library_pattern_path = f"Geometry/bgeo/{sequence_base_name}/{os.path.basename(parm_value)}"
             sequence_info.append({
                 'node': node.path(),
                 'node_name': node.name(),
@@ -2645,17 +2645,17 @@ class TemplateAssetExporter:
                 'filename': os.path.basename(parm_value),
                 'original_path': parm_value,  # Original pattern for remapping
                 'library_path': library_pattern_path,  # Library pattern for remapping
-                'file_type': f'bgeo/{node.name()}',
+                'file_type': f'bgeo/{sequence_base_name}',
                 'extension': Path(parm_value).suffix.lower(),
                 'is_sequence': True,
                 'is_pattern_mapping': True,  # Special flag for pattern remapping
                 'sequence_pattern': parm_value,
-                'sequence_base_name': node.name(),
+                'sequence_base_name': sequence_base_name,
                 'sequence_total': len(sequence_files)
             })
             
             print(f"            ✅ Created sequence info for {len(sequence_info)} files (including pattern mapping)")
-            print(f"            📁 Will be organized under: bgeo/{node.name()}/")
+            print(f"            📁 Will be organized under: bgeo/{sequence_base_name}/")
             print(f"            🔗 Pattern mapping: {os.path.basename(parm_value)} → {library_pattern_path}")
             return sequence_info
             
