@@ -47,6 +47,12 @@ const App = () => {
   // Theme state for sharing with AssetLibrary
   const [darkMode, setDarkMode] = useState(true);
   const [accentColor, setAccentColor] = useState('blue');
+  
+  // Database status for Asset Library
+  const [dbStatus, setDbStatus] = useState({
+    status: 'loading',
+    assets_count: 0
+  });
 
   // Initialize theme and settings on app startup
   useEffect(() => {
@@ -226,12 +232,32 @@ const App = () => {
         <div className="bg-neutral-800 border-b border-neutral-700 p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <h2 className="text-xl font-semibold text-white">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-200 to-gray-400 bg-clip-text text-transparent">
                 {tabs.find(tab => tab.id === activeTab)?.name}
-              </h2>
-              <div className="text-sm text-neutral-400">
-                Blacksmith VFX Company
-              </div>
+              </h1>
+              
+              {/* ArangoDB Status - only show in Asset Library */}
+              {activeTab === 'asset-library' && (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-full text-sm bg-gray-700/50 border border-gray-600/30 backdrop-blur-sm shadow-sm">
+                  <div className={`w-3 h-3 rounded-full ${
+                    dbStatus.status === 'healthy' ? 'bg-emerald-400' :
+                    dbStatus.status === 'error' ? 'bg-rose-400' :
+                    'bg-amber-400'
+                  }`}></div>
+                  <span className={`font-medium ${
+                    dbStatus.status === 'healthy' ? 'text-emerald-400' :
+                    dbStatus.status === 'error' ? 'text-rose-400' :
+                    'text-amber-400'
+                  }`}>
+                    {dbStatus.status === 'healthy' ? 'ArangoDB Ready' :
+                     dbStatus.status === 'error' ? 'DB Error' :
+                     'DB Unknown'}
+                  </span>
+                  {dbStatus.assets_count > 0 && (
+                    <span className="text-gray-400">({dbStatus.assets_count})</span>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${
@@ -252,6 +278,7 @@ const App = () => {
               accentColor={accentColor}
               handleDarkModeToggle={handleDarkModeToggle}
               handleAccentColorChange={handleAccentColorChange}
+              onDbStatusChange={setDbStatus}
             />
           </ErrorBoundary>
         </div>

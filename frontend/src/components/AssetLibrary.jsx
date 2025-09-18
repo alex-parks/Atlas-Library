@@ -1,6 +1,6 @@
 // New Asset Library with Navigation Structure
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
 import SequenceThumbnail from './SequenceThumbnail';
 import TextureSetSequence from './TextureSetSequence';
 import HoudiniAssetBadge from './badges/HoudiniAssetBadge';
@@ -103,7 +103,8 @@ const AssetLibrary = ({
   darkMode = true, 
   accentColor = 'blue', 
   handleDarkModeToggle, 
-  handleAccentColorChange 
+  handleAccentColorChange,
+  onDbStatusChange 
 }) => {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -136,6 +137,8 @@ const AssetLibrary = ({
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [settingsTab, setSettingsTab] = useState('theme'); // 'theme' or 'database'
   const [dbStatus, setDbStatus] = useState({ status: 'unknown', assets_count: 0 });
+  const [showControls, setShowControls] = useState(true); // Controls for sticky header minimize/expand
+  const [isScrolled, setIsScrolled] = useState(false); // Track if user has scrolled
 
   // Navigation state
   const [currentView, setCurrentView] = useState('dimension'); // 'dimension', 'category', 'subcategory', 'assets'
@@ -305,6 +308,30 @@ const AssetLibrary = ({
     // Check database status when navigation changes
     checkDatabaseStatus();
   }, [selectedDimension, selectedCategory, selectedSubcategory, currentView]);
+
+  // Scroll listener to detect when user scrolls
+  useEffect(() => {
+    const handleScroll = (e) => {
+      const scrollTop = e.target.scrollTop;
+      setIsScrolled(scrollTop > 100); // Show minimize button after scrolling 100px
+    };
+
+    // Find the scroll container (App.jsx content area)
+    const scrollContainer = document.querySelector('.flex-1.overflow-auto');
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', handleScroll);
+      return () => scrollContainer.removeEventListener('scroll', handleScroll);
+    }
+
+    // Fallback to window scroll if container not found
+    const handleWindowScroll = () => {
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      setIsScrolled(scrollTop > 100);
+    };
+
+    window.addEventListener('scroll', handleWindowScroll);
+    return () => window.removeEventListener('scroll', handleWindowScroll);
+  }, []);
 
   // Update displayed assets when filtered assets change
   useEffect(() => {
@@ -525,15 +552,23 @@ const AssetLibrary = ({
     fetch('http://localhost:8000/health')
       .then(res => res.json())
       .then(data => {
-        setDbStatus({
+        const newDbStatus = {
           status: data.components?.database?.status || data.status || 'unknown',
           assets_count: data.components?.database?.assets_count || 0,
           database_type: data.components?.database?.type || 'unknown'
-        });
+        };
+        setDbStatus(newDbStatus);
+        if (onDbStatusChange) {
+          onDbStatusChange(newDbStatus);
+        }
       })
       .catch(err => {
         console.error('Failed to check database status:', err);
-        setDbStatus({ status: 'error', assets_count: 0 });
+        const errorDbStatus = { status: 'error', assets_count: 0 };
+        setDbStatus(errorDbStatus);
+        if (onDbStatusChange) {
+          onDbStatusChange(errorDbStatus);
+        }
       });
   };
 
@@ -855,19 +890,31 @@ const AssetLibrary = ({
       const response = await fetch('http://localhost:8000/health');
       if (response.ok) {
         const data = await response.json();
-        setDbStatus({
+        const newDbStatus = {
           status: data.status,
           assets_count: data.components?.database?.assets_count || 0,
           database_type: data.components?.database?.type || 'Unknown'
-        });
+        };
+        setDbStatus(newDbStatus);
+        if (onDbStatusChange) {
+          onDbStatusChange(newDbStatus);
+        }
         alert('✅ Connection successful!\n\nDatabase: ' + (data.components?.database?.type || 'Unknown') + '\nAssets: ' + (data.components?.database?.assets_count || 0));
       } else {
         alert(`❌ Connection failed: ${response.status} ${response.statusText}`);
-        setDbStatus({ status: 'error', assets_count: 0, database_type: 'Unknown' });
+        const errorDbStatus = { status: 'error', assets_count: 0, database_type: 'Unknown' };
+        setDbStatus(errorDbStatus);
+        if (onDbStatusChange) {
+          onDbStatusChange(errorDbStatus);
+        }
       }
     } catch (error) {
       alert(`❌ Connection failed: ${error.message}`);
-      setDbStatus({ status: 'error', assets_count: 0, database_type: 'Unknown' });
+      const errorDbStatus = { status: 'error', assets_count: 0, database_type: 'Unknown' };
+      setDbStatus(errorDbStatus);
+      if (onDbStatusChange) {
+        onDbStatusChange(errorDbStatus);
+      }
     }
   };
 
@@ -1441,58 +1488,14 @@ const AssetLibrary = ({
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
-      {/* Header */}
-      <div className="bg-gray-500 border-b border-gray-400 p-6 shadow-lg">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-200 to-gray-400 bg-clip-text text-transparent">Asset Library</h1>
-
-            <div className="flex items-center gap-2 px-4 py-2 rounded-full text-sm bg-gray-700/50 border border-gray-600/30 backdrop-blur-sm shadow-sm">
-              <Database size={16} className="text-gray-400" />
-              <span className={`font-medium ${
-                dbStatus.status === 'healthy' ? 'text-emerald-400' :
-                dbStatus.status === 'error' ? 'text-rose-400' :
-                'text-amber-400'
-              }`}>
-                {dbStatus.status === 'healthy' ? 'ArangoDB Ready' :
-                 dbStatus.status === 'error' ? 'DB Error' :
-                 'DB Unknown'}
-              </span>
-              {dbStatus.assets_count > 0 && (
-                <span className="text-gray-400">({dbStatus.assets_count})</span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={syncDatabase}
-              disabled={loading}
-              className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all duration-200 shadow-lg hover:shadow-violet-500/25 font-medium"
-            >
-              <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-              Sync DB
-            </button>
-            <button 
-              onClick={() => setShowUploadModal(true)}
-              className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all duration-200 shadow-lg hover:shadow-blue-500/25 font-medium"
-            >
-              <Upload size={18} />
-              Upload Asset
-            </button>
-            <button
-              onClick={() => setShowSettingsPanel(true)}
-              className="bg-gray-700/50 hover:bg-gray-600/50 border border-gray-600/30 px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all duration-200 backdrop-blur-sm shadow-lg hover:shadow-lg font-medium"
-            >
-              <Settings size={18} />
-              Settings
-            </button>
-          </div>
-        </div>
-
-        {/* Search and Controls - Only show in assets view */}
-        {currentView === 'assets' && (
+    <div className="bg-gray-900 text-gray-100">
+      {/* Sticky Controls Section with Tab */}
+      <div className="sticky top-0 z-[60] group">
+        {/* Grey Controls Area */}
+        {showControls && (
+          <div className="bg-gray-500 border-b border-gray-400 shadow-lg p-6">
+            {/* Search and Controls - Only show in assets view */}
+            {currentView === 'assets' && (
           <div className="space-y-4">
             {/* Main Controls Row */}
             <div className="flex items-center gap-4">
@@ -1690,10 +1693,8 @@ const AssetLibrary = ({
                 </>
               )}
               </div>
-            </div>
 
-            {/* Tag Search Input Row */}
-            <div className="flex items-center gap-4">
+              {/* Tag Search Input - moved to same row as Filter button */}
               <div className="relative flex-1 max-w-md">
                 <input
                   type="text"
@@ -1715,28 +1716,100 @@ const AssetLibrary = ({
                   Clear Tags
                 </button>
               )}
+
+              {/* Active Tag Filters - Tag Bubbles moved to same row */}
+              {activeTagFilters.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 font-medium">Tags:</span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {activeTagFilters.map((tag, index) => (
+                      <div key={`${tag}-${index}`} className="flex items-center gap-1 bg-green-600/20 border border-green-500/60 rounded-full px-2 py-1 text-xs backdrop-blur-sm">
+                        <span className="text-green-200 font-medium">{tag}</span>
+                        <button
+                          onClick={() => removeTagFilter(tag)}
+                          className="text-green-300 hover:text-white transition-colors p-0.5 rounded-full hover:bg-green-500/20"
+                          title={`Remove "${tag}" tag filter`}
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+
+              {/* Action Buttons - moved to far right of same row */}
+              <div className="flex gap-3 ml-auto">
+                <button
+                  onClick={syncDatabase}
+                  disabled={loading}
+                  className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all duration-200 shadow-lg hover:shadow-violet-500/25 font-medium"
+                >
+                  <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                  Sync DB
+                </button>
+                <button 
+                  onClick={() => setShowUploadModal(true)}
+                  className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all duration-200 shadow-lg hover:shadow-blue-500/25 font-medium"
+                >
+                  <Upload size={18} />
+                  Upload Asset
+                </button>
+                <button
+                  onClick={() => setShowSettingsPanel(true)}
+                  className="bg-gray-700/50 hover:bg-gray-600/50 border border-gray-600/30 px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all duration-200 backdrop-blur-sm shadow-lg hover:shadow-lg font-medium"
+                >
+                  <Settings size={18} />
+                  Settings
+                </button>
+              </div>
             </div>
 
-            {/* Active Tag Filters - Tag Bubbles */}
-            {activeTagFilters.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span className="text-xs text-gray-400 font-medium">Active Tags:</span>
-                {activeTagFilters.map((tag, index) => (
-                  <div key={`${tag}-${index}`} className="flex items-center gap-1 bg-green-600/20 border border-green-500/60 rounded-full px-3 py-1 text-sm backdrop-blur-sm">
-                    <span className="text-green-200 font-medium">{tag}</span>
-                    <button
-                      onClick={() => removeTagFilter(tag)}
-                      className="text-green-300 hover:text-white transition-colors p-0.5 rounded-full hover:bg-green-500/20"
-                      title={`Remove "${tag}" tag filter`}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+          </div>
+        )}
 
-            {/* Active Navigation Filters - positioned right after Filter button */}
+        {/* Breadcrumb Navigation */}
+        {currentView !== 'dimension' && (
+          <div className="flex items-center gap-4 text-sm text-gray-400 mt-4">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleBackToDimensions}
+                className="hover:text-white transition-colors"
+              >
+                Asset Library
+              </button>
+              {selectedDimension && (
+                <>
+                  <span>/</span>
+                  <button
+                    onClick={currentView === 'category' ? undefined : handleBackToCategories}
+                    className={currentView === 'category' ? "text-blue-400" : "hover:text-white transition-colors"}
+                  >
+                    {selectedDimension}
+                  </button>
+                </>
+              )}
+              {selectedCategory && (
+                <>
+                  <span>/</span>
+                  <button
+                    onClick={currentView === 'subcategory' ? undefined : handleBackToSubcategories}
+                    className={currentView === 'subcategory' ? "text-blue-400" : "hover:text-white transition-colors"}
+                  >
+                    {selectedCategory}
+                  </button>
+                </>
+              )}
+              {selectedSubcategory && (
+                <>
+                  <span>/</span>
+                  <span className="text-blue-400">{selectedSubcategory}</span>
+                </>
+              )}
+            </div>
+            
+            {/* Active Navigation Filters - positioned right next to breadcrumb */}
             {activeFilters.length > 0 && (
               <div className="flex items-center gap-2">
                 {activeFilters.map(filter => (
@@ -1754,46 +1827,25 @@ const AssetLibrary = ({
             )}
           </div>
         )}
-
-        {/* Breadcrumb Navigation */}
-        {currentView !== 'dimension' && (
-          <div className="flex items-center gap-2 text-sm text-gray-400 mt-4">
-            <button
-              onClick={handleBackToDimensions}
-              className="hover:text-white transition-colors"
-            >
-              Asset Library
-            </button>
-            {selectedDimension && (
-              <>
-                <span>/</span>
-                <button
-                  onClick={currentView === 'category' ? undefined : handleBackToCategories}
-                  className={currentView === 'category' ? "text-blue-400" : "hover:text-white transition-colors"}
-                >
-                  {selectedDimension}
-                </button>
-              </>
-            )}
-            {selectedCategory && (
-              <>
-                <span>/</span>
-                <button
-                  onClick={currentView === 'subcategory' ? undefined : handleBackToSubcategories}
-                  className={currentView === 'subcategory' ? "text-blue-400" : "hover:text-white transition-colors"}
-                >
-                  {selectedCategory}
-                </button>
-              </>
-            )}
-            {selectedSubcategory && (
-              <>
-                <span>/</span>
-                <span className="text-blue-400">{selectedSubcategory}</span>
-              </>
-            )}
           </div>
         )}
+
+        {/* Minimize Toggle Tab - Always visible when minimized, hover-only when maximized */}
+        <div className={`flex justify-center transition-opacity duration-200 pointer-events-none ${
+          showControls 
+            ? 'opacity-0 group-hover:opacity-100' 
+            : 'opacity-100'
+        }`}>
+          <button
+            onClick={() => setShowControls(!showControls)}
+            className="bg-gray-600 hover:bg-gray-400 hover:shadow-xl text-gray-300 hover:text-white hover:scale-105 active:scale-95 active:bg-gray-800 transition-all duration-200 rounded-b-md px-4 py-1 shadow-lg border-l border-r border-b border-gray-400 hover:border-gray-200 pointer-events-auto"
+            title={showControls ? "Minimize search area" : "Expand search area"}
+          >
+            <span className="transform transition-transform duration-200 inline-block hover:scale-110">
+              {showControls ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Settings Panel */}
