@@ -267,8 +267,8 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         
         # Render Engine (Create New only)
         render_engine = hou.MenuParmTemplate("render_engine", "Render Engine",
-                                            menu_items=("0", "1"),
-                                            menu_labels=("Redshift", "Karma"),
+                                            menu_items=("0", "1", "2"),
+                                            menu_labels=("Redshift", "Karma", "Universal"),
                                             default_value=0)
         render_engine.setHelp("Primary render engine for this asset")
         render_engine.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
@@ -1593,7 +1593,7 @@ try:
         subcategory = subcategory_options[subcategory_idx] if subcategory_idx < len(subcategory_options) else subcategory_options[0]
         
         # Get render engine
-        render_engines = ["Redshift", "Karma"]
+        render_engines = ["Redshift", "Karma", "Universal"]
         render_engine = render_engines[render_engine_idx] if render_engine_idx < len(render_engines) else "Redshift"
         
         # Process tags

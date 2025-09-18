@@ -125,7 +125,7 @@ const TextureSetSequence = ({
                   description: `${textureType} Texture`,
                   filename: matchingTexture.filename
                 });
-                console.log(`Added ${textureType} texture at index ${matchingTextureIndex}`);
+                // console.log(`Added ${textureType} texture at index ${matchingTextureIndex}`);
               }
             }
           }

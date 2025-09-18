@@ -3436,3 +3436,107 @@ async def update_asset_preview_image_from_path(
         import traceback
         logger.error(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Preview update from path failed: {str(e)}")
+
+
+@router.post("/database/backup")
+async def backup_database():
+    """Create a complete backup of the Atlas_Library collection"""
+    try:
+        queries = get_asset_queries()
+        if not queries:
+            raise HTTPException(status_code=500, detail="Failed to connect to database")
+        
+        # Get all assets from the collection
+        logger.info("🔄 Starting database backup...")
+        query = "FOR asset IN Atlas_Library RETURN asset"
+        cursor = queries.db.aql.execute(query)
+        all_assets = list(cursor)
+        
+        # Create backup metadata
+        backup_timestamp = datetime.now().isoformat()
+        backup_data = {
+            "backup_metadata": {
+                "timestamp": backup_timestamp,
+                "database_name": "blacksmith_atlas",
+                "collection_name": "Atlas_Library",
+                "total_assets": len(all_assets),
+                "backup_version": "1.0"
+            },
+            "assets": all_assets
+        }
+        
+        # Ensure backups directory exists
+        backups_dir = Path("/app/backups")
+        backups_dir.mkdir(exist_ok=True)
+        
+        # Create filename with timestamp
+        backup_filename = f"atlas_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        backup_path = backups_dir / backup_filename
+        
+        # Write backup to file
+        import json
+        with open(backup_path, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, indent=2, ensure_ascii=False, default=str)
+        
+        logger.info(f"✅ Database backup completed: {backup_path}")
+        
+        return {
+            "success": True,
+            "message": "Database backup completed successfully",
+            "backup_file": backup_filename,
+            "backup_path": str(backup_path),
+            "total_assets": len(all_assets),
+            "timestamp": backup_timestamp
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Database backup failed: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Database backup failed: {str(e)}")
+
+
+@router.get("/database/backup/status")
+async def get_backup_status():
+    """Get information about the latest backup"""
+    try:
+        backups_dir = Path("/app/backups")
+        
+        if not backups_dir.exists():
+            return {
+                "last_backup": None,
+                "backup_count": 0,
+                "backups_directory_exists": False
+            }
+        
+        # Find the most recent backup file
+        backup_files = list(backups_dir.glob("atlas_backup_*.json"))
+        backup_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        
+        if not backup_files:
+            return {
+                "last_backup": None,
+                "backup_count": 0,
+                "backups_directory_exists": True
+            }
+        
+        latest_backup = backup_files[0]
+        
+        return {
+            "last_backup": {
+                "filename": latest_backup.name,
+                "timestamp": datetime.fromtimestamp(latest_backup.stat().st_mtime).isoformat(),
+                "size_bytes": latest_backup.stat().st_size,
+                "size_mb": round(latest_backup.stat().st_size / (1024 * 1024), 2)
+            },
+            "backup_count": len(backup_files),
+            "backups_directory_exists": True
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to get backup status: {str(e)}")
+        return {
+            "last_backup": None,
+            "backup_count": 0,
+            "error": str(e)
+        }

@@ -1,6 +1,6 @@
 // New Asset Library with Navigation Structure
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Download } from 'lucide-react';
 import SequenceThumbnail from './SequenceThumbnail';
 import TextureSetSequence from './TextureSetSequence';
 import HoudiniAssetBadge from './badges/HoudiniAssetBadge';
@@ -137,6 +137,8 @@ const AssetLibrary = ({
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [settingsTab, setSettingsTab] = useState('theme'); // 'theme' or 'database'
   const [dbStatus, setDbStatus] = useState({ status: 'unknown', assets_count: 0 });
+  const [lastBackup, setLastBackup] = useState(null);
+  const [backupLoading, setBackupLoading] = useState(false);
   const [showControls, setShowControls] = useState(true); // Controls for sticky header minimize/expand
   const [isScrolled, setIsScrolled] = useState(false); // Track if user has scrolled
 
@@ -308,6 +310,13 @@ const AssetLibrary = ({
     // Check database status when navigation changes
     checkDatabaseStatus();
   }, [selectedDimension, selectedCategory, selectedSubcategory, currentView]);
+
+  // Check backup status when settings panel opens
+  useEffect(() => {
+    if (showSettingsPanel && settingsTab === 'database') {
+      checkBackupStatus();
+    }
+  }, [showSettingsPanel, settingsTab]);
 
   // Scroll listener to detect when user scrolls
   useEffect(() => {
@@ -918,6 +927,44 @@ const AssetLibrary = ({
     }
   };
 
+  const checkBackupStatus = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/database/backup/status');
+      if (response.ok) {
+        const data = await response.json();
+        setLastBackup(data.last_backup);
+      }
+    } catch (error) {
+      console.error('Failed to check backup status:', error);
+    }
+  };
+
+  const handleBackupDatabase = async () => {
+    setBackupLoading(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/database/backup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(`✅ Database backup completed successfully!\n\nFile: ${result.backup_file}\nAssets: ${result.total_assets}\nTime: ${new Date(result.timestamp).toLocaleString()}`);
+        // Refresh backup status
+        checkBackupStatus();
+      } else {
+        const error = await response.json();
+        alert(`❌ Backup failed: ${error.detail}`);
+      }
+    } catch (error) {
+      alert(`❌ Backup failed: ${error.message}`);
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
   const browseFolder = (fieldName) => {
     // Since we're in Electron, we could use the file dialog here
     // For now, just prompt for manual entry
@@ -1490,7 +1537,7 @@ const AssetLibrary = ({
   return (
     <div className="bg-gray-900 text-gray-100">
       {/* Sticky Controls Section with Tab */}
-      <div className="sticky top-0 z-[60] group">
+      <div className="sticky top-0 z-[40] group">
         {/* Grey Controls Area */}
         {showControls && (
           <div className="bg-gray-500 border-b border-gray-400 shadow-lg p-6">
@@ -1994,6 +2041,35 @@ const AssetLibrary = ({
                     <Database size={16} />
                     Test Connection
                   </button>
+                </div>
+
+                {/* Database Backup Button */}
+                <div className="mt-6">
+                  <h3 className="text-white font-medium mb-4">Database Backup</h3>
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <div className="text-gray-300 font-medium">Backup Database</div>
+                        <p className="text-sm text-gray-400">
+                          {lastBackup 
+                            ? `Last backup: ${new Date(lastBackup.timestamp).toLocaleDateString()} at ${new Date(lastBackup.timestamp).toLocaleTimeString()}`
+                            : 'No backups found'
+                          }
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleBackupDatabase}
+                        disabled={backupLoading}
+                        className="bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 disabled:cursor-not-allowed text-white py-2 px-4 rounded-lg flex items-center gap-2 transition-colors"
+                      >
+                        <Download size={16} />
+                        {backupLoading ? 'Creating Backup...' : 'Backup Now'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Creates a JSON backup of all assets in the Atlas_Library collection. Backup files are saved inside the Docker container at /app/backups/
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -2857,8 +2933,8 @@ const AssetLibrary = ({
                       <button 
                         onClick={async () => {
                           try {
-                            // Get the HDRI file path from the asset's preview files (should be the .exr/.hdr file)
-                            const hdriFiles = previewAsset.paths?.preview_files || previewAsset.metadata?.paths?.preview_files || [];
+                            // Get the HDRI file path from the asset's copied files (should be the .exr/.hdr file)
+                            const hdriFiles = previewAsset.paths?.copied_files || previewAsset.metadata?.paths?.copied_files || [];
                             if (hdriFiles.length === 0) {
                               alert('❌ HDRI file path not found in asset data');
                               return;

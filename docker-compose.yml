@@ -60,6 +60,7 @@ services:
     volumes:
       - ${ASSET_LIBRARY_PATH:-/net/library/atlaslib}:/app/assets
       - ${LOG_PATH:-./logs}:/app/logs
+      - ./backups:/app/backups  # Database backups
       - /net/general:/net/general:ro  # Mount general network drive READ-ONLY for asset uploads
       - /net/library/library:/net/library/library:ro  # Mount library drive READ-ONLY - NEVER DELETE/MOVE
       # Development: Mount source code for hot reloading
