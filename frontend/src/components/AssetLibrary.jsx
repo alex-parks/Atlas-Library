@@ -3521,19 +3521,33 @@ const AssetLibrary = ({
               {dimensions.map(dimension => (
                 <button
                   key={dimension.id}
-                  onClick={() => handleDimensionSelect(dimension.id)}
-                  className="group bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 rounded-xl p-8 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 hover:scale-105"
+                  onClick={() => dimension.id === '3D' && handleDimensionSelect(dimension.id)}
+                  className={`group relative overflow-hidden bg-gray-800 border border-gray-700 rounded-xl p-8 transition-all duration-300 ${
+                    dimension.id === '3D' 
+                      ? 'hover:bg-gray-750 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/10 hover:scale-105 cursor-pointer' 
+                      : 'cursor-not-allowed opacity-75'
+                  }`}
+                  disabled={dimension.id === '2D'}
                 >
-                  <div className="text-8xl mb-6 group-hover:scale-110 transition-transform duration-300">
+                  {/* Coming Soon Banner for 2D */}
+                  {dimension.id === '2D' && (
+                    <div className="absolute inset-0 flex items-center justify-center z-10">
+                      <div className="bg-gradient-to-r from-gray-800 to-gray-600 text-white font-bold text-2xl py-3 px-8 rounded-full shadow-2xl transform rotate-[-15deg] animate-[pulse_4s_ease-in-out_infinite]">
+                        Coming Soon
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className={`text-8xl mb-6 transition-transform duration-300 ${dimension.id === '3D' ? 'group-hover:scale-110' : ''} ${dimension.id === '2D' ? 'blur-[2px]' : ''}`}>
                     {dimension.icon}
                   </div>
-                  <h3 className="text-3xl font-bold text-white mb-3 group-hover:text-blue-400 transition-colors">
+                  <h3 className={`text-3xl font-bold text-white mb-3 transition-colors ${dimension.id === '3D' ? 'group-hover:text-blue-400' : ''} ${dimension.id === '2D' ? 'blur-[2px]' : ''}`}>
                     {dimension.name}
                   </h3>
-                  <p className="text-gray-400 group-hover:text-gray-300 transition-colors">
+                  <p className={`text-gray-400 transition-colors ${dimension.id === '3D' ? 'group-hover:text-gray-300' : ''} ${dimension.id === '2D' ? 'blur-[2px]' : ''}`}>
                     {dimension.description}
                   </p>
-                  <div className="mt-6 inline-flex items-center gap-2 text-blue-400 group-hover:text-blue-300 transition-colors">
+                  <div className={`mt-6 inline-flex items-center gap-2 text-blue-400 transition-colors ${dimension.id === '3D' ? 'group-hover:text-blue-300' : ''} ${dimension.id === '2D' ? 'blur-[2px]' : ''}`}>
                     <span>Browse {dimension.name} Assets</span>
                     <ArrowLeft className="rotate-180" size={20} />
                   </div>
@@ -3565,27 +3579,44 @@ const AssetLibrary = ({
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {categories[selectedDimension]?.map(category => (
-                <button
-                  key={category.id}
-                  onClick={() => handleCategorySelect(category.id)}
-                  className="group bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10 hover:scale-105"
-                >
-                  <div className="text-6xl mb-4 group-hover:scale-110 transition-transform duration-300">
-                    {category.icon}
-                  </div>
-                  <h3 className="text-2xl font-bold text-white mb-2 group-hover:text-blue-400 transition-colors">
-                    {category.name}
-                  </h3>
-                  <p className="text-gray-400 group-hover:text-gray-300 transition-colors text-sm">
-                    {category.description}
-                  </p>
-                  <div className="mt-4 inline-flex items-center gap-2 text-blue-400 group-hover:text-blue-300 transition-colors">
-                    <Folder size={16} />
-                    <span>Browse</span>
-                  </div>
-                </button>
-              ))}
+              {categories[selectedDimension]?.map(category => {
+                const isComingSoon = category.id === 'Materials' || category.id === 'HDAs';
+                return (
+                  <button
+                    key={category.id}
+                    onClick={() => !isComingSoon && handleCategorySelect(category.id)}
+                    className={`group relative overflow-hidden bg-gray-800 border border-gray-700 rounded-xl p-6 transition-all duration-300 ${
+                      !isComingSoon 
+                        ? 'hover:bg-gray-750 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/10 hover:scale-105 cursor-pointer' 
+                        : 'cursor-not-allowed opacity-75'
+                    }`}
+                    disabled={isComingSoon}
+                  >
+                    {/* Coming Soon Banner for Materials and HDAs */}
+                    {isComingSoon && (
+                      <div className="absolute inset-0 flex items-center justify-center z-10">
+                        <div className="bg-gradient-to-r from-gray-800 to-gray-600 text-white font-bold text-xl py-2 px-6 rounded-full shadow-2xl transform rotate-[-15deg] animate-[pulse_4s_ease-in-out_infinite]">
+                          Coming Soon
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className={`text-6xl mb-4 transition-transform duration-300 ${!isComingSoon ? 'group-hover:scale-110' : ''} ${isComingSoon ? 'blur-[2px]' : ''}`}>
+                      {category.icon}
+                    </div>
+                    <h3 className={`text-2xl font-bold text-white mb-2 transition-colors ${!isComingSoon ? 'group-hover:text-blue-400' : ''} ${isComingSoon ? 'blur-[2px]' : ''}`}>
+                      {category.name}
+                    </h3>
+                    <p className={`text-gray-400 transition-colors text-sm ${!isComingSoon ? 'group-hover:text-gray-300' : ''} ${isComingSoon ? 'blur-[2px]' : ''}`}>
+                      {category.description}
+                    </p>
+                    <div className={`mt-4 inline-flex items-center gap-2 text-blue-400 transition-colors ${!isComingSoon ? 'group-hover:text-blue-300' : ''} ${isComingSoon ? 'blur-[2px]' : ''}`}>
+                      <Folder size={16} />
+                      <span>Browse</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
             
             {/* Jump To Library Button */}
