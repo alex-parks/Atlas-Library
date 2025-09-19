@@ -158,29 +158,6 @@ const HoudiniAssetCard = ({ asset, formatAssetName, formatAssetNameJSX, openPrev
                       <Edit size={14} />
                       Edit Asset
                     </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowDropdown(false);
-                        onCopyAsset?.(asset);
-                      }}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
-                    >
-                      <Copy size={14} />
-                      Copy Info
-                    </button>
-                    <div className="border-t border-gray-700 my-1"></div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowDropdown(false);
-                        onDeleteAsset?.(asset);
-                      }}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-400 hover:bg-red-600/20 hover:text-red-300 transition-colors"
-                    >
-                      <Trash2 size={14} />
-                      Move to Trashbin
-                    </button>
                   </div>
                 </div>
               )}

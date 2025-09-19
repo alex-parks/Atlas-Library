@@ -1,12 +1,27 @@
 // HDRI Asset Card Component
 // Full card component for HDRI environment map assets
-import React, { useState } from 'react';
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronUp, ChevronDown, MoreVertical, Edit } from 'lucide-react';
 import SequenceThumbnail from '../SequenceThumbnail';
 
-const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) => {
+const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview, onEditAsset }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isClickedOpen, setIsClickedOpen] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showDropdown && !event.target.closest('.hdri-card-dropdown-menu')) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDropdown]);
 
   const handleBannerHover = () => {
     if (!isClickedOpen) {
@@ -134,6 +149,41 @@ const HDRICard = ({ asset, formatAssetName, formatAssetNameJSX, openPreview }) =
               </span>
             </div>
           )}
+
+          {/* Three Dots Menu - Top Right */}
+          <div className="absolute top-2 right-2 z-20">
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDropdown(!showDropdown);
+                }}
+                className="bg-black/60 hover:bg-black/80 text-white rounded-lg p-2 transition-all duration-200 backdrop-blur-sm opacity-0 group-hover:opacity-100"
+                title="Asset Actions"
+              >
+                <MoreVertical size={14} />
+              </button>
+              
+              {/* Dropdown menu */}
+              {showDropdown && (
+                <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50 min-w-[160px] hdri-card-dropdown-menu">
+                  <div className="py-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropdown(false);
+                        onEditAsset?.(asset);
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                    >
+                      <Edit size={14} />
+                      Edit Asset
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Asset Information Badge */}
