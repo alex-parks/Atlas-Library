@@ -1,5 +1,6 @@
 // Interactive Thumbnail Sequence Component
 import React, { useState, useEffect, useRef } from 'react';
+import config from '../utils/config';
 
 const SequenceThumbnail = ({ 
   assetId, 
@@ -39,7 +40,7 @@ const SequenceThumbnail = ({
     const fetchSequenceData = async () => {
       try {
         // First try to fetch thumbnail sequence
-        const sequenceResponse = await fetch(`http://localhost:8000/api/v1/assets/${assetId}/thumbnail-sequence`);
+        const sequenceResponse = await fetch(`${config.backendUrl}/api/v1/assets/${assetId}/thumbnail-sequence`);
         
         if (sequenceResponse.ok) {
           const data = await sequenceResponse.json();
@@ -71,7 +72,7 @@ const SequenceThumbnail = ({
         
         // If sequence fails, try single thumbnail endpoint (for single images)
         const cacheBuster = asset._image_updated ? `?_t=${asset._image_updated}` : '';
-        const singleResponse = await fetch(`http://localhost:8000/thumbnails/${assetId}${cacheBuster}`);
+        const singleResponse = await fetch(`${config.backendUrl}/thumbnails/${assetId}${cacheBuster}`);
         
         if (singleResponse.ok) {
           // Create a mock sequence data for single thumbnail
@@ -252,7 +253,7 @@ const SequenceThumbnail = ({
     }
     
     const frame = sequenceData.frames[currentFrame];
-    return frame ? `http://localhost:8000${frame.url}` : null;
+    return frame ? `${config.backendUrl}${frame.url}` : null;
   };
 
   const frameUrl = getCurrentFrameUrl();

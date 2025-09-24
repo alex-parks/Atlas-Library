@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown, MoreVertical, Edit, Copy, Eye, Trash2 } from 'lucide-react';
+import config from '../../utils/config';
 
 const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, onCopyAsset }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -69,7 +70,7 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
         if (isTextureSet) {
           // Check for textures and preview using the texture-images API
           try {
-            const textureResponse = await fetch(`http://localhost:8000/api/v1/assets/${assetId}/texture-images`);
+            const textureResponse = await fetch(`${config.backendUrl}/api/v1/assets/${assetId}/texture-images`);
             if (textureResponse.ok) {
               const textureData = await textureResponse.json();
               

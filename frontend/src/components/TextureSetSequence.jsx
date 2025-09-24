@@ -1,5 +1,6 @@
 // Texture Set Sequence Component - Shows Preview first, then textures in BC, R, M, N, O, D order
 import React, { useState, useEffect, useRef } from 'react';
+import config from '../utils/config';
 
 const TextureSetSequence = ({ 
   assetId, 
@@ -44,7 +45,7 @@ const TextureSetSequence = ({
         // First, check what images are available and find preview
         let previewIndex = -1;
         try {
-          const textureResponse = await fetch(`http://localhost:8000/api/v1/assets/${assetId}/texture-images`);
+          const textureResponse = await fetch(`${config.backendUrl}/api/v1/assets/${assetId}/texture-images`);
           if (textureResponse.ok) {
             const textureData = await textureResponse.json();
             
@@ -78,13 +79,13 @@ const TextureSetSequence = ({
           // Re-fetch texture data if we didn't get it in the preview check
           let textureData;
           if (previewIndex === -1) {
-            const textureResponse = await fetch(`http://localhost:8000/api/v1/assets/${assetId}/texture-images`);
+            const textureResponse = await fetch(`${config.backendUrl}/api/v1/assets/${assetId}/texture-images`);
             if (textureResponse.ok) {
               textureData = await textureResponse.json();
             }
           } else {
             // We already have the texture data from the preview check
-            const textureResponse = await fetch(`http://localhost:8000/api/v1/assets/${assetId}/texture-images`);
+            const textureResponse = await fetch(`${config.backendUrl}/api/v1/assets/${assetId}/texture-images`);
             if (textureResponse.ok) {
               textureData = await textureResponse.json();
             }
@@ -148,7 +149,7 @@ const TextureSetSequence = ({
         
         // Fallback to regular thumbnail if no textures found
         const cacheBuster = asset._image_updated ? `?_t=${asset._image_updated}` : '';
-        const singleResponse = await fetch(`http://localhost:8000/thumbnails/${assetId}${cacheBuster}`);
+        const singleResponse = await fetch(`${config.backendUrl}/thumbnails/${assetId}${cacheBuster}`);
         
         if (singleResponse.ok) {
           setSequenceData({
@@ -342,7 +343,7 @@ const TextureSetSequence = ({
     }
     
     const frame = sequenceData.frames[currentFrame];
-    return frame ? `http://localhost:8000${frame.url}` : null;
+    return frame ? `${config.backendUrl}${frame.url}` : null;
   };
 
   const frameUrl = getCurrentFrameUrl();

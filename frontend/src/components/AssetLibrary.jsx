@@ -10,6 +10,7 @@ import HoudiniAssetCard from './cards/HoudiniAssetCard';
 import TextureCard from './cards/TextureCard';
 import HDRICard from './cards/HDRICard';
 import TextureEditAsset from './TextureEditAsset';
+import config from '../utils/config';
 
 // Asset Badge Factory - determines which badge component to use
 const getAssetBadgeComponent = (asset) => {
@@ -275,7 +276,7 @@ const AssetLibrary = ({
   const [settings, setSettings] = useState({
     rootFolder: '/net/library/atlaslib/3D',
     jsonFilePath: '/net/library/atlaslib/database/3DAssets.json',
-    apiEndpoint: 'http://localhost:8000/api/v1/assets',
+    apiEndpoint: `${config.backendUrl}/api/v1/assets`,
     databaseEnabled: true,
     autoSync: true
   });
@@ -558,7 +559,7 @@ const AssetLibrary = ({
   let loadMoreAssets;
 
   const checkDatabaseStatus = () => {
-    fetch('http://localhost:8000/health')
+    fetch(`${config.backendUrl}/health`)
       .then(res => res.json())
       .then(data => {
         const newDbStatus = {
@@ -868,7 +869,7 @@ const AssetLibrary = ({
 
       // Save to backend config
       try {
-        const response = await fetch('http://localhost:8000/admin/save-config', {
+        const response = await fetch(`${config.backendUrl}/admin/save-config`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -896,7 +897,7 @@ const AssetLibrary = ({
 
   const testConnection = async () => {
     try {
-      const response = await fetch('http://localhost:8000/health');
+      const response = await fetch(`${config.backendUrl}/health`);
       if (response.ok) {
         const data = await response.json();
         const newDbStatus = {
@@ -929,7 +930,7 @@ const AssetLibrary = ({
 
   const checkBackupStatus = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/v1/database/backup/status');
+      const response = await fetch(`${config.backendUrl}/api/v1/database/backup/status`);
       if (response.ok) {
         const data = await response.json();
         setLastBackup(data.last_backup);
@@ -942,7 +943,7 @@ const AssetLibrary = ({
   const handleBackupDatabase = async () => {
     setBackupLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/v1/database/backup', {
+      const response = await fetch(`${config.backendUrl}/api/v1/database/backup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1051,7 +1052,7 @@ const AssetLibrary = ({
     try {
       console.log('🔧 Uploading asset:', uploadData);
 
-      const response = await fetch('http://localhost:8000/api/v1/assets/upload', {
+      const response = await fetch(`${config.backendUrl}/api/v1/assets/upload`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1313,7 +1314,7 @@ const AssetLibrary = ({
         
         try {
           // First try the texture-images endpoint (for texture sets)
-          const response = await fetch(`http://localhost:8000/api/v1/assets/${asset.id || asset._key}/texture-images`);
+          const response = await fetch(`${config.backendUrl}/api/v1/assets/${asset.id || asset._key}/texture-images`);
           if (response.ok) {
             const data = await response.json();
             // Available texture files loaded from endpoint
@@ -3133,7 +3134,7 @@ const AssetLibrary = ({
                           try {
                             console.log('Getting folder path for asset:', previewAsset.id);
                             
-                            const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
+                            const response = await fetch(`${config.backendUrl}/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
                               method: 'POST'
                             });
                             
@@ -3177,7 +3178,7 @@ const AssetLibrary = ({
                       <button
                         onClick={async () => {
                           try {
-                            const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/open-folder`, {
+                            const response = await fetch(`${config.backendUrl}/api/v1/assets/${previewAsset.id}/open-folder`, {
                               method: 'POST'
                             });
                             
@@ -3382,7 +3383,7 @@ const AssetLibrary = ({
                             try {
                               console.log('Getting folder path for asset:', previewAsset.id);
                               
-                              const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
+                              const response = await fetch(`${config.backendUrl}/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
                                 method: 'POST'
                               });
                               
@@ -3438,7 +3439,7 @@ const AssetLibrary = ({
                             try {
                               console.log('Getting folder path for asset:', previewAsset.id);
                               
-                              const response = await fetch(`http://localhost:8000/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
+                              const response = await fetch(`${config.backendUrl}/api/v1/assets/${previewAsset.id}/copy-folder-path`, {
                                 method: 'POST'
                               });
                               

@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Library } from 'lucide-react';
 import AssetLibrary from './components/AssetLibrary';
+import config from './utils/config';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -98,7 +99,7 @@ const App = () => {
 
   // Simple API check - just once
   useEffect(() => {
-    fetch('http://localhost:8000/health')
+    fetch(`${config.backendUrl}/health`)
       .then(res => res.ok ? setApiStatus('connected') : setApiStatus('disconnected'))
       .catch((error) => {
         console.error('API health check failed:', error);

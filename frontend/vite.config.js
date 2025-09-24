@@ -5,6 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3011,
-    host: true
+    host: true,
+    // Add this line to allow your custom host
+    allowedHosts: ['library.blacksmith.tv'], 
   }
 })

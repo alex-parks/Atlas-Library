@@ -2,13 +2,14 @@
 // Specialized edit modal for texture assets with texture-specific options
 import React, { useState } from 'react';
 import { X, Save, Plus, Trash2, Copy, RefreshCw, Palette, Layers, Settings } from 'lucide-react';
+import config from '../utils/config';
 
 const TextureEditAsset = ({ 
   isOpen, 
   onClose, 
   asset, 
   onSave,
-  apiEndpoint = 'http://localhost:8000/api/v1/assets'
+  apiEndpoint = `${config.backendUrl}/api/v1/assets`
 }) => {
   const [editFormData, setEditFormData] = useState({
     name: asset?.name || '',

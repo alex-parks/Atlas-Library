@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown, MoreVertical, Edit, Eye, Copy, Trash2, RefreshCw } from 'lucide-react';
 import SequenceThumbnail from '../SequenceThumbnail';
 import TextureSetSequence from '../TextureSetSequence';
+import config from '../../utils/config';
 
 // Texture Type Badges Component - Shows all available texture types for texture sets
 const TextureTypeBadges = ({ asset, onRefresh, currentFrameType, onBadgeClick }) => {
@@ -23,7 +24,7 @@ const TextureTypeBadges = ({ asset, onRefresh, currentFrameType, onBadgeClick })
 
     try {
       setLoading(true);
-      const textureResponse = await fetch(`http://localhost:8000/api/v1/assets/${assetId}/texture-images`);
+      const textureResponse = await fetch(`${config.backendUrl}/api/v1/assets/${assetId}/texture-images`);
       
       if (textureResponse.ok) {
         const textureData = await textureResponse.json();
@@ -193,7 +194,7 @@ const TextureImage = ({ asset, refreshKey, formatAssetName, openPreview, onFrame
   // For non-texture sets, show regular thumbnail
   return (
     <img
-      src={`http://localhost:8000/thumbnails/${assetId}?_t=${refreshKey || Date.now()}`}
+      src={`${config.backendUrl}/thumbnails/${assetId}?_t=${refreshKey || Date.now()}`}
       alt={formatAssetName(asset)}
       className="w-full h-full object-cover cursor-pointer"
       onClick={() => openPreview(asset)}

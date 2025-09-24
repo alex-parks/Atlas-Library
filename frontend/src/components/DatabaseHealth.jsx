@@ -12,6 +12,7 @@ import {
   HardDrive,
   Clock
 } from 'lucide-react';
+import config from '../utils/config';
 
 const DatabaseHealth = () => {
   const [healthData, setHealthData] = useState(null);
@@ -24,9 +25,9 @@ const DatabaseHealth = () => {
     try {
       // Fetch health data from backend
       const [healthRes, statsRes, connectionsRes] = await Promise.allSettled([
-        fetch('http://localhost:8000/health'),
-        fetch('http://localhost:8000/api/v1/assets/stats'),
-        fetch('http://localhost:8000/api/v1/database/status')
+        fetch(`${config.backendUrl}/health`),
+        fetch(`${config.backendUrl}/api/v1/assets/stats`),
+        fetch(`${config.backendUrl}/api/v1/database/status`)
       ]);
 
       const health = healthRes.status === 'fulfilled' ? await healthRes.value.json() : null;
@@ -315,7 +316,7 @@ const DatabaseHealth = () => {
               </div>
               <div>
                 <p className="text-neutral-400">API Endpoint</p>
-                <p className="text-white">http://localhost:8000</p>
+                <p className="text-white">{config.backendUrl}</p>
               </div>
               <div>
                 <p className="text-neutral-400">Auto-refresh</p>
