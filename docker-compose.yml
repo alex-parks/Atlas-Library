@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # ArangoDB Database (Community Edition - Free)
   arangodb:
@@ -9,10 +11,10 @@ services:
     ports:
       - "8529:8529"
     volumes:
-      - /mnt/podman/storage/arangodb/arango_data:/var/lib/arangodb3
-      - /mnt/podman/storage/arangodb/arango_apps:/var/lib/arangodb3-apps
+      - ./data/arango_data:/var/lib/arangodb3
+      - ./data/arango_apps:/var/lib/arangodb3-apps
     networks:
-      - proxy
+      - atlas-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
       interval: 30s
@@ -42,6 +44,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: blacksmith-atlas-backend
+    ports:
+      - "8000:8000"
     environment:
       - ATLAS_ENV=${ATLAS_ENV:-development}
       - ARANGO_HOST=arangodb
@@ -67,17 +71,8 @@ services:
       - arangodb
       # - redis
     networks:
-      - proxy
+      - atlas-network
     restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.atlas-library-api.rule=Host(`library.blacksmith.tv`) && PathPrefix(`/api`)"
-      - "traefik.http.middlewares.api-stripprefix.stripprefix.prefixes=/api"
-      - "traefik.http.routers.atlas-library-api.middlewares=api-stripprefix@docker"
-      - "traefik.http.services.atlas-library-api.loadbalancer.server.port=8000"
-      - "traefik.http.routers.atlas-library-api.entrypoints=websecure"
-      - "traefik.http.routers.atlas-library-api.tls=true"
-
 
   # Frontend (Development)
   frontend:
@@ -85,33 +80,18 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: blacksmith-atlas-frontend
+    ports:
+      - "3011:3011"
     environment:
-      - VITE_API_URL=https://library.blacksmith.tv/api
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
     volumes:
       - ./frontend:/app
       - /app/node_modules
     depends_on:
       - backend
     networks:
-      - proxy
+      - atlas-network
     restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.atlas-library_fqdnredirect.rule=Host(`library`)"
-      - "traefik.http.routers.atlas-library_fqdnredirect.entrypoints=web,websecure"
-      - "traefik.http.routers.atlas-library_fqdnredirect.middlewares=atlas-library_fqdnredirect"
-      - "traefik.http.middlewares.atlas-library_fqdnredirect.redirectregex.regex=^https?://library/(.*)"
-      - "traefik.http.middlewares.atlas-library_fqdnredirect.redirectregex.replacement=https://library.blacksmith.tv/$${1}"
-      - "traefik.http.middlewares.atlas-library_fqdnredirect.redirectregex.permanent=true"
-      - "traefik.http.routers.atlas-library.rule=Host(`library.blacksmith.tv`)"
-      - "traefik.http.services.atlas-library.loadbalancer.server.port=3011"
-      - "traefik.http.routers.atlas-library.entrypoints=websecure"
-      - "traefik.http.routers.atlas-library.tls=true"
-      - "traefik.http.routers.atlas-library-http.rule=Host(`library.blacksmith.tv`)"
-      - "traefik.http.routers.atlas-library-http.entrypoints=web"
-      - "traefik.http.routers.atlas-library-http.middlewares=httpredirect"
-      - "traefik.http.routers.atlas-library.tls.certresolver=letsencrypt"
-
 
 # volumes:
   # arango_data:
@@ -119,5 +99,5 @@ services:
   # redis_data:
 
 networks:
-  proxy:
-    external: true
+  atlas-network:
+    driver: bridge 
