@@ -1372,8 +1372,15 @@ async def get_texture_images(asset_id: str):
             else:
                 return {"images": [], "resolutions": {}}
         
-        # Look for original texture files in the Assets subfolder (for copying)
-        assets_folder = folder / "Assets"
+        # Look for original texture files in the asset subfolder (for copying)
+        # Use asset_subfolder from metadata if available, otherwise fallback to "Assets"
+        asset_subfolder_path = asset_data.get('paths', {}).get('asset_subfolder')
+        if asset_subfolder_path:
+            # Extract just the subfolder name from the full path
+            assets_folder = Path(asset_subfolder_path)
+        else:
+            # Fallback to hardcoded "Assets" for legacy assets
+            assets_folder = folder / "Assets"
         preview_folder = folder / "Preview"
         images = []
         resolutions = {}
@@ -1437,35 +1444,44 @@ async def get_texture_images(asset_id: str):
                 if '_thumbnail' in thumbnail_name:
                     texture_set_info = asset_data.get('metadata', {}).get('texture_set_info', {})
                     texture_slots = texture_set_info.get('texture_slots', {})
-                    
+
                     # Parse thumbnail name to extract position and type
-                    # Example: Stone_Wall_0_BaseColor_thumbnail.png -> position=0, type=BaseColor
-                    name_parts = thumbnail_name.replace('_thumbnail.png', '').split('_')
-                    
-                    # Find position and type in filename
+                    # Example: Faux_2_0_BaseColor_thumbnail.png -> position=0, type=BaseColor
+                    # We need to find the position digit that comes BEFORE a texture type keyword
+                    name_without_ext = thumbnail_name.replace('_thumbnail.png', '')
+                    name_parts = name_without_ext.split('_')
+
+                    # Known texture type keywords
+                    texture_types = ['BaseColor', 'Metallic', 'Roughness', 'Normal', 'Opacity', 'Displacement']
+
+                    # Find position and type by looking for texture type keywords
                     found_position = None
                     found_type = None
                     for i, part in enumerate(name_parts):
-                        if part.isdigit():
-                            found_position = part
-                            # Type should be next part after position
-                            if i + 1 < len(name_parts):
-                                found_type = name_parts[i + 1]
+                        if part in texture_types:
+                            found_type = part
+                            # Position should be the previous part if it's a digit
+                            if i > 0 and name_parts[i-1].isdigit():
+                                found_position = name_parts[i-1]
                             break
-                    
+
                     # Find matching texture slot using position
                     if found_position is not None:
                         for slot_key, slot_info in texture_slots.items():
                             if str(slot_info.get('position', '')) == found_position:
                                 original_filename = slot_info.get('original_filename', thumbnail_name)
+                                logger.debug(f"Mapped thumbnail position {found_position} to original: {original_filename}")
                                 break
+                    else:
+                        logger.warning(f"Could not parse position from thumbnail: {thumbnail_name}")
                 
                 images.append({
                     "filename": original_filename,
                     "path": str(file_path),  # Full path to thumbnail file
                     "relative_path": f"Thumbnail/{file_path_obj.name}",
                     "is_original": False,  # These are thumbnails, not originals
-                    "is_thumbnail": True
+                    "is_thumbnail": True,
+                    "is_preview": False
                 })
                 resolutions[res_index] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
         
@@ -1485,7 +1501,8 @@ async def get_texture_images(asset_id: str):
                         "path": str(file_path),  # Full path to thumbnail file
                         "relative_path": str(file_path.relative_to(folder)),
                         "is_original": False,
-                        "is_thumbnail": True
+                        "is_thumbnail": True,
+                        "is_preview": False
                     })
                     # Try to get resolution from asset metadata
                     resolutions[len(images) - 1] = asset_data.get('metadata', {}).get('resolution', 'Unknown')
@@ -1495,14 +1512,44 @@ async def get_texture_images(asset_id: str):
             logger.warning(f"⚠️ No Preview or Thumbnail files found for {asset_id}")
             return {"images": [], "resolutions": {}}
         
-        # Sort images by position in filename (Position 0, 1, 2, etc.)
+        # Sort images by position using explicit texture set mappings first, then filename fallback
         def get_texture_position(image_info):
             # Preview images always come first
             if image_info.get('is_preview', False):
                 return -1  # Preview comes before all texture maps
-                
+
             filename = image_info['filename'].lower()
-            # Check for position pattern: Name_Position_Type_
+
+            # For texture sets, use explicit mapping from metadata instead of guessing from filename
+            texture_set_info = asset_data.get('metadata', {}).get('texture_set_info', {})
+            if texture_set_info and texture_set_info.get('type') == 'texture_set':
+                provided_paths = texture_set_info.get('provided_paths', {})
+                texture_slots = texture_set_info.get('texture_slots', {})
+
+                # First, try to match by original filename from texture slots
+                for slot_key, slot_info in texture_slots.items():
+                    if slot_info.get('original_filename', '').lower() == image_info['filename'].lower():
+                        slot_position = int(slot_info.get('position', 99))
+                        logger.info(f"📍 Matched {image_info['filename']} to slot {slot_key} at position {slot_position}")
+                        return slot_position
+
+                # Second, try to match by checking if the image filename appears in any provided path
+                for slot_key, file_path in provided_paths.items():
+                    if file_path and Path(file_path).name.lower() == image_info['filename'].lower():
+                        # Get position from the defined texture order
+                        texture_order = {
+                            'baseColor': 0,
+                            'metallic': 1,
+                            'roughness': 2,
+                            'normal': 3,
+                            'opacity': 4,
+                            'displacement': 5
+                        }
+                        slot_position = texture_order.get(slot_key, 99)
+                        logger.info(f"📍 Matched {image_info['filename']} to provided path {slot_key} at position {slot_position}")
+                        return slot_position
+
+            # Fallback to filename-based position pattern for legacy assets: Name_Position_Type_
             parts = filename.split('_')
             for i, part in enumerate(parts):
                 if part.isdigit() and i > 0:  # Position should not be the first part
@@ -1511,8 +1558,8 @@ async def get_texture_images(asset_id: str):
                         next_part = parts[i + 1]
                         if any(tex_type in next_part for tex_type in ['basecolor', 'metallic', 'roughness', 'normal', 'opacity', 'displacement']):
                             return int(part)
-            
-            # Fallback to texture type priority for files without position numbers
+
+            # Final fallback to texture type priority for files without position numbers
             texture_priority = {
                 'basecolor': 0, 'albedo': 0, 'diffuse': 0,
                 'metallic': 1, 'metalness': 1, 'metal': 1,
@@ -1521,12 +1568,14 @@ async def get_texture_images(asset_id: str):
                 'opacity': 4, 'alpha': 4, 'transparency': 4,
                 'displacement': 5, 'height': 5, 'disp': 5
             }
-            
+
             for tex_type, position in texture_priority.items():
                 if tex_type in filename:
+                    logger.info(f"📍 Fallback: Matched {image_info['filename']} to texture type {tex_type} at position {position}")
                     return position
-            
+
             # Unknown texture types go last
+            logger.info(f"📍 Unknown texture type for {image_info['filename']}, assigning position 99")
             return 99
             
         images.sort(key=get_texture_position)
@@ -1660,14 +1709,42 @@ async def get_texture_image_by_index(asset_id: str, image_index: int):
                         "is_thumbnail": True
                     })
         
-        # Sort images by position in filename (same logic as texture-images endpoint)
+        # Sort images by position using explicit texture set mappings first, then filename fallback
         def get_texture_position(image_info):
             # Preview images always come first
             if image_info.get('is_preview', False):
                 return -1  # Preview comes before all texture maps
-                
+
             filename = image_info['filename'].lower()
-            # Check for position pattern: Name_Position_Type_
+
+            # For texture sets, use explicit mapping from metadata instead of guessing from filename
+            texture_set_info = asset_data.get('metadata', {}).get('texture_set_info', {})
+            if texture_set_info and texture_set_info.get('type') == 'texture_set':
+                provided_paths = texture_set_info.get('provided_paths', {})
+                texture_slots = texture_set_info.get('texture_slots', {})
+
+                # First, try to match by original filename from texture slots
+                for slot_key, slot_info in texture_slots.items():
+                    if slot_info.get('original_filename', '').lower() == image_info['filename'].lower():
+                        slot_position = int(slot_info.get('position', 99))
+                        return slot_position
+
+                # Second, try to match by checking if the image filename appears in any provided path
+                for slot_key, file_path in provided_paths.items():
+                    if file_path and Path(file_path).name.lower() == image_info['filename'].lower():
+                        # Get position from the defined texture order
+                        texture_order = {
+                            'baseColor': 0,
+                            'metallic': 1,
+                            'roughness': 2,
+                            'normal': 3,
+                            'opacity': 4,
+                            'displacement': 5
+                        }
+                        slot_position = texture_order.get(slot_key, 99)
+                        return slot_position
+
+            # Fallback to filename-based position pattern for legacy assets: Name_Position_Type_
             parts = filename.split('_')
             for i, part in enumerate(parts):
                 if part.isdigit() and i > 0:  # Position should not be the first part
@@ -1676,8 +1753,8 @@ async def get_texture_image_by_index(asset_id: str, image_index: int):
                         next_part = parts[i + 1]
                         if any(tex_type in next_part for tex_type in ['basecolor', 'metallic', 'roughness', 'normal', 'opacity', 'displacement']):
                             return int(part)
-            
-            # Fallback to texture type priority for files without position numbers
+
+            # Final fallback to texture type priority for files without position numbers
             texture_priority = {
                 'basecolor': 0, 'albedo': 0, 'diffuse': 0,
                 'metallic': 1, 'metalness': 1, 'metal': 1,
@@ -1686,11 +1763,11 @@ async def get_texture_image_by_index(asset_id: str, image_index: int):
                 'opacity': 4, 'alpha': 4, 'transparency': 4,
                 'displacement': 5, 'height': 5, 'disp': 5
             }
-            
+
             for tex_type, position in texture_priority.items():
                 if tex_type in filename:
                     return position
-            
+
             # Unknown texture types go last
             return 99
         
@@ -3112,11 +3189,15 @@ async def update_asset_preview_image(
                             elif img.mode != 'RGB':
                                 img = img.convert('RGB')
                             
-                            # Resize if too large (max 2048x2048 for preview)
+                            # Resize if too large (max 2048x2048 for preview) - PRESERVE ASPECT RATIO
                             max_size = 2048
                             if img.width > max_size or img.height > max_size:
-                                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-                                logger.info(f"📏 Resized preview to: {img.size}")
+                                # Calculate new size preserving aspect ratio (no cropping!)
+                                scale_factor = min(max_size / img.width, max_size / img.height)
+                                new_width = int(img.width * scale_factor)
+                                new_height = int(img.height * scale_factor)
+                                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                                logger.info(f"📏 Resized preview preserving aspect ratio: {img.width}x{img.height} -> {new_width}x{new_height}")
                             
                             # Save as PNG with good quality
                             img.save(preview_file, 'PNG', optimize=True, quality=95)
@@ -3325,11 +3406,15 @@ async def update_asset_preview_image_from_path(
                             target_mode = 'RGB'
                             logger.info(f"✅ Converted to RGB (original mode: {img.mode})")
                         
-                        # Resize if too large (max 2048x2048 for preview)
+                        # Resize if too large (max 2048x2048 for preview) - PRESERVE ASPECT RATIO
                         max_size = 2048
                         if img.width > max_size or img.height > max_size:
-                            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-                            logger.info(f"📏 Resized preview to: {img.size}")
+                            # Calculate new size preserving aspect ratio (no cropping!)
+                            scale_factor = min(max_size / img.width, max_size / img.height)
+                            new_width = int(img.width * scale_factor)
+                            new_height = int(img.height * scale_factor)
+                            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                            logger.info(f"📏 Resized preview preserving aspect ratio: {img.width}x{img.height} -> {new_width}x{new_height}")
                         
                         # Save as PNG with appropriate settings for alpha preservation
                         save_kwargs = {}

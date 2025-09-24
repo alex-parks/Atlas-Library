@@ -75,51 +75,93 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
               const textureData = await textureResponse.json();
               
               // Check if there's a preview image
-              const hasPreviewImg = textureData.images?.some(img => 
-                img.is_preview || 
+              const hasPreviewImg = textureData.images?.some(img =>
+                img.is_preview === true ||
                 img.filename?.toLowerCase().includes('preview') ||
                 img.path?.toLowerCase().includes('preview')
               ) || false;
               
               setHasPreview(hasPreviewImg);
               
-              // Find available texture types
+              // Find available texture types using explicit texture slot information
               if (textureData.images && textureData.images.length > 0) {
                 const foundTextures = [];
-                
-                // Define the order and mapping (same as TextureSetSequence)
-                const textureOrder = ['BC', 'R', 'M', 'N', 'O', 'D'];
-                const textureTypeMap = {
-                  'BC': ['basecolor', 'albedo', 'diffuse', 'base_color', 'color'],
-                  'R': ['roughness', 'rough'],
-                  'M': ['metallic', 'metalness', 'metal'],
-                  'N': ['normal', 'bump', 'nrm'],
-                  'O': ['opacity', 'alpha', 'transparency'],
-                  'D': ['displacement', 'height', 'disp']
-                };
-                
-                // Find matching textures (exclude preview images)
-                for (const textureType of textureOrder) {
-                  const keywords = textureTypeMap[textureType] || [];
-                  
-                  const matchingTextureIndex = textureData.images?.findIndex(img => {
-                    // Skip preview images for texture type detection
-                    if (img.is_preview || 
-                        img.filename?.toLowerCase().includes('preview') ||
-                        img.path?.toLowerCase().includes('preview')) {
-                      return false;
+
+                // First, try to use explicit texture_set_info from asset metadata
+                console.log(`🔍 Asset ${assetId} metadata:`, asset.metadata?.texture_set_info);
+                console.log(`🔍 Asset ${assetId} texture images:`, textureData.images);
+
+                if (asset.metadata?.texture_set_info?.texture_slots) {
+                  const textureSlots = asset.metadata.texture_set_info.texture_slots;
+                  console.log(`📋 Using explicit texture slots for ${assetId}:`, textureSlots);
+
+                  // Map texture slots to display abbreviations
+                  const slotToDisplayMap = {
+                    'baseColor': 'BC',
+                    'metallic': 'M',
+                    'roughness': 'R',
+                    'normal': 'N',
+                    'opacity': 'O',
+                    'displacement': 'D'
+                  };
+
+                  // Check each texture slot to see if we have a corresponding image
+                  for (const [slotKey, slotInfo] of Object.entries(textureSlots)) {
+                    const originalFilename = slotInfo.original_filename;
+                    const displayType = slotToDisplayMap[slotKey];
+
+                    console.log(`🔍 Checking slot ${slotKey} (${displayType}) for filename: ${originalFilename}`);
+
+                    // Check if there's an image with this filename in textureData
+                    const matchingImage = textureData.images.find(img =>
+                      img.is_preview !== true && img.filename === originalFilename
+                    );
+
+                    console.log(`🔍 Matching image for ${originalFilename}:`, matchingImage);
+
+                    if (matchingImage && displayType) {
+                      foundTextures.push(displayType);
+                      console.log(`✅ Found ${displayType} (${slotKey}) texture: ${originalFilename}`);
+                    } else {
+                      console.log(`❌ No match for ${slotKey} (${displayType}) - filename: ${originalFilename}`);
                     }
-                    
-                    const filename = img.filename.toLowerCase();
-                    return keywords.some(keyword => filename.includes(keyword));
-                  });
-                  
-                  if (matchingTextureIndex !== -1 && matchingTextureIndex !== undefined) {
-                    foundTextures.push(textureType);
-                    console.log(`Found ${textureType} in:`, textureData.images[matchingTextureIndex].filename);
+                  }
+                } else {
+                  // Fallback to old filename-based detection for legacy assets
+                  console.log(`⚠️ No texture_set_info found for ${assetId}, using filename fallback`);
+                  const textureOrder = ['BC', 'R', 'M', 'N', 'O', 'D'];
+                  const textureTypeMap = {
+                    'BC': ['basecolor', 'albedo', 'diffuse', 'base_color', 'color'],
+                    'R': ['roughness', 'rough'],
+                    'M': ['metallic', 'metalness', 'metal'],
+                    'N': ['normal', 'bump', 'nrm'],
+                    'O': ['opacity', 'alpha', 'transparency'],
+                    'D': ['displacement', 'height', 'disp']
+                  };
+
+                  // Find matching textures (exclude preview images)
+                  for (const textureType of textureOrder) {
+                    const keywords = textureTypeMap[textureType] || [];
+
+                    const matchingTextureIndex = textureData.images?.findIndex(img => {
+                      // Skip preview images for texture type detection
+                      if (img.is_preview === true ||
+                          img.filename?.toLowerCase().includes('preview') ||
+                          img.path?.toLowerCase().includes('preview')) {
+                        return false;
+                      }
+
+                      const filename = img.filename.toLowerCase();
+                      return keywords.some(keyword => filename.includes(keyword));
+                    });
+
+                    if (matchingTextureIndex !== -1 && matchingTextureIndex !== undefined) {
+                      foundTextures.push(textureType);
+                      console.log(`Found ${textureType} in:`, textureData.images[matchingTextureIndex].filename);
+                    }
                   }
                 }
-                
+
                 console.log(`Asset ${assetId} - Preview: ${hasPreviewImg}, Textures:`, foundTextures);
                 setAvailableTextures(foundTextures);
               } else {

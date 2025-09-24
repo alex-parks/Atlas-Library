@@ -1273,20 +1273,133 @@ const AssetLibrary = ({
   // Simple Texture Modal Preview Component (delegates to backend for ordering)
   const TextureModalPreview = ({ asset }) => {
     const [currentFrameIndex, setCurrentFrameIndex] = useState(null);
+    const [availableTextures, setAvailableTextures] = useState([]);
+    const [hasPreview, setHasPreview] = useState(false);
+    const [currentFrameData, setCurrentFrameData] = useState(null);
     const isTextureSet = asset.metadata?.subcategory === 'Texture Sets' || asset.subcategory === 'Texture Sets';
+
+    // Check for available textures when asset changes
+    useEffect(() => {
+      const checkTexturesForModal = async () => {
+        if (!isTextureSet) return;
+
+        try {
+          const assetId = asset.id || asset._key;
+          const textureResponse = await fetch(`${config.backendUrl}/api/v1/assets/${assetId}/texture-images`);
+          if (textureResponse.ok) {
+            const textureData = await textureResponse.json();
+
+            // Check for preview
+            const hasPreviewImg = textureData.images?.some(img => img.is_preview === true) || false;
+            setHasPreview(hasPreviewImg);
+
+            // Get available textures using explicit texture slots
+            const foundTextures = [];
+            if (asset.metadata?.texture_set_info?.texture_slots) {
+              const textureSlots = asset.metadata.texture_set_info.texture_slots;
+              const slotToDisplayMap = {
+                'baseColor': 'BC',
+                'metallic': 'M',
+                'roughness': 'R',
+                'normal': 'N',
+                'opacity': 'O',
+                'displacement': 'D'
+              };
+
+              // Check each texture slot
+              for (const [slotKey, slotInfo] of Object.entries(textureSlots)) {
+                const originalFilename = slotInfo.original_filename;
+                const displayType = slotToDisplayMap[slotKey];
+
+                // Check if there's an image with this filename
+                const matchingImage = textureData.images.find(img =>
+                  img.is_preview !== true && img.filename === originalFilename
+                );
+
+                if (matchingImage && displayType) {
+                  foundTextures.push(displayType);
+                }
+              }
+            }
+
+            setAvailableTextures(foundTextures);
+          }
+        } catch (error) {
+          console.error('Failed to fetch texture images for modal:', error);
+        }
+      };
+
+      checkTexturesForModal();
+    }, [asset, isTextureSet]);
+
+    // Handle frame changes from TextureSetSequence - EXACT same logic as TextureCard
+    const [currentFrameType, setCurrentFrameType] = useState(null);
+
+    const handleFrameChange = (frameData) => {
+      if (frameData && frameData.type) {
+        if (frameData.type === 'preview') {
+          setCurrentFrameType('preview');
+        } else if (frameData.textureType) {
+          setCurrentFrameType(frameData.textureType);
+        } else {
+          setCurrentFrameType(null);
+        }
+      }
+    };
+
+    // Function to get badge styling - EXACT same logic as TextureCard
+    const getBadgeStyle = (badgeType) => {
+      const isActive = currentFrameType === badgeType;
+      if (badgeType === 'preview') {
+        return isActive
+          ? "px-2 py-1 text-xs font-bold rounded bg-purple-500 text-white border border-purple-500"
+          : "px-2 py-1 text-xs font-bold rounded bg-transparent text-white border border-purple-400";
+      } else {
+        return isActive
+          ? "px-2 py-1 text-xs font-bold rounded bg-blue-500 text-white border border-blue-500"
+          : "px-2 py-1 text-xs font-bold rounded bg-transparent text-white border border-blue-400";
+      }
+    };
 
     // For texture sets, use the new TextureSetSequence component
     if (isTextureSet) {
       return (
-        <TextureSetSequence
-          assetId={asset.id || asset._key}
-          assetName={formatAssetName(asset)}
-          asset={asset}
-          fallbackIcon="🖼️"
-          className="w-full h-full object-contain"
-          externalFrameIndex={currentFrameIndex}
-          hideZoomMessage={false}
-        />
+        <div className="relative w-full h-full">
+          <TextureSetSequence
+            assetId={asset.id || asset._key}
+            assetName={formatAssetName(asset)}
+            asset={asset}
+            fallbackIcon="🖼️"
+            className="w-full h-full object-contain"
+            externalFrameIndex={currentFrameIndex}
+            hideZoomMessage={false}
+            onFrameChange={handleFrameChange}
+          />
+
+          {/* Texture Type Badges - EXACT same logic and styling as TextureCard */}
+          <div className="absolute bottom-2 left-2 flex gap-1 z-20 group/badges">
+            {/* Preview badge */}
+            {hasPreview && (
+              <span
+                className={`cursor-pointer transition-all duration-200 ${getBadgeStyle('preview')}`}
+                title="Preview Image"
+              >
+                P
+              </span>
+            )}
+
+            {/* Available texture badges */}
+            {availableTextures.map((textureType) => (
+              <span
+                key={textureType}
+                className={`cursor-pointer transition-all duration-200 ${getBadgeStyle(textureType)}`}
+                title={`${textureType} Texture`}
+              >
+                {textureType}
+              </span>
+            ))}
+          </div>
+        </div>
       );
     }
 
@@ -1354,9 +1467,16 @@ const AssetLibrary = ({
             // Single texture detected, using asset name as filename
             // For single textures, use the asset name as the filename
             const assetName = asset.name || 'texture';
-            textureFiles = [{ 
+            // Use asset_subfolder if available, otherwise default to "Assets"
+            let subfolderName = "Assets";
+            if (asset.paths?.asset_subfolder) {
+              // Extract just the folder name from the full path
+              const parts = asset.paths.asset_subfolder.split('/');
+              subfolderName = parts[parts.length - 1] || "Assets";
+            }
+            textureFiles = [{
               filename: `${assetName}.png`, // Default extension, will be detected from actual file
-              path: `${asset.paths?.folder_path || ''}/Assets/${assetName}.png`
+              path: `${asset.paths?.folder_path || ''}/${subfolderName}/${assetName}.png`
             }];
           }
         }
@@ -1479,18 +1599,32 @@ const AssetLibrary = ({
           }
         }
 
-        // PRIORITY 2: Fallback to constructed path using folder_path + Assets + filename
+        // PRIORITY 2: Fallback to constructed path using folder_path + asset subfolder + filename
         if (!fullTexturePath && asset.paths?.folder_path) {
-          fullTexturePath = `${asset.paths.folder_path}/Assets/${texture.filename}`;
-          console.log(`📋 Constructed path from folder_path: ${fullTexturePath}`);
+          // Use asset_subfolder if available, otherwise default to "Assets"
+          let subfolderName = "Assets";
+          if (asset.paths?.asset_subfolder) {
+            // Extract just the folder name from the full path
+            const parts = asset.paths.asset_subfolder.split('/');
+            subfolderName = parts[parts.length - 1] || "Assets";
+          }
+          fullTexturePath = `${asset.paths.folder_path}/${subfolderName}/${texture.filename}`;
+          console.log(`📋 Constructed path from folder_path with subfolder '${subfolderName}': ${fullTexturePath}`);
         } 
         
         // PRIORITY 3: Final fallback construction for texture assets
         if (!fullTexturePath) {
           const assetId = asset.id || asset._key;
           const subcategory = asset.metadata?.subcategory || asset.subcategory || 'TextureSet';
-          fullTexturePath = `/net/library/atlaslib/3D/Textures/${subcategory}/${assetId}/Assets/${texture.filename}`;
-          console.log(`📋 Fallback constructed path: ${fullTexturePath}`);
+          // Use asset_subfolder if available, otherwise default to "Assets"
+          let subfolderName = "Assets";
+          if (asset.paths?.asset_subfolder) {
+            // Extract just the folder name from the full path
+            const parts = asset.paths.asset_subfolder.split('/');
+            subfolderName = parts[parts.length - 1] || "Assets";
+          }
+          fullTexturePath = `/net/library/atlaslib/3D/Textures/${subcategory}/${assetId}/${subfolderName}/${texture.filename}`;
+          console.log(`📋 Fallback constructed path with subfolder '${subfolderName}': ${fullTexturePath}`);
         }
 
         await navigator.clipboard.writeText(fullTexturePath);

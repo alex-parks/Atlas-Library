@@ -92,41 +92,34 @@ const TextureSetSequence = ({
           }
           
           if (textureData) {
-            // Define the order: BC (Base Color), R (Roughness), M (Metallic), N (Normal), O (Opacity), D (Displacement)
-            const textureOrder = ['BC', 'R', 'M', 'N', 'O', 'D'];
-            const textureTypeMap = {
-              'BC': ['basecolor', 'albedo', 'diffuse', 'base_color', 'color'],
-              'R': ['roughness', 'rough'],
-              'M': ['metallic', 'metalness', 'metal'],
-              'N': ['normal', 'bump', 'nrm'],
-              'O': ['opacity', 'alpha', 'transparency'],
-              'D': ['displacement', 'height', 'disp']
-            };
-            
-            // Add textures in the specified order (skip preview index if we already added it)
-            for (const textureType of textureOrder) {
-              const keywords = textureTypeMap[textureType] || [];
-              
-              // Find matching texture with its array index
-              const matchingTextureIndex = textureData.images?.findIndex(img => {
-                const filename = img.filename.toLowerCase();
-                return keywords.some(keyword => filename.includes(keyword));
-              });
-              
-              // Only add if it's not the preview we already added
-              if (matchingTextureIndex !== -1 && matchingTextureIndex !== undefined && matchingTextureIndex !== previewIndex) {
-                const matchingTexture = textureData.images[matchingTextureIndex];
+            // The backend now handles texture ordering correctly based on explicit paths
+            // So we can just add all textures in the order they come from the API
+            if (textureData && textureData.images) {
+              for (let i = 0; i < textureData.images.length; i++) {
+                const img = textureData.images[i];
+
+                // Skip if this is the preview we already added
+                if (i === previewIndex) {
+                  continue;
+                }
+
                 const cacheBust = `_t=${Date.now()}`;
+
+                // Determine texture type from position order (backend handles the mapping)
+                const textureTypeMap = ['BC', 'M', 'R', 'N', 'O', 'D'];
+                const textureType = textureTypeMap[frames.length - (previewIndex !== -1 ? 1 : 0)] || 'Unknown';
+
                 frames.push({
                   index: frameIndex++,
                   type: 'texture',
                   textureType: textureType,
                   name: textureType,
-                  url: `/api/v1/assets/${assetId}/texture-image/${matchingTextureIndex}?${cacheBust}`,
+                  url: `/api/v1/assets/${assetId}/texture-image/${i}?${cacheBust}`,
                   description: `${textureType} Texture`,
-                  filename: matchingTexture.filename
+                  filename: img.filename
                 });
-                // console.log(`Added ${textureType} texture at index ${matchingTextureIndex}`);
+
+                console.log(`Added ${textureType} texture (${img.filename}) at index ${i}`);
               }
             }
           }
