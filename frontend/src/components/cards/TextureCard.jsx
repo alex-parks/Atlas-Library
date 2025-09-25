@@ -183,7 +183,7 @@ const TextureTypeBadges = ({ asset, onRefresh, currentFrameType, onBadgeClick })
       
       {/* Available texture badges */}
       {availableTextures.map((textureType) => (
-        <span 
+        <span
           key={textureType}
           className={`cursor-pointer transition-all duration-200 ${getBadgeStyle(textureType)}`}
           onClick={(e) => {
@@ -195,6 +195,19 @@ const TextureTypeBadges = ({ asset, onRefresh, currentFrameType, onBadgeClick })
           {textureType}
         </span>
       ))}
+
+      {/* Extra textures count badge */}
+      {(() => {
+        const extraTexturesCount = asset.metadata?.texture_set_info?.extra_textures?.length || 0;
+        return extraTexturesCount > 0 ? (
+          <span
+            className="px-1.5 py-0.5 text-xs font-bold rounded bg-white/50 text-white border border-blue-400"
+            title={`${extraTexturesCount} Additional Texture${extraTexturesCount !== 1 ? 's' : ''} Available`}
+          >
+            +{extraTexturesCount}
+          </span>
+        ) : null;
+      })()}
       
       {/* Refresh button - shows on hover */}
       <button

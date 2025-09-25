@@ -287,7 +287,7 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
         
         {/* Available texture badges */}
         {availableTextures.map((textureType, index) => (
-          <span 
+          <span
             key={textureType}
             className="px-2 py-1 text-xs font-bold rounded bg-cyan-600 text-white border border-white"
             title={`${textureType} Texture Available`}
@@ -295,7 +295,20 @@ const TextureBadge = ({ asset, formatAssetNameJSX, onEditAsset, onPreviewAsset, 
             {textureType}
           </span>
         ))}
-        
+
+        {/* Extra textures count badge */}
+        {(() => {
+          const extraTexturesCount = asset.metadata?.texture_set_info?.extra_textures?.length || 0;
+          return extraTexturesCount > 0 ? (
+            <span
+              className="px-2 py-1 text-xs font-bold rounded bg-white/50 text-white border border-blue-500"
+              title={`${extraTexturesCount} Additional Texture${extraTexturesCount !== 1 ? 's' : ''} Available`}
+            >
+              +{extraTexturesCount}
+            </span>
+          ) : null;
+        })()}
+
         {/* Show count */}
         <span className="px-1 py-1 text-xs bg-green-500 text-white rounded">
           {availableTextures.length}

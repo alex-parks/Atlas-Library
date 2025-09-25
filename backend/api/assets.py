@@ -2612,6 +2612,7 @@ class UploadAssetRequest(BaseModel):
     subcategory: Optional[str] = None  # For HDRI/Texture categories
     alpha_subcategory: Optional[str] = None  # For Alpha texture subcategories
     texture_set_paths: Optional[dict] = None  # For texture sets with multiple files
+    additional_textures: Optional[list] = None  # For additional texture files: [{name: str, filePath: str}]
     # Texture type metadata
     texture_type: Optional[str] = None  # 'seamless' or 'uv_tile'
     seamless: Optional[bool] = None  # True if texture is seamless
@@ -2685,7 +2686,32 @@ async def upload_asset(upload_request: UploadAssetRequest):
                             )
                 
                 logger.info(f"📋 Texture set upload validated: {len([p for p in upload_request.texture_set_paths.values() if p and p.strip()])} texture files provided")
-                
+
+                # Validate additional textures if provided
+                if upload_request.additional_textures:
+                    texture_extensions = {'.exr', '.jpg', '.jpeg', '.png', '.tiff', '.tif'}
+                    for i, additional_texture in enumerate(upload_request.additional_textures):
+                        if not isinstance(additional_texture, dict):
+                            raise HTTPException(status_code=400, detail=f"Additional texture {i+1} must be an object with 'name' and 'filePath' properties")
+
+                        if not additional_texture.get('name') or not additional_texture.get('name').strip():
+                            raise HTTPException(status_code=400, detail=f"Additional texture {i+1} must have a name")
+
+                        if not additional_texture.get('filePath') or not additional_texture.get('filePath').strip():
+                            raise HTTPException(status_code=400, detail=f"Additional texture {i+1} '{additional_texture.get('name', 'Unknown')}' must have a file path")
+
+                        source_file = Path(additional_texture['filePath'].strip())
+                        if not source_file.exists():
+                            raise HTTPException(status_code=400, detail=f"Additional texture file not found: {additional_texture['filePath']}")
+
+                        if source_file.suffix.lower() not in texture_extensions:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Unsupported file format for additional texture '{additional_texture['name']}': {source_file.suffix}. Supported: {', '.join(texture_extensions)}"
+                            )
+
+                    logger.info(f"📋 Additional textures validated: {len(upload_request.additional_textures)} additional texture files provided")
+
             else:
                 # Single Textures (Alpha, Base Color, etc.): Require file_path (optional now)
                 if upload_request.file_path and upload_request.file_path.strip():
@@ -2851,7 +2877,27 @@ async def upload_asset(upload_request: UploadAssetRequest):
                         except Exception as e:
                             logger.warning(f"⚠️ Failed to process {display_name} texture: {e}")
                             continue
-                            
+
+                # Process additional textures if provided - copy to Extras folder
+                if upload_request.additional_textures:
+                    # Create Extras subfolder
+                    extras_folder = asset_subfolder / "Extras"
+                    extras_folder.mkdir(exist_ok=True)
+                    logger.info(f"📁 Created Extras folder: {extras_folder}")
+
+                    for additional_texture in upload_request.additional_textures:
+                        try:
+                            source_path = Path(additional_texture['filePath'].strip())
+                            if source_path.exists():
+                                # Copy additional texture file to Extras folder (preserve original filename)
+                                target_file = extras_folder / source_path.name
+                                shutil.copy2(source_path, target_file)
+                                copied_files.append(convert_to_network_path(str(target_file)))
+                                logger.info(f"✨ Copied additional texture '{additional_texture['name']}': {source_path} -> {target_file}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to process additional texture '{additional_texture['name']}': {e}")
+                            continue
+
             else:
                 # Single Texture: One file
                 target_file = asset_subfolder / source_file.name
@@ -2961,11 +3007,25 @@ async def upload_asset(upload_request: UploadAssetRequest):
                             "original_filename": Path(file_path).name if file_path else None
                         }
                 
+                # Add extra textures information if provided
+                extra_textures = []
+                if upload_request.additional_textures:
+                    extras_folder_path = convert_to_network_path(str(asset_subfolder / "Extras"))
+                    for additional_texture in upload_request.additional_textures:
+                        original_filename = Path(additional_texture['filePath']).name
+                        target_path = extras_folder_path + "/" + original_filename
+                        extra_textures.append({
+                            "name": additional_texture['name'],
+                            "original_filename": original_filename,
+                            "target_path": target_path
+                        })
+
                 metadata["texture_set_info"] = {
                     "type": "texture_set",
                     "provided_paths": upload_request.texture_set_paths,
                     "file_count": len([p for p in upload_request.texture_set_paths.values() if p and p.strip()]),
-                    "texture_slots": texture_slots
+                    "texture_slots": texture_slots,
+                    "extra_textures": extra_textures
                 }
         
         # Add resolution information if available

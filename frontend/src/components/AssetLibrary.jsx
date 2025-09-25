@@ -1,6 +1,6 @@
 // New Asset Library with Navigation Structure
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Download } from 'lucide-react';
+import { Search, Grid3X3, List, Filter, Upload, Copy, Eye, X, Settings, Save, FolderOpen, Database, RefreshCw, ArrowLeft, Folder, ExternalLink, MoreVertical, Edit, Trash2, Wrench, Moon, Sun, Palette, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Download, Plus, Minus } from 'lucide-react';
 import SequenceThumbnail from './SequenceThumbnail';
 import TextureSetSequence from './TextureSetSequence';
 import HoudiniAssetBadge from './badges/HoudiniAssetBadge';
@@ -254,7 +254,8 @@ const AssetLibrary = ({
       normal: '',
       opacity: '',
       displacement: ''
-    }
+    },
+    additionalTextures: [] // Array of {name: string, filePath: string} objects
   });
   const [uploading, setUploading] = useState(false);
 
@@ -704,6 +705,30 @@ const AssetLibrary = ({
     });
   };
 
+  // Additional Textures functions
+  const addAdditionalTexture = () => {
+    setUploadData(prev => ({
+      ...prev,
+      additionalTextures: [...prev.additionalTextures, { name: '', filePath: '' }]
+    }));
+  };
+
+  const removeAdditionalTexture = (index) => {
+    setUploadData(prev => ({
+      ...prev,
+      additionalTextures: prev.additionalTextures.filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateAdditionalTexture = (index, field, value) => {
+    setUploadData(prev => ({
+      ...prev,
+      additionalTextures: prev.additionalTextures.map((texture, i) =>
+        i === index ? { ...texture, [field]: value } : texture
+      )
+    }));
+  };
+
   // Format asset name to show "{Original Name} - {Variant Name}" for variants
   const formatAssetName = (asset) => {
     // Check if this is a variant (variant_id is not "AA" - the original)
@@ -1070,8 +1095,11 @@ const AssetLibrary = ({
           ...(uploadData.assetType === 'Textures' && {
             // Include preview image path for all textures if provided
             ...(uploadData.previewImagePath && { preview_image_path: uploadData.previewImagePath }),
-            // For Texture Sets: Send texture_set_paths, no file_path
-            ...(uploadData.subcategory === 'Texture Sets' && { texture_set_paths: uploadData.textureSetPaths }),
+            // For Texture Sets: Send texture_set_paths and additional_textures, no file_path
+            ...(uploadData.subcategory === 'Texture Sets' && {
+              texture_set_paths: uploadData.textureSetPaths,
+              additional_textures: uploadData.additionalTextures
+            }),
             // For Alpha textures: Include alpha_subcategory and file_path
             ...(uploadData.subcategory === 'Alpha' && { 
               alpha_subcategory: uploadData.alphaSubcategory,
@@ -1124,7 +1152,8 @@ const AssetLibrary = ({
             normal: '',
             opacity: '',
             displacement: ''
-          }
+          },
+          additionalTextures: [] // Reset additional textures
         });
         setShowUploadModal(false);
         setNewUploadTagInput(''); // Reset upload tag input
@@ -1398,6 +1427,19 @@ const AssetLibrary = ({
                 {textureType}
               </span>
             ))}
+
+            {/* Extra textures count badge */}
+            {(() => {
+              const extraTexturesCount = asset.metadata?.texture_set_info?.extra_textures?.length || 0;
+              return extraTexturesCount > 0 ? (
+                <span
+                  className="px-2 py-1 text-xs font-bold rounded bg-white/50 text-white border border-blue-500"
+                  title={`${extraTexturesCount} Additional Texture${extraTexturesCount !== 1 ? 's' : ''} Available`}
+                >
+                  +{extraTexturesCount}
+                </span>
+              ) : null;
+            })()}
           </div>
         </div>
       );
@@ -1645,27 +1687,61 @@ const AssetLibrary = ({
     }
 
     return (
-      <div className="space-y-2 mb-4">
-        <div className="text-sm text-gray-400 font-medium mb-2">Copy Individual Textures:</div>
-        <div className="space-y-1">
-          {Object.entries(textureTypeMap).map(([type, typeInfo]) => {
-            const texture = getTextureByType(type);
-            if (!texture) return null; // Don't show button if texture doesn't exist
+      <>
+        <div className="space-y-2 mb-4">
+          <div className="text-sm text-gray-400 font-medium mb-2">Copy Individual Textures:</div>
+          <div className="space-y-1">
+            {Object.entries(textureTypeMap).map(([type, typeInfo]) => {
+              const texture = getTextureByType(type);
+              if (!texture) return null; // Don't show button if texture doesn't exist
 
-            return (
-              <button
-                key={type}
-                onClick={() => copyTextureFilePath(type, texture)}
-                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md transition-colors bg-gray-500/20 text-gray-300 hover:bg-gray-500/30 text-sm font-medium"
-                title={`Copy ${typeInfo.name} file path: ${texture.filename}`}
-              >
-                <Copy size={14} />
-                {typeInfo.name}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={type}
+                  onClick={() => copyTextureFilePath(type, texture)}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md transition-colors bg-gray-500/20 text-gray-300 hover:bg-gray-500/30 text-sm font-medium"
+                  title={`Copy ${typeInfo.name} file path: ${texture.filename}`}
+                >
+                  <Copy size={14} />
+                  {typeInfo.name}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+
+        {/* Copy Extra Textures Section */}
+        {asset.metadata?.texture_set_info?.extra_textures?.length > 0 && (
+          <div className="space-y-2 mb-4">
+            <div className="text-sm text-gray-400 font-medium mb-2">Copy Extra Textures:</div>
+            <div className="space-y-1">
+              {asset.metadata.texture_set_info.extra_textures.map((extraTexture, index) => (
+                <button
+                  key={index}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(extraTexture.target_path);
+
+                      // Show success message like original buttons
+                      const message = `✅ ${extraTexture.name} path copied!\n\n📄 File: ${extraTexture.name}\n📂 Path: ${extraTexture.target_path}`;
+                      alert(message);
+                      console.log(`📋 Extra texture path copied:`, extraTexture.target_path);
+                    } catch (error) {
+                      console.error(`Failed to copy ${extraTexture.name} path:`, error);
+                      alert(`❌ Failed to copy ${extraTexture.name} path to clipboard`);
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md transition-colors bg-gray-500/20 text-gray-300 hover:bg-gray-500/30 text-sm font-medium"
+                  title={`Copy ${extraTexture.name} file path: ${extraTexture.target_path}`}
+                >
+                  <Copy size={14} />
+                  {extraTexture.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </>
     );
   };
 
@@ -2436,7 +2512,7 @@ const AssetLibrary = ({
       {/* Upload Asset Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 border border-gray-700 rounded-lg w-full max-w-md">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg w-full max-w-md max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <h2 className="text-xl font-semibold text-white">Upload Asset</h2>
               <button
@@ -2450,7 +2526,7 @@ const AssetLibrary = ({
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
               {/* Asset Type Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -2802,6 +2878,79 @@ const AssetLibrary = ({
                         className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
                       />
                     </div>
+
+                    {/* Additional Textures */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-medium text-gray-400">
+                          ✨ Additional Textures <span className="text-gray-500">(optional)</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={addAdditionalTexture}
+                          className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition-colors"
+                        >
+                          <Plus size={12} />
+                          Add Texture
+                        </button>
+                      </div>
+
+                      {uploadData.additionalTextures.length > 0 && (
+                        <div className="space-y-2">
+                          {uploadData.additionalTextures.map((texture, index) => (
+                            <div key={index} className="border border-gray-600 rounded-lg p-3 bg-gray-700/30">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-medium text-gray-300">
+                                  Texture {index + 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeAdditionalTexture(index)}
+                                  className="flex items-center gap-1 px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs transition-colors"
+                                >
+                                  <Minus size={12} />
+                                  Remove
+                                </button>
+                              </div>
+
+                              <div className="space-y-2">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">
+                                    Name <span className="text-red-400">*</span>
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={texture.name}
+                                    onChange={(e) => updateAdditionalTexture(index, 'name', e.target.value)}
+                                    placeholder="e.g. Ambient Occlusion, Height, Emission"
+                                    className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-xs"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">
+                                    File Path <span className="text-red-400">*</span>
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={texture.filePath}
+                                    onChange={(e) => updateAdditionalTexture(index, 'filePath', e.target.value)}
+                                    placeholder="/net/library/library/your/path/material_AO.jpg"
+                                    className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {uploadData.additionalTextures.length === 0 && (
+                        <p className="text-xs text-gray-500 text-center py-4 border border-dashed border-gray-600 rounded-lg">
+                          No additional textures added yet. Click "Add Texture" to add custom textures like AO, Height, Emission, etc.
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   <p className="text-xs text-gray-400">
@@ -2909,38 +3058,44 @@ const AssetLibrary = ({
                 <p className="text-xs text-gray-400 mt-1">Press Enter to add tags. Click the X on existing tags to remove them.</p>
               </div>
 
-              {/* Buttons */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => {
-                    setShowUploadModal(false);
-                    setNewUploadTagInput('');
-                  }}
-                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleUploadAsset}
-                  disabled={uploading || !uploadData.name.trim() || 
-                    (uploadData.assetType === 'Textures' && uploadData.subcategory === 'Texture Sets' 
-                      ? !uploadData.textureSetPaths.baseColor.trim() 
-                      : false)}
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
-                >
-                  {uploading ? (
-                    <>
-                      <RefreshCw size={16} className="animate-spin" />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Upload size={16} />
-                      Create Asset
-                    </>
-                  )}
-                </button>
-              </div>
+            </div>
+
+            {/* Buttons - Fixed at bottom */}
+            <div className="flex gap-3 p-4 border-t border-gray-700 bg-gray-800">
+              <button
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setNewUploadTagInput('');
+                  // Reset additional textures
+                  setUploadData(prev => ({
+                    ...prev,
+                    additionalTextures: []
+                  }));
+                }}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUploadAsset}
+                disabled={uploading || !uploadData.name.trim() ||
+                  (uploadData.assetType === 'Textures' && uploadData.subcategory === 'Texture Sets'
+                    ? !uploadData.textureSetPaths.baseColor.trim()
+                    : false)}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                {uploading ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload size={16} />
+                    Create Asset
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

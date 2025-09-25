@@ -92,9 +92,58 @@ const TextureSetSequence = ({
           }
           
           if (textureData) {
-            // The backend now handles texture ordering correctly based on explicit paths
-            // So we can just add all textures in the order they come from the API
-            if (textureData && textureData.images) {
+            // Use explicit texture slot information from asset metadata if available
+            const textureSlots = asset.metadata?.texture_set_info?.texture_slots;
+
+            if (textureSlots && textureData.images) {
+              // Map texture slots to display abbreviations
+              const slotToDisplayMap = {
+                'baseColor': 'BC',
+                'metallic': 'M',
+                'roughness': 'R',
+                'normal': 'N',
+                'opacity': 'O',
+                'displacement': 'D'
+              };
+
+              console.log(`🔍 Using explicit texture slots for ${assetId}:`, textureSlots);
+
+              // Process textures in the correct slot order
+              const orderedSlots = ['baseColor', 'metallic', 'roughness', 'normal', 'opacity', 'displacement'];
+
+              for (const slotKey of orderedSlots) {
+                if (textureSlots[slotKey]) {
+                  const slotInfo = textureSlots[slotKey];
+                  const originalFilename = slotInfo.original_filename;
+                  const displayType = slotToDisplayMap[slotKey];
+
+                  // Find the image with this filename in textureData
+                  const imageIndex = textureData.images.findIndex(img =>
+                    img.is_preview !== true && img.filename === originalFilename
+                  );
+
+                  if (imageIndex !== -1 && imageIndex !== previewIndex) {
+                    const cacheBust = `_t=${Date.now()}`;
+
+                    frames.push({
+                      index: frameIndex++,
+                      type: 'texture',
+                      textureType: displayType,
+                      textureSlot: slotKey,
+                      name: displayType,
+                      url: `/api/v1/assets/${assetId}/texture-image/${imageIndex}?${cacheBust}`,
+                      description: `${displayType} Texture`,
+                      filename: originalFilename
+                    });
+
+                    console.log(`✅ Added ${displayType} (${slotKey}) texture: ${originalFilename} at image index ${imageIndex}`);
+                  }
+                }
+              }
+            } else if (textureData.images) {
+              // Fallback to old position-based detection for legacy assets
+              console.log(`⚠️ No texture_set_info found for ${assetId}, using position fallback`);
+
               for (let i = 0; i < textureData.images.length; i++) {
                 const img = textureData.images[i];
 
@@ -105,7 +154,7 @@ const TextureSetSequence = ({
 
                 const cacheBust = `_t=${Date.now()}`;
 
-                // Determine texture type from position order (backend handles the mapping)
+                // Determine texture type from position order (fallback)
                 const textureTypeMap = ['BC', 'M', 'R', 'N', 'O', 'D'];
                 const textureType = textureTypeMap[frames.length - (previewIndex !== -1 ? 1 : 0)] || 'Unknown';
 
@@ -119,7 +168,7 @@ const TextureSetSequence = ({
                   filename: img.filename
                 });
 
-                console.log(`Added ${textureType} texture (${img.filename}) at index ${i}`);
+                console.log(`Added ${textureType} texture (${img.filename}) at index ${i} (fallback)`);
               }
             }
           }
