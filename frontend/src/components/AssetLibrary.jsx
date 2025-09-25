@@ -1022,9 +1022,9 @@ const AssetLibrary = ({
 
   const copyVersionId = async (asset) => {
     try {
-      // Extract version ID (remove last 3 characters)
-      // CBA8403F4AA001 -> CBA8403F4AA
-      const versionId = asset.id.slice(0, -3);
+      // Extract version ID (first 13 characters - UID + Variant Letters)
+      // 1D78C8E118EAA001 -> 1D78C8E118EAA
+      const versionId = asset.id.slice(0, 13);
       
       await navigator.clipboard.writeText(versionId);
       
@@ -1039,12 +1039,12 @@ const AssetLibrary = ({
 
   const copyVariantId = async (asset) => {
     try {
-      // Extract variant ID (remove last 5 characters)
-      // CBA8403F4AA001 -> CBA8403F4
-      const variantId = asset.id.slice(0, -5);
-      
+      // Extract variant ID (first 11 characters - UID only)
+      // 1D78C8E118EAA001 -> 1D78C8E118E
+      const variantId = asset.id.slice(0, 11);
+
       await navigator.clipboard.writeText(variantId);
-      
+
       console.log('Variant ID copied to clipboard:', variantId);
       alert(`✅ Variant ID copied: ${variantId}`);
       
@@ -3464,30 +3464,23 @@ const AssetLibrary = ({
                         Copy Folder Path
                       </button>
                       
-                      <button
-                        onClick={async () => {
-                          try {
-                            const response = await fetch(`${config.backendUrl}/api/v1/assets/${previewAsset.id}/open-folder`, {
-                              method: 'POST'
-                            });
-                            
-                            const result = await response.json();
-                            
-                            if (response.ok) {
-                              alert(`✅ ${result.message || 'Folder opened successfully!'}`);
-                            } else {
-                              alert(`❌ ${result.detail || 'Failed to open folder'}`);
-                            }
-                          } catch (error) {
-                            console.error('Error opening folder:', error);
-                            alert('❌ Failed to open folder. Please check console for details.');
-                          }
-                        }}
-                        className="w-full bg-gray-600 hover:bg-gray-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
-                      >
-                        <FolderOpen size={20} />
-                        Open in Explorer
-                      </button>
+                      {/* Side-by-side Copy Variant ID and Copy Version ID buttons */}
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => copyVariantId(previewAsset)}
+                          className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                        >
+                          <Copy size={20} />
+                          Copy Variant ID
+                        </button>
+                        <button
+                          onClick={() => copyVersionId(previewAsset)}
+                          className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium"
+                        >
+                          <Copy size={20} />
+                          Copy Version ID
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -3769,23 +3762,6 @@ const AssetLibrary = ({
                           Copy Folder Path
                         </button>
                         
-                        {/* Smaller ID Copy Buttons - Only for non-texture assets */}
-                        <div className="flex gap-2 pt-2">
-                          <button 
-                            onClick={() => copyVersionId(previewAsset)}
-                            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
-                          >
-                            <Copy size={14} />
-                            Copy Version ID
-                          </button>
-                          <button 
-                            onClick={() => copyVariantId(previewAsset)}
-                            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-2 text-sm"
-                          >
-                            <Copy size={14} />
-                            Copy Variant ID
-                          </button>
-                        </div>
                       </>
                     )}
                   </div>

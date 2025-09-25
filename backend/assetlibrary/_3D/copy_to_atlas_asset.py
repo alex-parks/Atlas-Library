@@ -928,10 +928,21 @@ try:
     print(f"   🎨 Render Engine: {inherited_render_engine}")
     print(f"   🔢 Version: {next_version}")
     
+    # Get thumbnail parameters for version up
+    thumbnail_action_idx = int(subnet.parm("thumbnail_action_version").eval()) if subnet.parm("thumbnail_action_version") else 0
+    thumbnail_actions = ["automatic", "choose", "disable"]
+    thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
+    # Use unexpandedString to preserve $F variables instead of evaluating them
+    thumbnail_file_path = subnet.parm("thumbnail_file_version").unexpandedString().strip() if subnet.parm("thumbnail_file_version") else ""
+
+    print(f"🎨 Thumbnail Action (Version Up): {thumbnail_action}")
+    if thumbnail_action == "choose" and thumbnail_file_path:
+        print(f"📁 Thumbnail File: {thumbnail_file_path}")
+
     # Create extended tags list for version
     extended_tags = ["version", f"version_{next_version:03d}", f"base_{base_uid}"]
     extended_tags.extend([inherited_asset_type.lower(), inherited_subcategory.lower().replace(' ', '_'), inherited_render_engine.lower()])
-    
+
     # Create metadata
     hierarchy_metadata = {
         "dimension": "3D",
@@ -1292,7 +1303,18 @@ try:
     
     except Exception as e:
         print(f"   ⚠️ Error getting parent asset data, using defaults: {e}")
-    
+
+    # Get thumbnail parameters for variant
+    thumbnail_action_idx = int(node.parm("thumbnail_action_variant").eval()) if node.parm("thumbnail_action_variant") else 0
+    thumbnail_actions = ["automatic", "choose", "disable"]
+    thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
+    # Use unexpandedString to preserve $F variables instead of evaluating them
+    thumbnail_file_path = node.parm("thumbnail_file_variant").unexpandedString().strip() if node.parm("thumbnail_file_variant") else ""
+
+    print(f"🎨 Thumbnail Action (Variant): {thumbnail_action}")
+    if thumbnail_action == "choose" and thumbnail_file_path:
+        print(f"📁 Thumbnail File: {thumbnail_file_path}")
+
     # Create exporter for variant with inherited properties
     exporter = TemplateAssetExporter(
         asset_name=variant_asset_name,
