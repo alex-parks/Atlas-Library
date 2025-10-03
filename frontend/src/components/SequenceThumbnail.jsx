@@ -234,10 +234,26 @@ const SequenceThumbnail = ({
     );
   }
 
-  // Render error state (fallback to icon)
+  // Render error state (fallback to icon or loading)
   if (error || !sequenceData) {
+    // Check if thumbnail is being generated
+    const isGenerating = asset?.thumbnail_status === 'generating' || asset?.metadata?.thumbnail_status === 'generating';
+
+    if (isGenerating) {
+      return (
+        <div
+          className="text-blue-400 text-3xl flex flex-col items-center justify-center w-full h-full cursor-pointer animate-pulse"
+          onClick={onClick}
+          title="Thumbnail generating..."
+        >
+          <div className="animate-spin text-2xl mb-1">⚙️</div>
+          <div className="text-xs text-blue-300">Generating...</div>
+        </div>
+      );
+    }
+
     return (
-      <div 
+      <div
         className="text-gray-500 text-3xl flex items-center justify-center w-full h-full cursor-pointer"
         onClick={onClick}
       >
