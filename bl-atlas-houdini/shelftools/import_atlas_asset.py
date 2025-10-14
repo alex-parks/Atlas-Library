@@ -92,125 +92,214 @@ try:
             severity=hou.severityType.Error,
             title="Library Not Found"
         )
-        raise Exception("Asset library not found")
+        sys.exit(0)  # Exit cleanly without triggering outer exception handler
 
     print(f"📚 Asset library: {library_path}")
 
-    # Find all asset directories
-    asset_dirs = []
+    # Get clipboard content
+    import subprocess
+    try:
+        clipboard_content = subprocess.check_output(['xclip', '-selection', 'clipboard', '-o'], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+    except:
+        try:
+            # Fallback for different clipboard tool
+            clipboard_content = subprocess.check_output(['xsel', '--clipboard'], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        except:
+            clipboard_content = ""
+
+    print(f"📋 Clipboard content: '{clipboard_content}'")
+
+    # Validate clipboard contains 16-character asset ID
+    if not clipboard_content or len(clipboard_content) != 16 or not clipboard_content.replace('_', '').isalnum():
+        error_msg = f"""❌ INVALID CLIPBOARD CONTENT
+
+Expected: 16-character Asset ID (e.g., 1A9B2148E49AA001)
+Current clipboard: {len(clipboard_content)} characters
+
+Clipboard content: "{clipboard_content}"
+
+Please copy an Asset ID from the Atlas Library frontend and try again."""
+
+        hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Invalid Clipboard")
+        print(f"❌ Expected 16-char ID, got {len(clipboard_content)} characters")
+        sys.exit(0)  # Exit cleanly without triggering outer exception handler
+
+    asset_id = clipboard_content
+    print(f"✅ Valid Asset ID: {asset_id}")
+
+    # Search for asset folder with this ID
+    print(f"🔍 Searching for asset with ID: {asset_id}")
+    found_asset_dir = None
+
     for category_dir in library_path.iterdir():
-        if category_dir.is_dir():
-            for subcategory_dir in category_dir.iterdir():
-                if subcategory_dir.is_dir():
-                    for asset_dir in subcategory_dir.iterdir():
-                        if asset_dir.is_dir():
-                            # Check if it has a template file
-                            template_file = asset_dir / "template.hipnc"
-                            if template_file.exists():
-                                asset_dirs.append({
-                                    'name': asset_dir.name,
-                                    'path': str(asset_dir),
-                                    'template': str(template_file),
-                                    'category': category_dir.name,
-                                    'subcategory': subcategory_dir.name
-                                })
+        if not category_dir.is_dir():
+            continue
+        for subcategory_dir in category_dir.iterdir():
+            if not subcategory_dir.is_dir():
+                continue
+            for asset_dir in subcategory_dir.iterdir():
+                if not asset_dir.is_dir():
+                    continue
+                # Check if folder name starts with the asset ID
+                if asset_dir.name.startswith(asset_id):
+                    found_asset_dir = asset_dir
+                    print(f"✅ Found asset folder: {asset_dir}")
+                    break
+            if found_asset_dir:
+                break
+        if found_asset_dir:
+            break
 
-    if not asset_dirs:
-        hou.ui.displayMessage(
-            "📚 No Atlas assets found in the library.\n\nThe library appears to be empty.",
-            severity=hou.severityType.Warning,
-            title="No Assets Found"
-        )
-        print("📚 No assets found in library")
-    else:
-        print(f"📚 Found {len(asset_dirs)} assets in library")
+    if not found_asset_dir:
+        error_msg = f"""❌ ASSET NOT FOUND
 
-        # Create a simple selection dialog
-        asset_names = []
-        for asset in asset_dirs:
-            display_name = f"{asset['name']} ({asset['category']}/{asset['subcategory']})"
-            asset_names.append(display_name)
+Asset ID: {asset_id}
 
-        # Show selection dialog
+No asset folder found in library with this ID.
+
+Please check:
+- Asset exists in the library
+- ID is correct (copied from frontend)
+- Asset was exported successfully"""
+
+        hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="Asset Not Found")
+        print(f"❌ No asset folder found for ID: {asset_id}")
+        sys.exit(0)  # Exit cleanly without triggering outer exception handler
+
+    # Find available template files
+    available_templates = []
+    template_files = [
+        ("template_redshift.hip", "obj", "Redshift (OBJ)"),
+        ("template_karma.hip", "stage", "Karma (STAGE)"),
+        ("template_universal.hip", "obj", "Universal (OBJ)"),
+        ("template.hipnc", "obj", "Standard (OBJ)"),
+        ("template.hip", "obj", "Standard (OBJ)")
+    ]
+
+    for template_name, context, display_name in template_files:
+        template_path = found_asset_dir / template_name
+        if template_path.exists():
+            available_templates.append({
+                'name': display_name,
+                'file': template_name,
+                'path': str(template_path),
+                'context': context
+            })
+
+    if not available_templates:
+        error_msg = f"""❌ NO TEMPLATE FILES FOUND
+
+Asset: {found_asset_dir.name}
+Location: {found_asset_dir}
+
+No template files found in this asset folder.
+
+Expected files:
+- template_redshift.hip
+- template_karma.hip
+- template_universal.hip
+- template.hipnc"""
+
+        hou.ui.displayMessage(error_msg, severity=hou.severityType.Error, title="No Templates")
+        print(f"❌ No template files found in: {found_asset_dir}")
+        sys.exit(0)  # Exit cleanly without triggering outer exception handler
+
+    print(f"✅ Found {len(available_templates)} template(s):")
+    for tmpl in available_templates:
+        print(f"   • {tmpl['name']} - {tmpl['file']}")
+
+    # If multiple templates, let user choose
+    if len(available_templates) > 1:
+        template_names = [t['name'] for t in available_templates]
         selection = hou.ui.selectFromList(
-            asset_names,
-            message="Select an Atlas asset to import:",
-            title="🏭 Atlas Asset Library",
-            column_header="Available Assets",
-            num_visible_rows=15,
+            template_names,
+            message=f"Asset: {found_asset_dir.name}\n\nMultiple templates found. Select one to import:",
+            title="🏭 Select Template",
+            column_header="Available Templates",
+            num_visible_rows=len(available_templates),
             clear_on_cancel=True
         )
 
-        if selection:
-            selected_index = selection[0]
-            selected_asset = asset_dirs[selected_index]
+        if not selection:
+            print("❌ User cancelled template selection")
+            sys.exit(0)  # User cancelled, exit cleanly
 
-            print(f"📦 Selected asset: {selected_asset['name']}")
-            print(f"📁 Template: {selected_asset['template']}")
+        selected_template = available_templates[selection[0]]
+    else:
+        # Only one template, use it
+        selected_template = available_templates[0]
 
-            # Import the asset
-            try:
-                # Get current context
-                current_context = hou.ui.paneTabOfType(hou.paneTabType.NetworkEditor)
-                if current_context:
-                    current_node = current_context.currentNode()
-                    if current_node:
-                        parent = current_node
-                    else:
-                        parent = current_context.root()
-                else:
-                    # Fallback to obj context
-                    parent = hou.node("/obj")
+    print(f"📦 Selected template: {selected_template['name']}")
+    print(f"📁 Template file: {selected_template['path']}")
 
-                print(f"📍 Importing into: {parent.path()}")
+    # Import the asset
+    try:
+        # Determine parent context based on template type
+        if selected_template['context'] == "stage":
+            parent = hou.node("/stage")
+            print(f"📍 Creating subnet in STAGE context: {parent.path()}")
+        else:
+            parent = hou.node("/obj")
+            print(f"📍 Creating subnet in OBJ context: {parent.path()}")
 
-                # Load the template
-                nodes = parent.loadChildrenFromFile(selected_asset['template'])
+        # Clean asset name (remove ID prefix if present)
+        asset_name = found_asset_dir.name
+        if '_' in asset_name:
+            parts = asset_name.split('_', 1)
+            # If first part looks like an ID (16 chars alphanumeric), use second part
+            if len(parts) > 1 and len(parts[0]) == 16 and parts[0].replace('_','').isalnum():
+                asset_name = parts[1]
 
-                if nodes:
-                    print(f"✅ Imported {len(nodes)} nodes:")
-                    for node in nodes:
-                        print(f"   • {node.name()} ({node.type().name()})")
+        # Create a new subnet container for the asset
+        subnet = parent.createNode("subnet", asset_name)
+        print(f"📦 Created subnet: {subnet.path()}")
 
-                    # Select the imported nodes
-                    for node in nodes:
-                        node.setSelected(True, clear_all_selected=(node == nodes[0]))
+        # Load the template contents INSIDE the subnet
+        subnet.loadChildrenFromFile(selected_template['path'])
 
-                    # Frame the imported nodes
-                    if current_context:
-                        current_context.frameSelection()
+        # Get the actual imported nodes from the subnet
+        nodes = subnet.children()
 
-                    success_msg = f"""✅ ATLAS ASSET IMPORTED SUCCESSFULLY!
+        if nodes:
+            print(f"✅ Imported {len(nodes)} nodes into subnet:")
+            for node in nodes:
+                print(f"   • {node.name()} ({node.type().name()})")
 
-📦 Asset: {selected_asset['name']}
-📂 Category: {selected_asset['category']}/{selected_asset['subcategory']}
-📍 Location: {parent.path()}
+            # Select the subnet (but don't change user's current context/view)
+            subnet.setSelected(True, clear_all_selected=True)
+
+            context_label = "STAGE" if selected_template['context'] == "stage" else "OBJ"
+            success_msg = f"""✅ ATLAS ASSET IMPORTED SUCCESSFULLY!
+
+📦 Asset: {found_asset_dir.name}
+🎨 Template: {selected_template['name']}
+📍 Context: {context_label}
+📂 Subnet: {subnet.path()}
 🎯 Nodes: {len(nodes)} imported
 
-The asset has been loaded into your scene!"""
+The asset has been loaded into a subnet!"""
 
-                    hou.ui.displayMessage(success_msg, title="🎉 Import Complete")
-                    print("🎉 IMPORT SUCCESS!")
-
-                else:
-                    hou.ui.displayMessage(
-                        "❌ No nodes were imported from the template file.",
-                        severity=hou.severityType.Error,
-                        title="Import Failed"
-                    )
-                    print("❌ No nodes imported")
-
-            except Exception as import_error:
-                error_msg = f"Import failed: {str(import_error)}"
-                print(f"❌ {error_msg}")
-                hou.ui.displayMessage(
-                    f"❌ {error_msg}\n\nCheck the Python Shell for details.",
-                    severity=hou.severityType.Error,
-                    title="Import Error"
-                )
+            hou.ui.displayMessage(success_msg, title="🎉 Import Complete")
+            print("🎉 IMPORT SUCCESS!")
 
         else:
-            print("📚 User cancelled asset selection")
+            # Leave empty subnet (deleting triggers pipeline callbacks)
+            hou.ui.displayMessage(
+                "❌ No nodes were imported from the template file.\n\nThe template may be empty or invalid.\n\nAn empty subnet was created - please delete it manually.",
+                severity=hou.severityType.Error,
+                title="Import Failed"
+            )
+            print("❌ No nodes imported - empty subnet left for manual cleanup")
+
+    except Exception as import_error:
+        error_msg = f"Import failed: {str(import_error)}"
+        print(f"❌ {error_msg}")
+        # Don't delete subnet - causes pipeline callback errors
+        hou.ui.displayMessage(
+            f"❌ {error_msg}\n\nCheck the Python Shell for details.\n\nNote: An empty subnet may have been created - delete it manually.",
+            severity=hou.severityType.Error,
+            title="Import Error"
+        )
 
 except Exception as e:
     error_msg = f"Atlas Import Error:\n{str(e)}"

@@ -59,7 +59,7 @@ except (ImportError, ValueError) as e:
             return "AtlasThumbnail::1.0"
         @property
         def api_base_url(self):
-            return "http://localhost:8000"
+            return "https://library.blacksmith.tv"
     atlas_config = FallbackConfig()
 
 class TemplateAssetExporter:
@@ -414,7 +414,7 @@ class TemplateAssetExporter:
             
             
             # Query the Atlas API to get all assets and find ones matching the 14-char pattern
-            api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+            api_url = f"{atlas_config.api_base_url}/api/v1/assets?limit=1000"
             print(f"   🌐 Making API request to: {api_url}")
             
             response = urllib.request.urlopen(api_url, timeout=30)
@@ -447,7 +447,7 @@ class TemplateAssetExporter:
             print(f"   🔍 Looking up original asset name for base UID: {base_uid}")
             
             # Query the Atlas API to get all assets and find the original (AA variant)
-            api_url = "http://localhost:8000/api/v1/assets?limit=1000"
+            api_url = f"{atlas_config.api_base_url}/api/v1/assets?limit=1000"
             print(f"   🌐 Making API request to: {api_url}")
             
             response = urllib.request.urlopen(api_url, timeout=30)
