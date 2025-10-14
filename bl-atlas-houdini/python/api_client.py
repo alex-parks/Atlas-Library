@@ -82,23 +82,18 @@ class AtlasAPIClient:
                     curl_cmd.extend(['-k'])  # --insecure flag
                 curl_cmd.extend(['--ssl-reqd'])
 
-            curl_cmd.append(f"{self.api_base_url}/api/health")
+            # Test with assets endpoint since /health is not routed through Traefik
+            curl_cmd.append(f"{self.api_base_url}/api/v1/assets?limit=1")
 
             result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=self.config.api_timeout)
 
             if result.returncode == 0:
-                health_data = json.loads(result.stdout)
-                print(f"✅ Connected to Atlas API v{health_data.get('version', 'unknown')}")
-
-                # Check if database is healthy
-                db_status = health_data.get('components', {}).get('database', {}).get('status')
-                if db_status != 'healthy':
-                    print(f"⚠️ Database status: {db_status}")
-                else:
-                    assets_count = health_data.get('components', {}).get('database', {}).get('assets_count', 0)
-                    print(f"📊 Database healthy with {assets_count} assets")
+                assets_data = json.loads(result.stdout)
+                total_assets = assets_data.get('total', 0)
+                print(f"✅ Connected to Atlas API")
+                print(f"📊 Database has {total_assets} assets")
             else:
-                raise Exception(f"API health check failed: {result.stderr}")
+                raise Exception(f"API connection test failed: {result.stderr}")
         except subprocess.TimeoutExpired:
             print(f"❌ Timeout connecting to Atlas API at {self.api_base_url}")
             raise
