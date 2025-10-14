@@ -72,7 +72,7 @@ services:
       dockerfile: Dockerfile
     container_name: blacksmith-atlas-frontend
     environment:
-      - VITE_API_URL=https://library.blacksmith.tv/api
+      - VITE_API_URL=https://library.blacksmith.tv
     volumes:
       - ./frontend:/app
       - /app/node_modules
