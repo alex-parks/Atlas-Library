@@ -65,3 +65,4 @@ backend/venv/*
 
 # Database and Cache Data (bind mounts)
 data/
+docker-compose.override.yml

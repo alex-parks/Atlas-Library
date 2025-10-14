@@ -19,7 +19,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 try:
-    from config_manager import config
+    from config_manager import get_local_config, get_network_config
 except ImportError:
     print("⚠️  Could not import config_manager, using fallback config")
     class FallbackConfig:
@@ -29,13 +29,42 @@ except ImportError:
         @property
         def database_url(self):
             return "http://localhost:8529"
-    config = FallbackConfig()
+        @property
+        def api_timeout(self):
+            return 30
+        @property
+        def retry_attempts(self):
+            return 3
+        @property
+        def use_ssl(self):
+            return False
+        @property
+        def verify_ssl(self):
+            return True
+
+    def get_local_config():
+        return FallbackConfig()
+
+    def get_network_config():
+        return FallbackConfig()
 
 class AtlasAPIClient:
     """Handles all Atlas API communication"""
 
-    def __init__(self, api_base_url: str = None):
-        self.api_base_url = (api_base_url or config.api_base_url).rstrip('/')
+    def __init__(self, api_base_url: str = None, use_network: bool = False):
+        self.use_network = use_network
+
+        # Load the appropriate config based on use_network flag
+        if use_network:
+            self.config = get_network_config()
+        else:
+            self.config = get_local_config()
+
+        self.api_base_url = (api_base_url or self.config.api_base_url).rstrip('/')
+
+        print(f"🌐 Atlas API Client - {'Network' if use_network else 'Local'} Mode")
+        print(f"📡 API URL: {self.api_base_url}")
+
         self._test_connection()
 
     def _test_connection(self):
@@ -43,10 +72,19 @@ class AtlasAPIClient:
         try:
             curl_cmd = [
                 'curl', '-s', '-f',  # silent, fail on HTTP errors
-                f"{self.api_base_url}/health"
+                '--connect-timeout', str(self.config.api_timeout),
+                '--max-time', str(self.config.api_timeout * 2)
             ]
 
-            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=10)
+            # Add SSL options for network mode
+            if self.use_network and self.config.use_ssl:
+                if not self.config.verify_ssl:
+                    curl_cmd.extend(['-k'])  # --insecure flag
+                curl_cmd.extend(['--ssl-reqd'])
+
+            curl_cmd.append(f"{self.api_base_url}/api/health")
+
+            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=self.config.api_timeout)
 
             if result.returncode == 0:
                 health_data = json.loads(result.stdout)
@@ -211,14 +249,22 @@ class AtlasAPIClient:
                 'curl', '-X', 'POST',
                 f"{self.api_base_url}/api/v1/assets",
                 '-H', 'Content-Type: application/json',
-                '-H', 'User-Agent: Atlas-Standalone-Client/3.0',
+                '-H', f'User-Agent: Atlas-Standalone-Client/3.0-{"Network" if self.use_network else "Local"}',
                 '-d', json_data,
                 '--silent',  # Suppress progress output
                 '--show-error',  # Show errors
-                '--fail'  # Fail silently on HTTP errors
+                '--fail',  # Fail silently on HTTP errors
+                '--connect-timeout', str(self.config.api_timeout),
+                '--max-time', str(self.config.api_timeout * 2)
             ]
 
-            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=30)
+            # Add SSL options for network mode
+            if self.use_network and self.config.use_ssl:
+                if not self.config.verify_ssl:
+                    curl_cmd.extend(['-k'])  # --insecure flag
+                curl_cmd.extend(['--ssl-reqd'])
+
+            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=self.config.api_timeout)
 
             if result.returncode == 0:
                 response_data = json.loads(result.stdout)
@@ -295,16 +341,17 @@ class AtlasAPIClient:
             return None
 
 
-def call_atlas_api_ingestion(metadata_file_path: str) -> bool:
+def call_atlas_api_ingestion(metadata_file_path: str, use_network: bool = False) -> bool:
     """
     Main function to ingest metadata via Atlas API
     Standalone version embedded directly in this module
     """
     try:
-        print(f"📡 Starting API ingestion for: {metadata_file_path}")
+        mode = "Network" if use_network else "Local"
+        print(f"📡 Starting {mode} API ingestion for: {metadata_file_path}")
 
         # Create API client and ingest
-        client = AtlasAPIClient()
+        client = AtlasAPIClient(use_network=use_network)
         result = client.ingest_metadata_file(metadata_file_path)
 
         if result:

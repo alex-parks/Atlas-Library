@@ -18,9 +18,10 @@ from typing import Dict, Any, Optional
 class AtlasConfig:
     """Standalone configuration manager for Blacksmith Atlas"""
 
-    def __init__(self):
+    def __init__(self, use_network=False):
         self._config_data = None
         self._config_file_path = None
+        self._use_network = use_network
         self._load_config()
 
     def _find_config_file(self) -> Optional[Path]:
@@ -31,17 +32,23 @@ class AtlasConfig:
         # Go up to bl-atlas-houdini directory (current_file -> python -> bl-atlas-houdini)
         bl_atlas_root = current_file.parent.parent
 
+        # Choose config file based on network preference
+        if self._use_network:
+            config_filename = "atlas_network_config.json"
+            print("🌐 Using network configuration")
+        else:
+            config_filename = "atlas_local_config.json"
+            print("🏠 Using local configuration")
+
         # Look for config file
-        config_file = bl_atlas_root / "config" / "atlas_config.json"
+        config_file = bl_atlas_root / "config" / config_filename
 
         if config_file.exists():
             return config_file
 
-        # Fallback: look in current directory
-        fallback_config = Path.cwd() / "atlas_config.json"
-        if fallback_config.exists():
-            return fallback_config
-
+        # NO FALLBACK - fail if the requested config is not found
+        # This prevents accidentally writing to the wrong database
+        print(f"❌ Required config file not found: {config_file}")
         return None
 
     def _load_config(self):
@@ -67,15 +74,32 @@ class AtlasConfig:
 
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration values"""
-        return {
-            "api_base_url": "http://library.blacksmith.tv:8000",
-            "database_url": "http://library.blacksmith.tv:8529",
-            "asset_library_3d": "/net/library/atlaslib/3D",
-            "houdini_hda_path": "../otls/render_farm.hda",
-            "houdini_hda_type": "blacksmith::render_farm::1.0",
-            "version": "3.0",
-            "description": "Blacksmith Atlas Standalone Configuration (Default)"
-        }
+        if self._use_network:
+            return {
+                "api_base_url": "https://library.blacksmith.tv/api",
+                "database_url": "http://library.blacksmith.tv:8529",
+                "asset_library_3d": "/net/library/atlaslib/3D",
+                "houdini_hda_path": "../otls/object_AtlasThumbnail.1.0.hda",
+                "houdini_hda_type": "AtlasThumbnail::1.0",
+                "version": "3.0",
+                "description": "Blacksmith Atlas Network Configuration (Default)",
+                "environment": "network",
+                "api_timeout": 30,
+                "retry_attempts": 3,
+                "use_ssl": True,
+                "verify_ssl": True
+            }
+        else:
+            return {
+                "api_base_url": "http://localhost:8000",
+                "database_url": "http://localhost:8529",
+                "asset_library_3d": "/net/library/atlaslib/3D",
+                "houdini_hda_path": "../otls/object_AtlasThumbnail.1.0.hda",
+                "houdini_hda_type": "AtlasThumbnail::1.0",
+                "version": "3.0",
+                "description": "Blacksmith Atlas Local Configuration (Default)",
+                "environment": "local"
+            }
 
     @property
     def api_base_url(self) -> str:
@@ -107,7 +131,32 @@ class AtlasConfig:
     @property
     def houdini_hda_type(self) -> str:
         """Get the Houdini HDA type name"""
-        return self._config_data.get("houdini_hda_type", "blacksmith::render_farm::1.0")
+        return self._config_data.get("houdini_hda_type", "AtlasThumbnail::1.0")
+
+    @property
+    def environment(self) -> str:
+        """Get the current environment (local/network)"""
+        return self._config_data.get("environment", "local")
+
+    @property
+    def api_timeout(self) -> int:
+        """Get the API timeout in seconds"""
+        return self._config_data.get("api_timeout", 30)
+
+    @property
+    def retry_attempts(self) -> int:
+        """Get the number of retry attempts for API calls"""
+        return self._config_data.get("retry_attempts", 3)
+
+    @property
+    def use_ssl(self) -> bool:
+        """Check if SSL should be used"""
+        return self._config_data.get("use_ssl", False)
+
+    @property
+    def verify_ssl(self) -> bool:
+        """Check if SSL certificates should be verified"""
+        return self._config_data.get("verify_ssl", True)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get any configuration value by key"""
@@ -117,5 +166,19 @@ class AtlasConfig:
         """Get a string representation of the current configuration"""
         return json.dumps(self._config_data, indent=2)
 
-# Global config instance
-config = AtlasConfig()
+    def is_network_mode(self) -> bool:
+        """Check if running in network mode"""
+        return self._use_network
+
+# Factory functions for different configurations
+def get_local_config():
+    """Get local configuration instance"""
+    return AtlasConfig(use_network=False)
+
+def get_network_config():
+    """Get network configuration instance"""
+    return AtlasConfig(use_network=True)
+
+# DO NOT auto-load configs on import - let callers specify what they need
+config = None
+network_config = None

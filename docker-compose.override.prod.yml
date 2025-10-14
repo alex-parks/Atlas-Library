@@ -1,0 +1,103 @@
+version: '3.8'
+
+# Production Override for Podman Server (library.blacksmith.tv)
+# Copy this file to docker-compose.override.yml on production:
+#   cp docker-compose.override.prod.yml docker-compose.override.yml
+
+services:
+  # ArangoDB Database (Community Edition - Free)
+  arangodb:
+    image: arangodb:latest
+    container_name: blacksmith-atlas-db
+    environment:
+      - ARANGO_ROOT_PASSWORD=atlas_password
+      - ARANGO_DB_NAME=blacksmith_atlas
+    ports:
+      - "8529:8529"
+    volumes:
+      - /mnt/podman/storage/arangodb/arango_data:/var/lib/arangodb3
+      - /mnt/podman/storage/arangodb/arango_apps:/var/lib/arangodb3-apps
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blacksmith-atlas-backend
+    environment:
+      - ATLAS_ENV=${ATLAS_ENV:-development}
+      - ARANGO_HOST=arangodb
+      - ARANGO_PORT=${ARANGO_PORT:-8529}
+      - ARANGO_USER=${ARANGO_USER:-root}
+      - ARANGO_PASSWORD=${ARANGO_PASSWORD:-atlas_password}
+      - ARANGO_DATABASE=${ARANGO_DATABASE:-blacksmith_atlas}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-default-secret-key}
+      - REDIS_HOST=${REDIS_HOST:-localhost}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - OPENCV_IO_ENABLE_OPENEXR=1
+    volumes:
+      - ${ASSET_LIBRARY_PATH:-/net/library/atlaslib}:/app/assets
+      - ${LOG_PATH:-./logs}:/app/logs
+      - ./backups:/app/backups  # Database backups
+      - /net/general:/net/general:ro  # Mount general network drive READ-ONLY for asset uploads
+      - /net/library/library:/net/library/library:ro  # Mount library drive READ-ONLY - NEVER DELETE/MOVE
+      # Development: Mount source code for hot reloading
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
+      - ./config:/app/config
+    depends_on:
+      - arangodb
+    networks:
+      - proxy
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.atlas-library-api.rule=Host(`library.blacksmith.tv`) && PathPrefix(`/api`)"
+      # REMOVED: Strip prefix middleware - backend routes already include /api
+      - "traefik.http.services.atlas-library-api.loadbalancer.server.port=8000"
+      - "traefik.http.routers.atlas-library-api.entrypoints=websecure"
+      - "traefik.http.routers.atlas-library-api.tls=true"
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: blacksmith-atlas-frontend
+    environment:
+      - VITE_API_URL=https://library.blacksmith.tv/api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - proxy
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.atlas-library_fqdnredirect.rule=Host(`library`)"
+      - "traefik.http.routers.atlas-library_fqdnredirect.entrypoints=web,websecure"
+      - "traefik.http.routers.atlas-library_fqdnredirect.middlewares=atlas-library_fqdnredirect"
+      - "traefik.http.middlewares.atlas-library_fqdnredirect.redirectregex.regex=^https?://library/(.*)"
+      - "traefik.http.middlewares.atlas-library_fqdnredirect.redirectregex.replacement=https://library.blacksmith.tv/${1}"
+      - "traefik.http.middlewares.atlas-library_fqdnredirect.redirectregex.permanent=true"
+      - "traefik.http.routers.atlas-library.rule=Host(`library.blacksmith.tv`)"
+      - "traefik.http.services.atlas-library.loadbalancer.server.port=3011"
+      - "traefik.http.routers.atlas-library.entrypoints=websecure"
+      - "traefik.http.routers.atlas-library.tls=true"
+      - "traefik.http.routers.atlas-library-http.rule=Host(`library.blacksmith.tv`)"
+      - "traefik.http.routers.atlas-library-http.entrypoints=web"
+      - "traefik.http.routers.atlas-library-http.middlewares=httpredirect"
+      - "traefik.http.routers.atlas-library.tls.certresolver=letsencrypt"
+
+networks:
+  proxy:
+    external: true
