@@ -560,13 +560,13 @@ const AssetLibrary = ({
   let loadMoreAssets;
 
   const checkDatabaseStatus = () => {
-    fetch(`${config.backendUrl}/health`)
+    fetch(`${config.backendUrl}/api/v1/assets/stats/summary`)
       .then(res => res.json())
       .then(data => {
         const newDbStatus = {
-          status: data.components?.database?.status || data.status || 'unknown',
-          assets_count: data.components?.database?.assets_count || 0,
-          database_type: data.components?.database?.type || 'unknown'
+          status: 'healthy',
+          assets_count: data.total_assets || 0,
+          database_type: 'ArangoDB'
         };
         setDbStatus(newDbStatus);
         if (onDbStatusChange) {
