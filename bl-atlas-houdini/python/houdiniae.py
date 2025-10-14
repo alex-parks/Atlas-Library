@@ -35,10 +35,17 @@ except ImportError:
 
 # Import Atlas configuration
 try:
-    from config_manager import config as atlas_config
-    print("✅ Atlas configuration loaded successfully")
-except ImportError as e:
-    print(f"⚠️  Could not import Atlas config: {e}")
+    from config_manager import get_network_config
+    atlas_config = get_network_config()
+    if atlas_config and atlas_config.asset_library_3d:
+        print(f"✅ Atlas network configuration loaded successfully")
+        print(f"📁 Library path: {atlas_config.asset_library_3d}")
+    else:
+        raise ValueError("Config loaded but missing required fields")
+except (ImportError, ValueError) as e:
+    print(f"⚠️  Could not load network Atlas config: {e}")
+    print("⚠️  Using fallback configuration")
+    atlas_config = None
     # Create a minimal fallback config
     class FallbackConfig:
         @property
