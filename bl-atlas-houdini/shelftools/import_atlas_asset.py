@@ -71,8 +71,9 @@ try:
 
     # Import configuration
     try:
-        from config_manager import config
-        print("✅ Loaded Atlas configuration")
+        from config_manager import get_network_config
+        config = get_network_config()
+        print("✅ Loaded Atlas network configuration")
     except ImportError as e:
         print(f"⚠️ Could not load config: {e}")
         # Use fallback
