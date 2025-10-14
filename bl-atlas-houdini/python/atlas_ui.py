@@ -593,8 +593,8 @@ try:
                 if os.path.exists(metadata_file):
                     print("✅ Metadata file found! Calling API...")
 
-                    # Use the standalone API client
-                    api_success = api_client.call_atlas_api_ingestion(metadata_file)
+                    # Use the standalone API client with network mode
+                    api_success = api_client.call_atlas_api_ingestion(metadata_file, use_network=True)
 
                     if api_success:
                         print("✅ Successfully added to Atlas Library via REST API!")

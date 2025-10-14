@@ -1,0 +1,14 @@
+{
+  "api_base_url": "https://library.blacksmith.tv",
+  "database_url": "http://library.blacksmith.tv:8529",
+  "asset_library_3d": "/net/library/atlaslib/3D",
+  "houdini_hda_path": "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/bl-atlas-houdini/otls/object_AtlasThumbnail.1.0.hda",
+  "houdini_hda_type": "AtlasThumbnail::1.0",
+  "version": "3.0",
+  "description": "Blacksmith Atlas Network Configuration - Production API",
+  "environment": "network",
+  "api_timeout": 30,
+  "retry_attempts": 3,
+  "use_ssl": true,
+  "verify_ssl": true
+}
