@@ -1,29 +1,128 @@
 #!/usr/bin/env python3
 """
-Blacksmith Atlas - UI and Parameter Creation (Standalone)
-========================================================
+Blacksmith Atlas - Material UI and Parameter Creation (Standalone)
+================================================================
 
-Contains all the UI parameter creation and main asset creation functionality.
-Extracted from the original copy_to_atlas_asset.py for standalone use.
+Contains all the UI parameter creation and main material creation functionality.
+Separate from atlas_ui.py to allow independent material export workflow.
 
 Author: Blacksmith VFX
-Version: 3.0 (Standalone)
+Version: 3.0 (Standalone - Materials)
 """
 
 import os
 import sys
 import subprocess
 import json
+import uuid
+import re
 from pathlib import Path
+from datetime import datetime
 
-def copy_selected_to_atlas_asset():
+
+class TemplateMaterialExporter:
     """
-    Main function to copy selected nodes to a subnet and add Atlas export parameters
+    Export materials using Houdini's template system
+    Material ID Structure: 11-character UID + 3-digit version = 14 characters total
+    Example: 17EC72A67F4001 (no variants, only versioning)
+    """
+
+    def _sanitize_name_for_filesystem(self, name):
+        """Sanitize material name for filesystem"""
+        sanitized = re.sub(r'[^\w]', '_', name)
+        sanitized = re.sub(r'_+', '_', sanitized)
+        sanitized = sanitized.strip('_')
+        return sanitized
+
+    def __init__(self, material_name, subcategory="Blacksmith Materials", tags=None, asset_type="Materials",
+                 render_engine="Redshift", metadata=None, action="create_new", parent_material_id=None,
+                 thumbnail_action="automatic", thumbnail_file_path="", bl_atlas_root=None):
+        """
+        Initialize Material Exporter
+
+        Args:
+            material_name: Name of the material
+            action: Either "create_new" or "update_material"
+            parent_material_id: For update_material action, the 11-character base UID
+        """
+        self.material_name = material_name
+        self.subcategory = subcategory
+        self.tags = tags or []
+        self.asset_type = asset_type
+        self.render_engine = render_engine
+        self.metadata = metadata or {}
+        self.action = action
+        self.parent_material_id = parent_material_id
+        self.thumbnail_action = thumbnail_action
+        self.thumbnail_file_path = thumbnail_file_path
+        self.bl_atlas_root = bl_atlas_root
+
+        # Generate Material ID based on action
+        if action == "create_new":
+            # Generate new 11-character base UID + 3-digit version = 14 characters total
+            self.base_uid = str(uuid.uuid4()).replace('-', '')[:11].upper()
+            self.version = 1
+            print(f"🆕 Creating NEW material: {self.base_uid} version {self.version:03d}")
+
+        elif action == "update_material":
+            # For update: expects 11-character base UID
+            if not parent_material_id or len(parent_material_id) != 11:
+                raise ValueError(f"Parent material ID required for update and must be exactly 11 characters (base UID)")
+            self.base_uid = parent_material_id.upper()
+            # Get next version number by checking existing exports
+            self.version = self._get_next_version(self.base_uid)
+            print(f"🔄 Updating material: {self.base_uid} to version {self.version:03d}")
+
+        else:
+            raise ValueError(f"Invalid action: {action}. Must be 'create_new' or 'update_material'")
+
+        # Create full 14-character material ID (11 base + 3 version)
+        self.material_id = f"{self.base_uid}{self.version:03d}"
+
+        print(f"✅ Material ID: {self.material_id} ({len(self.material_id)} characters)")
+
+    def _get_next_version(self, base_uid):
+        """Get the next version number for a material base UID"""
+        try:
+            from config_manager import get_network_config
+            config = get_network_config()
+            library_path = Path(config.asset_library_3d)
+
+            # Search for existing versions of this material
+            material_folder_pattern = f"{base_uid}*"
+            max_version = 0
+
+            # Search in Materials category
+            materials_path = library_path / "Materials" / self.subcategory
+            if materials_path.exists():
+                for folder in materials_path.glob(material_folder_pattern):
+                    # Extract version from folder name (last 3 characters of 14-char ID)
+                    folder_name = folder.name
+                    if len(folder_name) >= 14 and folder_name[:11] == base_uid:
+                        try:
+                            version_str = folder_name[11:14]  # Characters 11-14 are the version
+                            version = int(version_str)
+                            max_version = max(max_version, version)
+                        except (ValueError, IndexError):
+                            continue
+
+            next_version = max_version + 1
+            print(f"📊 Found {max_version} existing version(s), next version: {next_version:03d}")
+            return next_version
+
+        except Exception as e:
+            print(f"⚠️  Could not determine version, defaulting to 001: {e}")
+            return 1
+
+
+def copy_selected_to_atlas_material():
+    """
+    Main function to copy selected material to a subnet and add Atlas export parameters
     """
     try:
         import hou
 
-        print("\n🏭 BLACKSMITH ATLAS: Copy Selected to Atlas Asset (Standalone)")
+        print("\n🎨 BLACKSMITH ATLAS: Copy Selected to Atlas Material (Standalone)")
         print("=" * 60)
 
         # Get selected nodes
@@ -31,7 +130,7 @@ def copy_selected_to_atlas_asset():
 
         # Validation
         if not selected_nodes:
-            error_msg = "❌ No nodes selected.\n\nPlease select nodes to copy to Atlas Asset."
+            error_msg = "❌ No material selected.\n\nPlease select a material node to create an Atlas Material."
             hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
             return False
 
@@ -48,14 +147,14 @@ def copy_selected_to_atlas_asset():
             hou.ui.displayMessage(error_msg, severity=hou.severityType.Error)
             return False
 
-        print(f"📦 Creating subnet from {len(selected_nodes)} nodes in {parent.path()}")
+        print(f"🎨 Creating subnet from {len(selected_nodes)} material(s) in {parent.path()}")
 
-        # Get asset name from user
-        result = hou.ui.readInput("Enter name for the Atlas Asset:",
+        # Get material name from user
+        result = hou.ui.readInput("Enter name for the Atlas Material:",
                                  buttons=("OK", "Cancel"),
                                  severity=hou.severityType.Message,
-                                 title="Atlas Asset Name",
-                                 initial_contents="MyAtlasAsset")
+                                 title="Atlas Material Name",
+                                 initial_contents="MyAtlasMaterial")
 
         print(f"🔍 Dialog result: {result}")
 
@@ -71,15 +170,15 @@ def copy_selected_to_atlas_asset():
             return False
 
         # Get the user's input
-        user_asset_name = text_input.strip() if text_input and text_input.strip() else "atlas_asset"
+        user_material_name = text_input.strip() if text_input and text_input.strip() else "atlas_material"
 
         # Create separate names: one for node (sanitized) and one for parameters (original)
-        subnet_node_name = user_asset_name.replace(" ", "_")  # Replace spaces with underscores for node name
-        asset_parameter_name = user_asset_name  # Keep original for parameters
+        subnet_node_name = user_material_name.replace(" ", "_")  # Replace spaces with underscores for node name
+        material_parameter_name = user_material_name  # Keep original for parameters
 
-        print(f"📝 User entered: '{user_asset_name}'")
+        print(f"📝 User entered: '{user_material_name}'")
         print(f"📝 Node name: '{subnet_node_name}'")
-        print(f"📝 Parameter name: '{asset_parameter_name}'")
+        print(f"📝 Parameter name: '{material_parameter_name}'")
 
         # Collect nodes and bounds
         node_bounds = []
@@ -148,7 +247,7 @@ def copy_selected_to_atlas_asset():
             subnet.destroy()
             return False
 
-        print(f"✅ Successfully copied {len(copied_nodes)} nodes to subnet")
+        print(f"✅ Successfully copied {len(copied_nodes)} material node(s) to subnet")
 
         # Reposition copied nodes to be centered below subnet inputs
         # Get subnet input nodes positions (Input 1, 2, 3, 4)
@@ -189,33 +288,33 @@ def copy_selected_to_atlas_asset():
             print(f"✅ Repositioned nodes: offset=({offset_x:.2f}, {offset_y:.2f})")
 
         # Add comprehensive export parameters
-        success = add_atlas_export_parameters(subnet, asset_parameter_name)
+        success = add_atlas_material_export_parameters(subnet, material_parameter_name)
         if not success:
             print("❌ Failed to add export parameters")
             return False
 
-        print("✅ Atlas Asset subnet created successfully!")
+        print("✅ Atlas Material subnet created successfully!")
 
         # Select the new subnet and display inside
         subnet.setSelected(True, clear_all_selected=True)
 
         # Success message
-        success_msg = f"""✅ ATLAS ASSET SUBNET CREATED!
+        success_msg = f"""✅ ATLAS MATERIAL SUBNET CREATED!
 
-📦 Subnet: {subnet.name()}
+🎨 Subnet: {subnet.name()}
 📁 Location: {subnet.path()}
-🎯 Nodes copied: {len(copied_nodes)}
+🎯 Material nodes copied: {len(copied_nodes)}
 
 The subnet now contains:
-• All your selected nodes
-• Export parameters for Asset Library
+• Your selected material
+• Export parameters for Material Library
 • Export button for one-click publishing
 
 Next steps:
-1. Configure asset details in parameters
-2. Click 'Export Atlas Asset' button"""
+1. Configure material details in parameters
+2. Click 'Export Atlas Material' button"""
 
-        hou.ui.displayMessage(success_msg, title="🎉 Atlas Asset Ready")
+        hou.ui.displayMessage(success_msg, title="🎉 Atlas Material Ready")
         return True
 
     except Exception as e:
@@ -225,11 +324,11 @@ Next steps:
         return False
 
 
-def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
-    """Add comprehensive export parameters to the subnet - STANDALONE VERSION"""
+def add_atlas_material_export_parameters(subnet, default_name="MyAtlasMaterial"):
+    """Add comprehensive export parameters to the material subnet - STANDALONE VERSION (MATERIALS)"""
     try:
         import hou
-        print("   🔧 Adding Atlas export parameters (Standalone)...")
+        print("   🔧 Adding Atlas material export parameters (Standalone)...")
 
         # Get existing parameter template group
         parm_group = subnet.parmTemplateGroup()
@@ -237,84 +336,44 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         # Add just the most basic parameters first to test
         print(f"   📋 Current parameter count: {len(parm_group.parmTemplates())}")
 
-        # Create a TAB folder for Atlas Export parameters
-        atlas_tab = hou.FolderParmTemplate("atlas_export_tab", "Atlas Export", folder_type=hou.folderType.Tabs)
+        # Create a TAB folder for Atlas Material Export parameters
+        atlas_tab = hou.FolderParmTemplate("atlas_material_export_tab", "Atlas Material Export", folder_type=hou.folderType.Tabs)
 
         # Action dropdown (first parameter in tab)
         action_parm = hou.MenuParmTemplate("action", "Action",
-                                          menu_items=("0", "1", "2"),
-                                          menu_labels=("Create New Asset", "Version Up Asset", "Variant Asset"),
+                                          menu_items=("0", "1"),
+                                          menu_labels=("Create New Material", "Update Material"),
                                           default_value=0)
-        action_parm.setHelp("Choose the type of asset creation: New Asset, Version of existing asset, or Variant")
+        action_parm.setHelp("Choose the type of material creation: New Material or Update existing material")
         atlas_tab.addParmTemplate(action_parm)
         print(f"   ➕ Added action dropdown to tab")
 
         # === CREATE NEW ASSET PARAMETERS (visible when action == 0) ===
 
-        # Asset Name (Create New only)
-        asset_name = hou.StringParmTemplate("asset_name", "Asset Name", 1)
-        asset_name.setDefaultValue([default_name])
-        asset_name.setHelp("Enter a unique name for this asset")
-        asset_name.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
-        atlas_tab.addParmTemplate(asset_name)
-        print(f"   ➕ Added asset name (Create New only)")
+        # Material Name (Create New only)
+        material_name = hou.StringParmTemplate("asset_name", "Material Name", 1)
+        material_name.setDefaultValue([default_name])
+        material_name.setHelp("Enter a unique name for this material")
+        material_name.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
+        atlas_tab.addParmTemplate(material_name)
+        print(f"   ➕ Added material name (Create New only)")
 
-        # Asset Type dropdown (Create New only)
-        asset_type = hou.MenuParmTemplate("asset_type", "Asset Type",
-                                         menu_items=("0", "1", "2", "3"),
-                                         menu_labels=("Assets", "FX", "Materials", "HDAs"),
-                                         default_value=0)
-        asset_type.setHelp("Select the primary category for this asset")
-        asset_type.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
-        atlas_tab.addParmTemplate(asset_type)
-        print(f"   ➕ Added asset type (Create New only)")
-
-        # Subcategory dropdowns - one for each asset type (conditional visibility)
-
-        # Assets subcategory (visible when asset_type == 0)
-        subcategory_assets = hou.MenuParmTemplate("subcategory_assets", "Subcategory",
-                                                menu_items=("0", "1", "2"),
-                                                menu_labels=("Blacksmith Asset", "Megascans", "Kitbash"),
-                                                default_value=0)
-        subcategory_assets.setHelp("Select the subcategory for Assets")
-        subcategory_assets.setConditional(hou.parmCondType.HideWhen, "{ action != 0 } { asset_type != 0 }")
-        atlas_tab.addParmTemplate(subcategory_assets)
-
-        # FX subcategory (visible when asset_type == 1)
-        subcategory_fx = hou.MenuParmTemplate("subcategory_fx", "Subcategory",
-                                            menu_items=("0", "1", "2", "3"),
-                                            menu_labels=("Blacksmith FX", "Atmosphere", "FLIP", "Pyro"),
-                                            default_value=0)
-        subcategory_fx.setHelp("Select the subcategory for FX")
-        subcategory_fx.setConditional(hou.parmCondType.HideWhen, "{ action != 0 } { asset_type != 1 }")
-        atlas_tab.addParmTemplate(subcategory_fx)
-
-        # Materials subcategory (visible when asset_type == 2)
+        # Subcategory dropdown for Materials
         subcategory_materials = hou.MenuParmTemplate("subcategory_materials", "Subcategory",
-                                                    menu_items=("0", "1", "2"),
-                                                    menu_labels=("Blacksmith Materials", "Redshift", "Karma"),
+                                                    menu_items=("0", "1"),
+                                                    menu_labels=("Blacksmith Materials", "Environment"),
                                                     default_value=0)
-        subcategory_materials.setHelp("Select the subcategory for Materials")
-        subcategory_materials.setConditional(hou.parmCondType.HideWhen, "{ action != 0 } { asset_type != 2 }")
+        subcategory_materials.setHelp("Select the subcategory for this material")
+        subcategory_materials.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
         atlas_tab.addParmTemplate(subcategory_materials)
-
-        # HDAs subcategory (visible when asset_type == 3)
-        subcategory_hdas = hou.MenuParmTemplate("subcategory_hdas", "Subcategory",
-                                              menu_items=("0",),
-                                              menu_labels=("Blacksmith HDAs",),
-                                              default_value=0)
-        subcategory_hdas.setHelp("Select the subcategory for HDAs")
-        subcategory_hdas.setConditional(hou.parmCondType.HideWhen, "{ action != 0 } { asset_type != 3 }")
-        atlas_tab.addParmTemplate(subcategory_hdas)
-
-        print(f"   ➕ Added conditional subcategory dropdowns (Create New only)")
+        print(f"   ➕ Added material subcategory (Create New only)")
 
         # Render Engine (Create New only)
         render_engine = hou.MenuParmTemplate("render_engine", "Render Engine",
-                                            menu_items=("0", "1", "2"),
-                                            menu_labels=("Redshift", "Karma", "Universal"),
+                                            menu_items=("0", "1"),
+                                            menu_labels=("RS Material", "Material X"),
                                             default_value=0)
-        render_engine.setHelp("Primary render engine for this asset")
+        render_engine.setHelp("Material type/system used")
         render_engine.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
         atlas_tab.addParmTemplate(render_engine)
         print(f"   ➕ Added render engine (Create New only)")
@@ -343,6 +402,15 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
                                       "• Disable: Create text-based thumbnail with asset name")
         thumbnail_folder.addParmTemplate(thumbnail_action_parm)
 
+        # Preview Mesh dropdown (only shown when thumbnail_action is "automatic")
+        preview_mesh_parm = hou.MenuParmTemplate("preview_mesh", "Preview Mesh",
+                                                 menu_items=("0", "1", "2", "3"),
+                                                 menu_labels=("Shader Ball", "Advanced Shader Ball", "Cloth Ball", "Dragon Statue"))
+        preview_mesh_parm.setDefaultValue(0)  # Default to Shader Ball
+        preview_mesh_parm.setHelp("Select the preview mesh to use for automatic thumbnail rendering")
+        preview_mesh_parm.setConditional(hou.parmCondType.HideWhen, "{ thumbnail_action != automatic }")
+        thumbnail_folder.addParmTemplate(preview_mesh_parm)
+
         # File picker for Choose Thumbnail (only shown when thumbnail_action is "choose")
         thumbnail_file_parm = hou.StringParmTemplate("thumbnail_file", "Thumbnail File", 1,
                                                      string_type=hou.stringParmType.FileReference)
@@ -355,31 +423,14 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         atlas_tab.addParmTemplate(thumbnail_folder)
         print(f"   ➕ Added Thumbnail section (Create New only)")
 
-        # Advanced section (Create New only) - Collapsible folder
-        advanced_folder = hou.FolderParmTemplate("advanced", "Advanced", folder_type=hou.folderType.Collapsible)
-        advanced_folder.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
-
-        # Branded checkbox inside Advanced folder
-        branded_checkbox = hou.ToggleParmTemplate("branded", "Branded", default_value=False)
-        branded_checkbox.setHelp("Check if this asset is branded by a specific brand/company")
-        advanced_folder.addParmTemplate(branded_checkbox)
-
-        # Export With No References checkbox inside Advanced folder
-        no_references_checkbox = hou.ToggleParmTemplate("export_no_references", "Export With No References", default_value=False)
-        no_references_checkbox.setHelp("Export only the template file without copying any geometry or texture references.\nIdeal for FX setups with large simulation files that don't need to be stored in the library.")
-        advanced_folder.addParmTemplate(no_references_checkbox)
-
-        atlas_tab.addParmTemplate(advanced_folder)
-        print(f"   ➕ Added Advanced section with Branded checkbox (Create New only)")
-
         # Separator before Create New export section
         separator_create = hou.SeparatorParmTemplate("create_sep")
         separator_create.setConditional(hou.parmCondType.HideWhen, "{ action != 0 }")
         atlas_tab.addParmTemplate(separator_create)
 
         # Export button (Create New only)
-        export_button = hou.ButtonParmTemplate("export_atlas_asset", "Export Atlas Asset")
-        export_button.setHelp("Export this asset to the Atlas Library with auto-database insertion")
+        export_button = hou.ButtonParmTemplate("export_atlas_material", "Export Atlas Material")
+        export_button.setHelp("Export this material to the Atlas Library with auto-database insertion")
         export_script = create_export_script()
         export_button.setScriptCallback(export_script)
         export_button.setScriptCallbackLanguage(hou.scriptLanguage.Python)
@@ -399,10 +450,10 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         first_parm = parm_group.parmTemplates()[0] if parm_group.parmTemplates() else None
         if first_parm:
             parm_group.insertBefore(first_parm, atlas_tab)
-            print(f"   📁 Added Atlas Export tab at front (before {first_parm.label()})")
+            print(f"   📁 Added Atlas Material Export tab at front (before {first_parm.label()})")
         else:
             parm_group.append(atlas_tab)
-            print(f"   📁 Added Atlas Export tab")
+            print(f"   📁 Added Atlas Material Export tab")
 
         print(f"   📋 New parameter count: {len(parm_group.parmTemplates())}")
 
@@ -424,8 +475,8 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
         # Check for required parameters
         required_params = [
             "action",
-            "asset_name", "asset_type", "subcategory_assets", "render_engine", "tags",
-            "thumbnail_action", "thumbnail_file", "branded", "export_no_references", "export_atlas_asset"
+            "asset_name", "subcategory_materials", "render_engine", "tags",
+            "thumbnail_action", "thumbnail_file", "export_atlas_material"
         ]
         for param in required_params:
             if param in parm_names:
@@ -443,9 +494,9 @@ def add_atlas_export_parameters(subnet, default_name="MyAtlasAsset"):
 
 
 def create_export_script():
-    """Create the export callback script - STANDALONE VERSION"""
+    """Create the export callback script - STANDALONE VERSION (MATERIALS)"""
     return '''
-# 🏭 BLACKSMITH ATLAS EXPORT SCRIPT (STANDALONE)
+# 🎨 BLACKSMITH ATLAS MATERIAL EXPORT SCRIPT (STANDALONE)
 import sys
 import os
 import subprocess
@@ -467,7 +518,7 @@ try:
 
     bl_atlas_root = None
     for test_dir in script_dirs:
-        if os.path.exists(os.path.join(test_dir, "python", "houdiniae.py")):
+        if os.path.exists(os.path.join(test_dir, "python", "atlas_material_ui.py")):
             bl_atlas_root = test_dir
             break
 
@@ -481,79 +532,66 @@ try:
         print(f"✅ Added to sys.path: {python_path}")
 
     # Import the standalone modules
-    import houdiniae
+    import atlas_material_ui
     import api_client
+    import houdiniae
 
     # Force reload for development
     import importlib
-    importlib.reload(houdiniae)
+    importlib.reload(atlas_material_ui)
     importlib.reload(api_client)
+    importlib.reload(houdiniae)
 
-    print("🚀 BLACKSMITH ATLAS EXPORT INITIATED (STANDALONE)")
+    print("🚀 BLACKSMITH ATLAS MATERIAL EXPORT INITIATED (STANDALONE)")
     print("=" * 50)
 
     # Get action parameter
     action_value = int(subnet.parm("action").eval()) if subnet.parm("action") else 0
-    action_options = ["create_new", "version_up", "variant"]
+    action_options = ["create_new", "update_material"]
     action = action_options[action_value] if 0 <= action_value < len(action_options) else "create_new"
 
-    print(f"🎯 Action: {action}")
+    print(f"🎯 Material Action: {action}")
 
     # Get parameters based on action
-    if action == "create_new":
-        asset_name = subnet.parm("asset_name").eval().strip() if subnet.parm("asset_name") else ""
-        asset_type_idx = int(subnet.parm("asset_type").eval()) if subnet.parm("asset_type") else 0
-        tags_str = subnet.parm("tags").eval().strip() if subnet.parm("tags") else ""
-        render_engine_idx = int(subnet.parm("render_engine").eval()) if subnet.parm("render_engine") else 0
+    material_name = subnet.parm("asset_name").eval().strip() if subnet.parm("asset_name") else ""
+    tags_str = subnet.parm("tags").eval().strip() if subnet.parm("tags") else ""
 
-        # Get subcategory from the correct parameter based on asset type
-        subcategory_parm_names = ["subcategory_assets", "subcategory_fx", "subcategory_materials", "subcategory_hdas"]
-        subcategory_parm_name = subcategory_parm_names[asset_type_idx] if asset_type_idx < len(subcategory_parm_names) else subcategory_parm_names[0]
-        subcategory_idx = int(subnet.parm(subcategory_parm_name).eval()) if subnet.parm(subcategory_parm_name) else 0
+    # Materials are always in the "Materials" asset type
+    asset_type = "Materials"
 
-        # Get other parameters
-        branded = bool(subnet.parm("branded").eval()) if subnet.parm("branded") else False
-        export_no_references = bool(subnet.parm("export_no_references").eval()) if subnet.parm("export_no_references") else False
+    # Get subcategory (Blacksmith Materials or Environment)
+    subcategory_idx = int(subnet.parm("subcategory_materials").eval()) if subnet.parm("subcategory_materials") else 0
+    subcategory_options = ["Blacksmith Materials", "Environment"]
+    subcategory = subcategory_options[subcategory_idx] if subcategory_idx < len(subcategory_options) else "Blacksmith Materials"
 
-        # Get thumbnail parameters
-        thumbnail_action_idx = int(subnet.parm("thumbnail_action").eval()) if subnet.parm("thumbnail_action") else 0
-        thumbnail_actions = ["automatic", "choose", "disable"]
-        thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
-        thumbnail_file_path = subnet.parm("thumbnail_file").unexpandedString().strip() if subnet.parm("thumbnail_file") else ""
+    # Get render engine (RS Material or Material X)
+    render_engine_idx = int(subnet.parm("render_engine").eval()) if subnet.parm("render_engine") else 0
+    render_engine_options = ["RS Material", "Material X"]
+    render_engine = render_engine_options[render_engine_idx] if render_engine_idx < len(render_engine_options) else "RS Material"
 
-        print(f"🎨 Thumbnail Action: {thumbnail_action}")
-        if thumbnail_action == "choose" and thumbnail_file_path:
-            print(f"📁 Thumbnail File: {thumbnail_file_path}")
-    else:
-        # For now, only support create_new in standalone version
-        subnet.parm("export_status").set("❌ Only Create New Asset supported in standalone version")
-        hou.ui.displayMessage("❌ Version Up and Variant assets not supported in standalone version yet!", severity=hou.severityType.Error)
-        raise Exception("Only Create New Asset supported")
+    # Get thumbnail parameters
+    thumbnail_action_idx = int(subnet.parm("thumbnail_action").eval()) if subnet.parm("thumbnail_action") else 0
+    thumbnail_actions = ["automatic", "choose", "disable"]
+    thumbnail_action = thumbnail_actions[thumbnail_action_idx] if thumbnail_action_idx < len(thumbnail_actions) else "automatic"
+    thumbnail_file_path = subnet.parm("thumbnail_file").unexpandedString().strip() if subnet.parm("thumbnail_file") else ""
+
+    print(f"🎨 Thumbnail Action: {thumbnail_action}")
+    if thumbnail_action == "choose" and thumbnail_file_path:
+        print(f"📁 Thumbnail File: {thumbnail_file_path}")
+
+    # For update_material action, get the parent material ID
+    parent_material_id = None
+    if action == "update_material":
+        # TODO: Add UI parameter for parent_material_id in the Update Material section
+        # For now, extract from current folder name if it exists
+        print("⚠️  Update Material: Parent ID extraction not yet implemented")
+        parent_material_id = None  # Will need to be set from a parameter
 
     # Quick validation
-    if not asset_name:
-        subnet.parm("export_status").set("❌ Missing asset name")
-        hou.ui.displayMessage("❌ Asset name is required!", severity=hou.severityType.Error)
-        raise Exception("Asset name required")
-
-    # Convert asset type and get subcategory
-    asset_types = ["Assets", "FX", "Materials", "HDAs"]
-    asset_type = asset_types[asset_type_idx] if asset_type_idx < len(asset_types) else "Assets"
-
-    # Get the subcategory based on asset type
-    subcategory_mapping = {
-        "Assets": ["Blacksmith Asset", "Megascans", "Kitbash"],
-        "FX": ["Blacksmith FX", "Atmosphere", "FLIP", "Pyro"],
-        "Materials": ["Blacksmith Materials", "Redshift", "Karma"],
-        "HDAs": ["Blacksmith HDAs"]
-    }
-
-    subcategory_options = subcategory_mapping.get(asset_type, subcategory_mapping["Assets"])
-    subcategory = subcategory_options[subcategory_idx] if subcategory_idx < len(subcategory_options) else subcategory_options[0]
-
-    # Get render engine
-    render_engines = ["Redshift", "Karma", "Universal"]
-    render_engine = render_engines[render_engine_idx] if render_engine_idx < len(render_engines) else "Redshift"
+    if not material_name:
+        subnet.parm("export_status").set("❌ Missing material name")
+        hou.ui.displayMessage("❌ Material name is required!", severity=hou.severityType.Error)
+        raise Exception("Material name required")
 
     # Process tags
     tags_list = [tag.strip() for tag in tags_str.split(',') if tag.strip()] if tags_str else []
@@ -561,14 +599,13 @@ try:
     # Update status
     subnet.parm("export_status").set("🔄 Exporting...")
 
-    print(f"📋 EXPORT CONFIGURATION:")
+    print(f"📋 MATERIAL EXPORT CONFIGURATION:")
     print(f"   🎯 Action: {action}")
-    print(f"   🏷️ Asset: {asset_name}")
-    print(f"   📂 Asset Type: {asset_type}")
+    print(f"   🎨 Material: {material_name}")
+    print(f"   📂 Type: {asset_type}")
     print(f"   📋 Subcategory: {subcategory}")
-    print(f"   🎨 Render Engine: {render_engine}")
+    print(f"   🛠️  Render Engine: {render_engine}")
     print(f"   🏷️ Tags: {tags_list}")
-    print(f"   📁 Export No References: {export_no_references}")
 
     # Create extended tags list
     extended_tags = tags_list.copy()
@@ -584,28 +621,26 @@ try:
         "houdini_version": f"{hou.applicationVersion()[0]}.{hou.applicationVersion()[1]}.{hou.applicationVersion()[2]}",
         "export_time": str(datetime.now()),
         "tags": extended_tags,
-        "action": action,
-        "branded": branded,
-        "export_no_references": export_no_references
+        "action": action
     }
 
-    # Create TemplateAssetExporter with new parameters
-    exporter = houdiniae.TemplateAssetExporter(
-        asset_name=asset_name,
+    # Create TemplateMaterialExporter with new parameters
+    exporter = atlas_material_ui.TemplateMaterialExporter(
+        material_name=material_name,
         subcategory=subcategory,
         tags=extended_tags,
         asset_type=asset_type,
         render_engine=render_engine,
         metadata=hierarchy_metadata,
         action=action,
+        parent_material_id=parent_material_id,
         thumbnail_action=thumbnail_action,
         thumbnail_file_path=thumbnail_file_path,
-        export_no_references=export_no_references,
         bl_atlas_root=bl_atlas_root
     )
 
-    print(f"✅ Created exporter with ID: {exporter.asset_id}")
-    print(f"📁 Export location: {exporter.asset_folder}")
+    print(f"✅ Created material exporter with ID: {exporter.material_id} (14 chars)")
+    print(f"📁 Material will be exported (ID structure: 11 UID + 3 version)")
 
     # Get nodes to export
     nodes_to_export = subnet.children()
