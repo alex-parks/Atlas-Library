@@ -53,10 +53,10 @@ except (ImportError, ValueError) as e:
             return "/net/library/atlaslib/3D"
         @property
         def houdini_hda_path(self):
-            return "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/bl-atlas-houdini/otls/object_AtlasThumbnail.1.0.hda"
+            return "/net/dev/alex.parks/scm/int/Blacksmith-Atlas/bl-atlas-houdini/otls/object_dev_tuna_unalan_1_1_lookdev_thumbnail_5_0.hda"
         @property
         def houdini_hda_type(self):
-            return "AtlasThumbnail::1.0"
+            return "dev_tuna.unalan_1.1::lookdev_thumbnail::5.0"
         @property
         def api_base_url(self):
             return "https://library.blacksmith.tv"
@@ -757,8 +757,17 @@ class TemplateAssetExporter:
                 if hda_node.parm("assetname"):
                     hda_node.parm("assetname").set(self.asset_name)
                     print(f"      ✅ Set assetname: {self.asset_name}")
-                
-                # REQUIRED PARAMETER 2: atlasassetpath (string) - Relative Houdini path to exported subnet
+
+                # NEW PARAMETER: assetpath (string) - Full Houdini path to exported subnet with /*
+                if hda_node.parm("assetpath"):
+                    # Get full path to the parent node (e.g., "/obj/MyAtlasAsset")
+                    full_path = parent_node.path()
+                    # Add "/*" at the end (e.g., "/obj/MyAtlasAsset/*")
+                    asset_path = full_path + "/*"
+                    hda_node.parm("assetpath").set(asset_path)
+                    print(f"      ✅ Set assetpath: {asset_path}")
+
+                # LEGACY PARAMETER: atlasassetpath (string) - Relative Houdini path to exported subnet
                 if hda_node.parm("atlasassetpath"):
                     # Create relative path to the exported asset node (e.g., "../Helicopter")
                     atlas_asset_path = f"../{parent_node.name()}"
@@ -834,28 +843,21 @@ class TemplateAssetExporter:
                     hda_node.parm("thumbnail_folder").set(str(self.thumbnail_folder))
                     print(f"      ✅ Set thumbnail_folder: {self.thumbnail_folder}")
                 
-                # Set expected thumbnail file path
-                # Sanitize asset name for file naming (replace spaces and special chars with underscores)
-                sanitized_asset_name = self._sanitize_name_for_filesystem(self.asset_name)
-                expected_thumbnail = self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.png"
+                # Set expected thumbnail file path with ${F4} frame padding
+                # Format: /path/to/Thumbnail/Thumbnail.${F4}.png
+                expected_thumbnail = str(self.thumbnail_folder / "Thumbnail.${F4}.png")
+                if hda_node.parm("thumbnailpath"):
+                    hda_node.parm("thumbnailpath").set(expected_thumbnail)
+                    print(f"      ✅ Set thumbnailpath: {expected_thumbnail}")
+
+                # Legacy thumbnail_path parameter (without frame padding)
                 if hda_node.parm("thumbnail_path"):
-                    hda_node.parm("thumbnail_path").set(str(expected_thumbnail))
-                    print(f"      ✅ Set thumbnail_path: {expected_thumbnail.name}")
-                
-                # 🎯 SET FRAME RANGE PARAMETERS (NEW!)
-                if hda_node.parm("framein"):
-                    hda_node.parm("framein").set(self.framein)
-                    print(f"      🎯 Set framein: {self.framein}")
-                else:
-                    print(f"      ⚠️ No framein parameter found on HDA")
-                
-                if hda_node.parm("frameout"):
-                    hda_node.parm("frameout").set(self.frameout)
-                    print(f"      🎯 Set frameout: {self.frameout}")
-                else:
-                    print(f"      ⚠️ No frameout parameter found on HDA")
-                
-                print(f"   ✅ HDA parameters configured successfully (including frame range {self.framein}-{self.frameout})")
+                    sanitized_asset_name = self._sanitize_name_for_filesystem(self.asset_name)
+                    legacy_thumbnail = str(self.thumbnail_folder / f"{sanitized_asset_name}_thumbnail.png")
+                    hda_node.parm("thumbnail_path").set(legacy_thumbnail)
+                    print(f"      ✅ Set thumbnail_path (legacy): {legacy_thumbnail}")
+
+                print(f"   ✅ HDA parameters configured successfully")
                 return True
                 
             except Exception as e:
@@ -1387,13 +1389,26 @@ class TemplateAssetExporter:
                     print(f"   ℹ️ No dl_Submit parameter found on HDA")
                     return False
                     
-                # Check if thumbnail path is valid (optional safety check)
+                # Check if thumbnail directory is valid (skip file check if using frame variables like ${F4})
                 thumbnail_parm = hda_node.parm("thumbnailpath")
                 if thumbnail_parm:
-                    thumbnail_path = thumbnail_parm.evalAsString()
-                    if thumbnail_path and not os.path.exists(thumbnail_path):
-                        print(f"   ⚠️ Thumbnail path doesn't exist, skipping auto-execution: {thumbnail_path}")
-                        return False
+                    # Get unexpanded string to check for frame variables
+                    thumbnail_path_raw = thumbnail_parm.unexpandedString()
+                    # If path contains frame variables, check the directory instead
+                    if thumbnail_path_raw and '${F4}' in thumbnail_path_raw:
+                        # Get the directory from the unexpanded path (the ${F4} is only in the filename)
+                        thumbnail_dir = os.path.dirname(thumbnail_path_raw)
+                        if not os.path.exists(thumbnail_dir):
+                            print(f"   ⚠️ Thumbnail directory doesn't exist, skipping auto-execution: {thumbnail_dir}")
+                            return False
+                        else:
+                            print(f"   ✅ Thumbnail directory validated: {thumbnail_dir}")
+                    else:
+                        # No frame variables, check if the actual path exists
+                        thumbnail_path = thumbnail_parm.evalAsString()
+                        if thumbnail_path and not os.path.exists(thumbnail_path):
+                            print(f"   ⚠️ Thumbnail path doesn't exist, skipping auto-execution: {thumbnail_path}")
+                            return False
                 
                 # Execute the button
                 print(f"   🎯 Auto-executing dl_Submit button...")
@@ -1448,9 +1463,7 @@ class TemplateAssetExporter:
                 texture_info = []
                 geometry_info = []
                 path_mappings = {}
-                self.framein = 1
-                self.frameout = 240
-                print(f"   ✅ Using default frame range: 1-240")
+                print(f"   ✅ Skipping frame range detection (export with no references mode)")
             else:
                 # PRE-SCAN: Detect BGEO and VDB sequences with original paths (before any remapping)
                 print(f"   🎬 PRE-SCANNING FOR BGEO SEQUENCES WITH ORIGINAL PATHS...")
@@ -1465,13 +1478,9 @@ class TemplateAssetExporter:
                 # Process geometry files and copy them (now with BGEO and VDB sequence info)
                 geometry_info = self.process_geometry_files(parent_node, nodes_to_export, bgeo_sequences, vdb_sequences)
                 
-                # 🎯 DETECT SMART FRAME RANGE based on sequences
+                # 🎯 DETECT SMART FRAME RANGE based on sequences (for metadata only)
                 framein, frameout = self.detect_frame_range(bgeo_sequences, vdb_sequences)
-                print(f"   🎯 Smart frame range detected: {framein}-{frameout}")
-                
-                # Store frame range for HDA configuration and metadata
-                self.framein = framein
-                self.frameout = frameout
+                print(f"   🎯 Smart frame range detected: {framein}-{frameout} (for reference only)")
                 
                 # 🆕 REMAP ALL FILE PATHS FROM JOB LOCATIONS TO LIBRARY LOCATIONS
                 print(f"   🔄 Remapping file paths before export...")
@@ -1509,7 +1518,7 @@ class TemplateAssetExporter:
                 render_hda_success = self.load_and_configure_render_hda(parent_node, nodes_to_export, metadata)
                 if render_hda_success:
                     print(f"   ✅ Render farm HDA loaded and configured successfully")
-                    
+
                     # Auto-execute dl_Submit button after HDA is loaded
                     print(f"   🚀 Auto-executing dl_Submit button...")
                     auto_exec_success = self.auto_execute_dl_submit()
@@ -1535,6 +1544,7 @@ class TemplateAssetExporter:
                 # Fallback to automatic mode
                 render_hda_success = self.load_and_configure_render_hda(parent_node, nodes_to_export, metadata)
                 if render_hda_success:
+                    # Auto-execute dl_Submit button
                     auto_exec_success = self.auto_execute_dl_submit()
                     if auto_exec_success:
                         print(f"   ✅ dl_Submit button executed successfully - render should start!")

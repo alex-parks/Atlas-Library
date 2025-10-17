@@ -79,8 +79,8 @@ class AtlasConfig:
                 "api_base_url": "https://library.blacksmith.tv/api",
                 "database_url": "http://library.blacksmith.tv:8529",
                 "asset_library_3d": "/net/library/atlaslib/3D",
-                "houdini_hda_path": "../otls/object_AtlasThumbnail.1.0.hda",
-                "houdini_hda_type": "AtlasThumbnail::1.0",
+                "houdini_hda_path": "../otls/object_dev_tuna_unalan_1_1_lookdev_thumbnail_5_0.hda",
+                "houdini_hda_type": "dev_tuna.unalan_1.1::lookdev_thumbnail::5.0",
                 "version": "3.0",
                 "description": "Blacksmith Atlas Network Configuration (Default)",
                 "environment": "network",
@@ -94,8 +94,8 @@ class AtlasConfig:
                 "api_base_url": "http://localhost:8000",
                 "database_url": "http://localhost:8529",
                 "asset_library_3d": "/net/library/atlaslib/3D",
-                "houdini_hda_path": "../otls/object_AtlasThumbnail.1.0.hda",
-                "houdini_hda_type": "AtlasThumbnail::1.0",
+                "houdini_hda_path": "../otls/object_dev_tuna_unalan_1_1_lookdev_thumbnail_5_0.hda",
+                "houdini_hda_type": "dev_tuna.unalan_1.1::lookdev_thumbnail::5.0",
                 "version": "3.0",
                 "description": "Blacksmith Atlas Local Configuration (Default)",
                 "environment": "local"
@@ -131,7 +131,7 @@ class AtlasConfig:
     @property
     def houdini_hda_type(self) -> str:
         """Get the Houdini HDA type name"""
-        return self._config_data.get("houdini_hda_type", "AtlasThumbnail::1.0")
+        return self._config_data.get("houdini_hda_type", "dev_tuna.unalan_1.1::lookdev_thumbnail::5.0")
 
     @property
     def environment(self) -> str:
